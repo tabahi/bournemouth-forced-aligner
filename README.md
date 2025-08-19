@@ -155,23 +155,16 @@ Currently, there are no reliable metrics to report other than speed. The timing 
 
 ### Samples
 
-- "in being compartively modern..." - LJ
+- "in being compartively modern..." - LJ [wav](examples/samples/LJSpeech/LJ001-0002.wav)
 
-<audio controls>
-    <source src="examples/samples/LJSpeech/LJ001-0002.wav" type="audio/wav">
-    Your browser does not support the audio element.
-</audio>
 
 
 ![Praat Alignment Example](examples/samples/images/LJ02_praat.png)
 
 
-- "Butterfly" with confidence values
+- "Butterfly" with confidence values  [wav](examples/samples/audio/109867__timkahn__butterfly.wav)
 
-<audio controls>
-    <source src="examples/samples/audio/109867__timkahn__butterfly.wav" type="audio/wav">
-    Your browser does not support the audio element.
-</audio>
+
 
 ![Butterfly Alignment Example](examples/samples/images/butterfly_praat.png)
 
