@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include bournemouth_aligner *.py
+recursive-include examples *.py *.wav *.json *.TextGrid *.png
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]

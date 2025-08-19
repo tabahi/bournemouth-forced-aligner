@@ -1,5 +1,18 @@
 # Byte-compiled / optimized / DLL files
+tmp/
 __pycache__/
+wandb/
+models/
+mfa_corpus/
+src/prosodic_clusters_train.py
+src/p3vs2contrastive/hp_vs2cont.yaml
+src/p3vs2contrastive/train_vs2contrastive.py
+src/p3vs2contrastive/datamodule_vs2.py
+*.yaml
+*.pyc
+*.pt
+*.sh
+
 *.py[codz]
 *$py.class
 

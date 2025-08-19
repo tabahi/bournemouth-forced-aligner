@@ -1,0 +1,86 @@
+File type = "ooTextFile"
+Object class = "TextGrid"
+
+xmin = 0
+xmax = 1.2588125
+tiers? <exists>
+size = 3
+item []:
+    item [1]:
+        class = "IntervalTier"
+        name = "words"
+        xmin = 0
+        xmax = 1.2588125
+        intervals: size = 1
+        intervals [1]:
+            xmin = 0.03356833267211914
+            xmax = 0.62101416015625
+            text = "butterfly (0.66)"
+    item [2]:
+        class = "IntervalTier"
+        name = "phonemes"
+        xmin = 0
+        xmax = 1.2588125
+        intervals: size = 7
+        intervals [1]:
+            xmin = 0.03356833267211914
+            xmax = 0.050352497100830076
+            text = "b (0.98)"
+        intervals [2]:
+            xmin = 0.10070499420166015
+            xmax = 0.11748916625976563
+            text = "ʌ (0.84)"
+        intervals [3]:
+            xmin = 0.13427333068847655
+            xmax = 0.1510574951171875
+            text = "ɾ (0.39)"
+        intervals [4]:
+            xmin = 0.2853308410644531
+            xmax = 0.302114990234375
+            text = "ɚ (0.33)"
+        intervals [5]:
+            xmin = 0.36925167846679685
+            xmax = 0.38603582763671873
+            text = "f (0.92)"
+        intervals [6]:
+            xmin = 0.5203091430664063
+            xmax = 0.5538775024414062
+            text = "l (0.91)"
+        intervals [7]:
+            xmin = 0.60422998046875
+            xmax = 0.62101416015625
+            text = "aɪ (0.22)"
+    item [3]:
+        class = "IntervalTier"
+        name = "groups"
+        xmin = 0
+        xmax = 1.2588125
+        intervals: size = 7
+        intervals [1]:
+            xmin = 0.03356833267211914
+            xmax = 0.050352497100830076
+            text = "voiced_stops (0.99)"
+        intervals [2]:
+            xmin = 0.10070499420166015
+            xmax = 0.11748916625976563
+            text = "central_vowels (0.84)"
+        intervals [3]:
+            xmin = 0.13427333068847655
+            xmax = 0.1510574951171875
+            text = "rhotics (0.29)"
+        intervals [4]:
+            xmin = 0.2853308410644531
+            xmax = 0.302114990234375
+            text = "central_vowels (0.74)"
+        intervals [5]:
+            xmin = 0.3524674987792969
+            xmax = 0.4028199768066406
+            text = "voiceless_fricatives (0.99)"
+        intervals [6]:
+            xmin = 0.5203091430664063
+            xmax = 0.5538775024414062
+            text = "laterals (0.92)"
+        intervals [7]:
+            xmin = 0.60422998046875
+            xmax = 0.62101416015625
+            text = "diphthongs (0.41)"

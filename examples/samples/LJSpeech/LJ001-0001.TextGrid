@@ -1,0 +1,1006 @@
+File type = "ooTextFile"
+Object class = "TextGrid"
+
+xmin = 0
+xmax = 9.65501133786848
+tiers? <exists>
+size = 3
+item []:
+    item [1]:
+        class = "IntervalTier"
+        name = "phonemes"
+        xmin = 0
+        xmax = 9.65501133786848
+        intervals: size = 108
+        intervals [1]:
+            xmin = 0.0
+            xmax = 0.032183334350585936
+            text = "p"
+        intervals [2]:
+            xmin = 0.032183334350585936
+            xmax = 0.06436666870117187
+            text = "ɹ"
+        intervals [3]:
+            xmin = 0.09655000305175782
+            xmax = 0.11264167022705078
+            text = "ɪ"
+        intervals [4]:
+            xmin = 0.11264167022705078
+            xmax = 0.14482501220703126
+            text = "n"
+        intervals [5]:
+            xmin = 0.19310000610351563
+            xmax = 0.20919168090820311
+            text = "t"
+        intervals [6]:
+            xmin = 0.41838336181640623
+            xmax = 0.43447500610351564
+            text = "ɪ"
+        intervals [7]:
+            xmin = 0.43447500610351564
+            xmax = 0.4666583557128906
+            text = "ŋ"
+        intervals [8]:
+            xmin = 0.514933349609375
+            xmax = 0.54711669921875
+            text = "SIL"
+        intervals [9]:
+            xmin = 0.9172249755859375
+            xmax = 0.9333167114257812
+            text = "ɪ"
+        intervals [10]:
+            xmin = 0.9333167114257812
+            xmax = 0.9655
+            text = "n"
+        intervals [11]:
+            xmin = 0.997683349609375
+            xmax = 1.0137749633789062
+            text = "ð"
+        intervals [12]:
+            xmin = 1.0620499267578125
+            xmax = 1.0781417236328126
+            text = "ə"
+        intervals [13]:
+            xmin = 1.15860009765625
+            xmax = 1.174691650390625
+            text = "oʊ"
+        intervals [14]:
+            xmin = 1.303425048828125
+            xmax = 1.3195166015625
+            text = "n"
+        intervals [15]:
+            xmin = 1.3195166015625
+            xmax = 1.3517000732421875
+            text = "l"
+        intervals [16]:
+            xmin = 1.39997509765625
+            xmax = 1.416066650390625
+            text = "i"
+        intervals [17]:
+            xmin = 1.464341796875
+            xmax = 1.51261669921875
+            text = "s"
+        intervals [18]:
+            xmin = 1.7057166748046875
+            xmax = 1.7218084716796875
+            text = "ɛ"
+        intervals [19]:
+            xmin = 1.7218084716796875
+            xmax = 1.75399169921875
+            text = "n"
+        intervals [20]:
+            xmin = 1.8022667236328125
+            xmax = 1.834449951171875
+            text = "s"
+        intervals [21]:
+            xmin = 1.9470916748046876
+            xmax = 1.979275146484375
+            text = "w"
+        intervals [22]:
+            xmin = 2.0275499267578123
+            xmax = 2.043641845703125
+            text = "ɪ"
+        intervals [23]:
+            xmin = 2.043641845703125
+            xmax = 2.075824951171875
+            text = "ð"
+        intervals [24]:
+            xmin = 2.188466796875
+            xmax = 2.204558349609375
+            text = "w"
+        intervals [25]:
+            xmin = 2.204558349609375
+            xmax = 2.22064990234375
+            text = "ɪ"
+        intervals [26]:
+            xmin = 2.268925048828125
+            xmax = 2.3011083984375
+            text = "tʃ"
+        intervals [27]:
+            xmin = 2.429841796875
+            xmax = 2.462025146484375
+            text = "w"
+        intervals [28]:
+            xmin = 2.462025146484375
+            xmax = 2.47811669921875
+            text = "i:"
+        intervals [29]:
+            xmin = 2.59075830078125
+            xmax = 2.60685009765625
+            text = "ɚ"
+        intervals [30]:
+            xmin = 2.751675048828125
+            xmax = 2.7677666015625
+            text = "æ"
+        intervals [31]:
+            xmin = 2.7677666015625
+            xmax = 2.816041748046875
+            text = "t"
+        intervals [32]:
+            xmin = 2.92868359375
+            xmax = 2.944775146484375
+            text = "p"
+        intervals [33]:
+            xmin = 2.993050048828125
+            xmax = 3.0091416015625
+            text = "ɹ"
+        intervals [34]:
+            xmin = 3.0091416015625
+            xmax = 3.0252333984375
+            text = "ɛ"
+        intervals [35]:
+            xmin = 3.073508544921875
+            xmax = 3.105691650390625
+            text = "z"
+        intervals [36]:
+            xmin = 3.17005859375
+            xmax = 3.186150146484375
+            text = "ə"
+        intervals [37]:
+            xmin = 3.186150146484375
+            xmax = 3.20224169921875
+            text = "n"
+        intervals [38]:
+            xmin = 3.20224169921875
+            xmax = 3.2505166015625
+            text = "t"
+        intervals [39]:
+            xmin = 3.314883544921875
+            xmax = 3.34706689453125
+            text = "k"
+        intervals [40]:
+            xmin = 3.34706689453125
+            xmax = 3.363158447265625
+            text = "ə"
+        intervals [41]:
+            xmin = 3.395341796875
+            xmax = 3.427525146484375
+            text = "n"
+        intervals [42]:
+            xmin = 3.475800048828125
+            xmax = 3.491891845703125
+            text = "s"
+        intervals [43]:
+            xmin = 3.636716796875
+            xmax = 3.652808349609375
+            text = "ʌ"
+        intervals [44]:
+            xmin = 3.81372509765625
+            xmax = 3.845908447265625
+            text = "n"
+        intervals [45]:
+            xmin = 3.894183349609375
+            xmax = 3.92636669921875
+            text = "d"
+        intervals [46]:
+            xmin = 3.95855029296875
+            xmax = 3.9907333984375
+            text = "SIL"
+        intervals [47]:
+            xmin = 4.4573916015625
+            xmax = 4.4734833984375
+            text = "d"
+        intervals [48]:
+            xmin = 4.5217587890625
+            xmax = 4.55394189453125
+            text = "ɪ"
+        intervals [49]:
+            xmin = 4.55394189453125
+            xmax = 4.634400390625
+            text = "f"
+        intervals [50]:
+            xmin = 4.68267529296875
+            xmax = 4.7148583984375
+            text = "ɚ"
+        intervals [51]:
+            xmin = 4.79531689453125
+            xmax = 4.81140869140625
+            text = "z"
+        intervals [52]:
+            xmin = 5.084966796875
+            xmax = 5.117150390625
+            text = "f"
+        intervals [53]:
+            xmin = 5.16542529296875
+            xmax = 5.1815166015625
+            text = "ɹ"
+        intervals [54]:
+            xmin = 5.1815166015625
+            xmax = 5.1976083984375
+            text = "ʌ"
+        intervals [55]:
+            xmin = 5.1976083984375
+            xmax = 5.24588330078125
+            text = "m"
+        intervals [56]:
+            xmin = 5.326341796875
+            xmax = 5.358525390625
+            text = "m"
+        intervals [57]:
+            xmin = 5.358525390625
+            xmax = 5.37461669921875
+            text = "oʊ"
+        intervals [58]:
+            xmin = 5.51944140625
+            xmax = 5.535533203125
+            text = "s"
+        intervals [59]:
+            xmin = 5.6642666015625
+            xmax = 5.6803583984375
+            text = "t"
+        intervals [60]:
+            xmin = 5.6803583984375
+            xmax = 5.6964501953125
+            text = "ɪ"
+        intervals [61]:
+            xmin = 5.72863330078125
+            xmax = 5.776908203125
+            text = "f"
+        intervals [62]:
+            xmin = 5.88955029296875
+            xmax = 5.9217333984375
+            text = "n"
+        intervals [63]:
+            xmin = 5.97000830078125
+            xmax = 5.98610009765625
+            text = "a:"
+        intervals [64]:
+            xmin = 5.98610009765625
+            xmax = 6.018283203125
+            text = "t"
+        intervals [65]:
+            xmin = 6.13092529296875
+            xmax = 6.1792001953125
+            text = "f"
+        intervals [66]:
+            xmin = 6.21138330078125
+            xmax = 6.22747509765625
+            text = "ɹ"
+        intervals [67]:
+            xmin = 6.22747509765625
+            xmax = 6.24356689453125
+            text = "ʌ"
+        intervals [68]:
+            xmin = 6.24356689453125
+            xmax = 6.27575
+            text = "m"
+        intervals [69]:
+            xmin = 6.533216796875
+            xmax = 6.54930810546875
+            text = "ɔ"
+        intervals [70]:
+            xmin = 6.54930810546875
+            xmax = 6.5814921875
+            text = "l"
+        intervals [71]:
+            xmin = 6.71022509765625
+            xmax = 6.72631689453125
+            text = "ð"
+        intervals [72]:
+            xmin = 6.72631689453125
+            xmax = 6.74240869140625
+            text = "ə"
+        intervals [73]:
+            xmin = 6.85505029296875
+            xmax = 6.87114208984375
+            text = "ɚ"
+        intervals [74]:
+            xmin = 6.95160009765625
+            xmax = 6.98378369140625
+            text = "t"
+        intervals [75]:
+            xmin = 7.09642529296875
+            xmax = 7.11251708984375
+            text = "s"
+        intervals [76]:
+            xmin = 7.12860888671875
+            xmax = 7.1447001953125
+            text = "æ"
+        intervals [77]:
+            xmin = 7.1447001953125
+            xmax = 7.19297509765625
+            text = "n"
+        intervals [78]:
+            xmin = 7.19297509765625
+            xmax = 7.22515869140625
+            text = "d"
+        intervals [79]:
+            xmin = 7.257341796875
+            xmax = 7.27343359375
+            text = "k"
+        intervals [80]:
+            xmin = 7.35389208984375
+            xmax = 7.36998388671875
+            text = "ɹ"
+        intervals [81]:
+            xmin = 7.4182587890625
+            xmax = 7.45044189453125
+            text = "æ"
+        intervals [82]:
+            xmin = 7.5791748046875
+            xmax = 7.6113583984375
+            text = "f"
+        intervals [83]:
+            xmin = 7.6113583984375
+            xmax = 7.6274501953125
+            text = "t"
+        intervals [84]:
+            xmin = 7.740091796875
+            xmax = 7.75618359375
+            text = "s"
+        intervals [85]:
+            xmin = 7.8849169921875
+            xmax = 7.9171005859375
+            text = "ɹ"
+        intervals [86]:
+            xmin = 7.9171005859375
+            xmax = 7.93319189453125
+            text = "ɛ"
+        intervals [87]:
+            xmin = 7.981466796875
+            xmax = 8.01364990234375
+            text = "p"
+        intervals [88]:
+            xmin = 8.0619248046875
+            xmax = 8.0941083984375
+            text = "ɹ"
+        intervals [89]:
+            xmin = 8.0941083984375
+            xmax = 8.11019970703125
+            text = "ɪ"
+        intervals [90]:
+            xmin = 8.1423837890625
+            xmax = 8.1745673828125
+            text = "z"
+        intervals [91]:
+            xmin = 8.23893359375
+            xmax = 8.255025390625
+            text = "ɛ"
+        intervals [92]:
+            xmin = 8.255025390625
+            xmax = 8.2711171875
+            text = "n"
+        intervals [93]:
+            xmin = 8.2711171875
+            xmax = 8.3354833984375
+            text = "t"
+        intervals [94]:
+            xmin = 8.399849609375
+            xmax = 8.4159423828125
+            text = "ɪ"
+        intervals [95]:
+            xmin = 8.464216796875
+            xmax = 8.4963994140625
+            text = "d"
+        intervals [96]:
+            xmin = 8.641224609375
+            xmax = 8.6573173828125
+            text = "ɪ"
+        intervals [97]:
+            xmin = 8.6573173828125
+            xmax = 8.673408203125
+            text = "n"
+        intervals [98]:
+            xmin = 8.72168359375
+            xmax = 8.7377744140625
+            text = "ð"
+        intervals [99]:
+            xmin = 8.7860498046875
+            xmax = 8.802142578125
+            text = "ə"
+        intervals [100]:
+            xmin = 8.8665087890625
+            xmax = 8.882599609375
+            text = "ɛ"
+        intervals [101]:
+            xmin = 8.882599609375
+            xmax = 8.8986923828125
+            text = "k"
+        intervals [102]:
+            xmin = 9.0274248046875
+            xmax = 9.0596083984375
+            text = "s"
+        intervals [103]:
+            xmin = 9.0596083984375
+            xmax = 9.0757001953125
+            text = "ɪ"
+        intervals [104]:
+            xmin = 9.188341796875
+            xmax = 9.20443359375
+            text = "b"
+        intervals [105]:
+            xmin = 9.2205244140625
+            xmax = 9.2366171875
+            text = "ɪ"
+        intervals [106]:
+            xmin = 9.2848916015625
+            xmax = 9.3009833984375
+            text = "ʃ"
+        intervals [107]:
+            xmin = 9.44580859375
+            xmax = 9.461900390625
+            text = "ə"
+        intervals [108]:
+            xmin = 9.461900390625
+            xmax = 9.4779921875
+            text = "n"
+    item [2]:
+        class = "IntervalTier"
+        name = "words"
+        xmin = 0
+        xmax = 9.65501133786848
+        intervals: size = 29
+        intervals [1]:
+            xmin = 0.0
+            xmax = 0.4666583557128906
+            text = "Printing"
+        intervals [2]:
+            xmin = 0.514933349609375
+            xmax = 0.54711669921875
+            text = "<sil>"
+        intervals [3]:
+            xmin = 0.9172249755859375
+            xmax = 0.9655
+            text = "in"
+        intervals [4]:
+            xmin = 0.997683349609375
+            xmax = 1.0781417236328126
+            text = "the"
+        intervals [5]:
+            xmin = 1.15860009765625
+            xmax = 1.416066650390625
+            text = "only"
+        intervals [6]:
+            xmin = 1.464341796875
+            xmax = 1.834449951171875
+            text = "sense"
+        intervals [7]:
+            xmin = 1.9470916748046876
+            xmax = 2.075824951171875
+            text = "with"
+        intervals [8]:
+            xmin = 2.188466796875
+            xmax = 2.3011083984375
+            text = "which"
+        intervals [9]:
+            xmin = 2.429841796875
+            xmax = 2.47811669921875
+            text = "we"
+        intervals [10]:
+            xmin = 2.59075830078125
+            xmax = 2.60685009765625
+            text = "are"
+        intervals [11]:
+            xmin = 2.751675048828125
+            xmax = 2.816041748046875
+            text = "at"
+        intervals [12]:
+            xmin = 2.92868359375
+            xmax = 3.2505166015625
+            text = "present"
+        intervals [13]:
+            xmin = 3.314883544921875
+            xmax = 3.92636669921875
+            text = "concerned"
+        intervals [14]:
+            xmin = 3.95855029296875
+            xmax = 3.9907333984375
+            text = "<sil>"
+        intervals [15]:
+            xmin = 4.4573916015625
+            xmax = 4.81140869140625
+            text = "differs"
+        intervals [16]:
+            xmin = 5.084966796875
+            xmax = 5.24588330078125
+            text = "from"
+        intervals [17]:
+            xmin = 5.326341796875
+            xmax = 5.6803583984375
+            text = "most"
+        intervals [18]:
+            xmin = 5.6803583984375
+            xmax = 5.776908203125
+            text = "if"
+        intervals [19]:
+            xmin = 5.88955029296875
+            xmax = 6.018283203125
+            text = "not"
+        intervals [20]:
+            xmin = 6.13092529296875
+            xmax = 6.27575
+            text = "from"
+        intervals [21]:
+            xmin = 6.533216796875
+            xmax = 6.5814921875
+            text = "all"
+        intervals [22]:
+            xmin = 6.71022509765625
+            xmax = 6.74240869140625
+            text = "the"
+        intervals [23]:
+            xmin = 6.85505029296875
+            xmax = 7.11251708984375
+            text = "arts"
+        intervals [24]:
+            xmin = 7.12860888671875
+            xmax = 7.22515869140625
+            text = "and"
+        intervals [25]:
+            xmin = 7.257341796875
+            xmax = 7.75618359375
+            text = "crafts"
+        intervals [26]:
+            xmin = 7.8849169921875
+            xmax = 8.4963994140625
+            text = "represented"
+        intervals [27]:
+            xmin = 8.641224609375
+            xmax = 8.673408203125
+            text = "in"
+        intervals [28]:
+            xmin = 8.72168359375
+            xmax = 8.802142578125
+            text = "the"
+        intervals [29]:
+            xmin = 8.8665087890625
+            xmax = 9.4779921875
+            text = "Exhibition"
+    item [3]:
+        class = "IntervalTier"
+        name = "groups"
+        xmin = 0
+        xmax = 9.65501133786848
+        intervals: size = 108
+        intervals [1]:
+            xmin = 0.0
+            xmax = 0.032183334350585936
+            text = "voiceless_stops"
+        intervals [2]:
+            xmin = 0.032183334350585936
+            xmax = 0.06436666870117187
+            text = "rhotics"
+        intervals [3]:
+            xmin = 0.09655000305175782
+            xmax = 0.11264167022705078
+            text = "front_vowels"
+        intervals [4]:
+            xmin = 0.11264167022705078
+            xmax = 0.14482501220703126
+            text = "nasals"
+        intervals [5]:
+            xmin = 0.19310000610351563
+            xmax = 0.20919168090820311
+            text = "voiceless_stops"
+        intervals [6]:
+            xmin = 0.41838336181640623
+            xmax = 0.43447500610351564
+            text = "front_vowels"
+        intervals [7]:
+            xmin = 0.43447500610351564
+            xmax = 0.4666583557128906
+            text = "nasals"
+        intervals [8]:
+            xmin = 0.5310249633789063
+            xmax = 0.54711669921875
+            text = "SIL"
+        intervals [9]:
+            xmin = 0.9011333618164062
+            xmax = 0.9333167114257812
+            text = "front_vowels"
+        intervals [10]:
+            xmin = 0.9333167114257812
+            xmax = 0.9655
+            text = "nasals"
+        intervals [11]:
+            xmin = 0.997683349609375
+            xmax = 1.0137749633789062
+            text = "voiced_fricatives"
+        intervals [12]:
+            xmin = 1.0620499267578125
+            xmax = 1.0781417236328126
+            text = "central_vowels"
+        intervals [13]:
+            xmin = 1.15860009765625
+            xmax = 1.174691650390625
+            text = "diphthongs"
+        intervals [14]:
+            xmin = 1.2229666748046875
+            xmax = 1.3195166015625
+            text = "nasals"
+        intervals [15]:
+            xmin = 1.3195166015625
+            xmax = 1.3517000732421875
+            text = "laterals"
+        intervals [16]:
+            xmin = 1.39997509765625
+            xmax = 1.416066650390625
+            text = "front_vowels"
+        intervals [17]:
+            xmin = 1.464341796875
+            xmax = 1.51261669921875
+            text = "voiceless_fricatives"
+        intervals [18]:
+            xmin = 1.7057166748046875
+            xmax = 1.7218084716796875
+            text = "front_vowels"
+        intervals [19]:
+            xmin = 1.7218084716796875
+            xmax = 1.75399169921875
+            text = "nasals"
+        intervals [20]:
+            xmin = 1.8022667236328125
+            xmax = 1.850541748046875
+            text = "voiceless_fricatives"
+        intervals [21]:
+            xmin = 1.963183349609375
+            xmax = 1.979275146484375
+            text = "glides"
+        intervals [22]:
+            xmin = 2.0275499267578123
+            xmax = 2.043641845703125
+            text = "front_vowels"
+        intervals [23]:
+            xmin = 2.043641845703125
+            xmax = 2.091916748046875
+            text = "voiced_fricatives"
+        intervals [24]:
+            xmin = 2.188466796875
+            xmax = 2.204558349609375
+            text = "glides"
+        intervals [25]:
+            xmin = 2.204558349609375
+            xmax = 2.23674169921875
+            text = "front_vowels"
+        intervals [26]:
+            xmin = 2.268925048828125
+            xmax = 2.3011083984375
+            text = "voiceless_affricates"
+        intervals [27]:
+            xmin = 2.429841796875
+            xmax = 2.462025146484375
+            text = "glides"
+        intervals [28]:
+            xmin = 2.462025146484375
+            xmax = 2.47811669921875
+            text = "front_vowels"
+        intervals [29]:
+            xmin = 2.59075830078125
+            xmax = 2.60685009765625
+            text = "central_vowels"
+        intervals [30]:
+            xmin = 2.751675048828125
+            xmax = 2.7677666015625
+            text = "low_vowels"
+        intervals [31]:
+            xmin = 2.7677666015625
+            xmax = 2.7999501953125
+            text = "voiceless_stops"
+        intervals [32]:
+            xmin = 2.92868359375
+            xmax = 2.944775146484375
+            text = "voiceless_stops"
+        intervals [33]:
+            xmin = 2.993050048828125
+            xmax = 3.0091416015625
+            text = "rhotics"
+        intervals [34]:
+            xmin = 3.0091416015625
+            xmax = 3.0252333984375
+            text = "front_vowels"
+        intervals [35]:
+            xmin = 3.08960009765625
+            xmax = 3.105691650390625
+            text = "voiced_fricatives"
+        intervals [36]:
+            xmin = 3.17005859375
+            xmax = 3.186150146484375
+            text = "central_vowels"
+        intervals [37]:
+            xmin = 3.186150146484375
+            xmax = 3.20224169921875
+            text = "nasals"
+        intervals [38]:
+            xmin = 3.20224169921875
+            xmax = 3.2505166015625
+            text = "voiceless_stops"
+        intervals [39]:
+            xmin = 3.314883544921875
+            xmax = 3.34706689453125
+            text = "voiceless_stops"
+        intervals [40]:
+            xmin = 3.34706689453125
+            xmax = 3.363158447265625
+            text = "central_vowels"
+        intervals [41]:
+            xmin = 3.395341796875
+            xmax = 3.427525146484375
+            text = "nasals"
+        intervals [42]:
+            xmin = 3.475800048828125
+            xmax = 3.491891845703125
+            text = "voiceless_fricatives"
+        intervals [43]:
+            xmin = 3.636716796875
+            xmax = 3.652808349609375
+            text = "central_vowels"
+        intervals [44]:
+            xmin = 3.81372509765625
+            xmax = 3.845908447265625
+            text = "nasals"
+        intervals [45]:
+            xmin = 3.910275146484375
+            xmax = 3.92636669921875
+            text = "voiced_stops"
+        intervals [46]:
+            xmin = 3.95855029296875
+            xmax = 3.9907333984375
+            text = "SIL"
+        intervals [47]:
+            xmin = 4.4573916015625
+            xmax = 4.4734833984375
+            text = "voiced_stops"
+        intervals [48]:
+            xmin = 4.5217587890625
+            xmax = 4.55394189453125
+            text = "front_vowels"
+        intervals [49]:
+            xmin = 4.55394189453125
+            xmax = 4.634400390625
+            text = "voiceless_fricatives"
+        intervals [50]:
+            xmin = 4.68267529296875
+            xmax = 4.7148583984375
+            text = "central_vowels"
+        intervals [51]:
+            xmin = 4.79531689453125
+            xmax = 4.81140869140625
+            text = "voiced_fricatives"
+        intervals [52]:
+            xmin = 5.084966796875
+            xmax = 5.117150390625
+            text = "voiceless_fricatives"
+        intervals [53]:
+            xmin = 5.16542529296875
+            xmax = 5.1815166015625
+            text = "rhotics"
+        intervals [54]:
+            xmin = 5.1815166015625
+            xmax = 5.1976083984375
+            text = "central_vowels"
+        intervals [55]:
+            xmin = 5.1976083984375
+            xmax = 5.24588330078125
+            text = "nasals"
+        intervals [56]:
+            xmin = 5.326341796875
+            xmax = 5.34243359375
+            text = "nasals"
+        intervals [57]:
+            xmin = 5.358525390625
+            xmax = 5.37461669921875
+            text = "diphthongs"
+        intervals [58]:
+            xmin = 5.51944140625
+            xmax = 5.535533203125
+            text = "voiceless_fricatives"
+        intervals [59]:
+            xmin = 5.64817529296875
+            xmax = 5.6803583984375
+            text = "voiceless_stops"
+        intervals [60]:
+            xmin = 5.6803583984375
+            xmax = 5.6964501953125
+            text = "front_vowels"
+        intervals [61]:
+            xmin = 5.72863330078125
+            xmax = 5.776908203125
+            text = "voiceless_fricatives"
+        intervals [62]:
+            xmin = 5.88955029296875
+            xmax = 5.9217333984375
+            text = "nasals"
+        intervals [63]:
+            xmin = 5.97000830078125
+            xmax = 5.98610009765625
+            text = "low_vowels"
+        intervals [64]:
+            xmin = 5.98610009765625
+            xmax = 6.018283203125
+            text = "voiceless_stops"
+        intervals [65]:
+            xmin = 6.13092529296875
+            xmax = 6.1792001953125
+            text = "voiceless_fricatives"
+        intervals [66]:
+            xmin = 6.21138330078125
+            xmax = 6.22747509765625
+            text = "rhotics"
+        intervals [67]:
+            xmin = 6.22747509765625
+            xmax = 6.24356689453125
+            text = "central_vowels"
+        intervals [68]:
+            xmin = 6.24356689453125
+            xmax = 6.27575
+            text = "nasals"
+        intervals [69]:
+            xmin = 6.533216796875
+            xmax = 6.54930810546875
+            text = "back_vowels"
+        intervals [70]:
+            xmin = 6.54930810546875
+            xmax = 6.5814921875
+            text = "laterals"
+        intervals [71]:
+            xmin = 6.6941337890625
+            xmax = 6.72631689453125
+            text = "voiced_fricatives"
+        intervals [72]:
+            xmin = 6.72631689453125
+            xmax = 6.74240869140625
+            text = "central_vowels"
+        intervals [73]:
+            xmin = 6.85505029296875
+            xmax = 6.87114208984375
+            text = "central_vowels"
+        intervals [74]:
+            xmin = 6.9355087890625
+            xmax = 6.98378369140625
+            text = "voiceless_stops"
+        intervals [75]:
+            xmin = 7.09642529296875
+            xmax = 7.11251708984375
+            text = "voiceless_fricatives"
+        intervals [76]:
+            xmin = 7.12860888671875
+            xmax = 7.1447001953125
+            text = "low_vowels"
+        intervals [77]:
+            xmin = 7.1447001953125
+            xmax = 7.19297509765625
+            text = "nasals"
+        intervals [78]:
+            xmin = 7.20906689453125
+            xmax = 7.22515869140625
+            text = "voiced_stops"
+        intervals [79]:
+            xmin = 7.257341796875
+            xmax = 7.28952490234375
+            text = "voiceless_stops"
+        intervals [80]:
+            xmin = 7.35389208984375
+            xmax = 7.36998388671875
+            text = "rhotics"
+        intervals [81]:
+            xmin = 7.4182587890625
+            xmax = 7.45044189453125
+            text = "low_vowels"
+        intervals [82]:
+            xmin = 7.5791748046875
+            xmax = 7.6113583984375
+            text = "voiceless_fricatives"
+        intervals [83]:
+            xmin = 7.6113583984375
+            xmax = 7.6274501953125
+            text = "voiceless_stops"
+        intervals [84]:
+            xmin = 7.740091796875
+            xmax = 7.75618359375
+            text = "voiceless_fricatives"
+        intervals [85]:
+            xmin = 7.9010087890625
+            xmax = 7.9171005859375
+            text = "rhotics"
+        intervals [86]:
+            xmin = 7.9171005859375
+            xmax = 7.93319189453125
+            text = "front_vowels"
+        intervals [87]:
+            xmin = 7.981466796875
+            xmax = 8.01364990234375
+            text = "voiceless_stops"
+        intervals [88]:
+            xmin = 8.0619248046875
+            xmax = 8.0941083984375
+            text = "rhotics"
+        intervals [89]:
+            xmin = 8.0941083984375
+            xmax = 8.11019970703125
+            text = "front_vowels"
+        intervals [90]:
+            xmin = 8.1423837890625
+            xmax = 8.1745673828125
+            text = "voiced_fricatives"
+        intervals [91]:
+            xmin = 8.23893359375
+            xmax = 8.255025390625
+            text = "front_vowels"
+        intervals [92]:
+            xmin = 8.255025390625
+            xmax = 8.2711171875
+            text = "nasals"
+        intervals [93]:
+            xmin = 8.2711171875
+            xmax = 8.3354833984375
+            text = "voiceless_stops"
+        intervals [94]:
+            xmin = 8.399849609375
+            xmax = 8.4159423828125
+            text = "front_vowels"
+        intervals [95]:
+            xmin = 8.464216796875
+            xmax = 8.4963994140625
+            text = "voiced_stops"
+        intervals [96]:
+            xmin = 8.641224609375
+            xmax = 8.6573173828125
+            text = "front_vowels"
+        intervals [97]:
+            xmin = 8.6573173828125
+            xmax = 8.6895
+            text = "nasals"
+        intervals [98]:
+            xmin = 8.72168359375
+            xmax = 8.7377744140625
+            text = "voiced_fricatives"
+        intervals [99]:
+            xmin = 8.7377744140625
+            xmax = 8.7538671875
+            text = "central_vowels"
+        intervals [100]:
+            xmin = 8.7860498046875
+            xmax = 8.802142578125
+            text = "front_vowels"
+        intervals [101]:
+            xmin = 8.946966796875
+            xmax = 8.96305859375
+            text = "voiceless_stops"
+        intervals [102]:
+            xmin = 9.0274248046875
+            xmax = 9.0596083984375
+            text = "voiceless_fricatives"
+        intervals [103]:
+            xmin = 9.0596083984375
+            xmax = 9.0757001953125
+            text = "front_vowels"
+        intervals [104]:
+            xmin = 9.188341796875
+            xmax = 9.20443359375
+            text = "voiced_stops"
+        intervals [105]:
+            xmin = 9.20443359375
+            xmax = 9.2366171875
+            text = "front_vowels"
+        intervals [106]:
+            xmin = 9.2848916015625
+            xmax = 9.317076171875
+            text = "voiceless_fricatives"
+        intervals [107]:
+            xmin = 9.44580859375
+            xmax = 9.461900390625
+            text = "central_vowels"
+        intervals [108]:
+            xmin = 9.461900390625
+            xmax = 9.4940830078125
+            text = "nasals"
