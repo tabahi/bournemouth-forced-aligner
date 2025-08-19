@@ -147,13 +147,35 @@ Output keys:
 
 ## Alignment Accuracy
 
-Below is an example Praat TextGrid visualization of phoneme-level alignment produced by [BFA](https://github.com/tabahi/bournemouth-forced-aligner), compared with [MFA](https://github.com/MontrealCorpusTools/Montreal-Forced-Aligner)
+Below is an example [Praat](https://www.fon.hum.uva.nl/praat/) TextGrid visualization of phoneme-level alignment produced by [BFA](https://github.com/tabahi/bournemouth-forced-aligner), compared with [MFA](https://github.com/MontrealCorpusTools/Montreal-Forced-Aligner). 
+Currently, there are no reliable metrics to report other than speed. The timing distance error is 40ms on TIMIT (unreliable). MFA takes 10 seconds for 2 seconds audio which makes it difficult for real-time use. BFA has potential for real-time inference due to being contextless ([see CUPE](https://huggingface.co/Tabahi/CUPE-2i)). If you have any comparisons or suggestions for improvements then please let me know in the issues.
+
+- BFA seems to be better at stops (t,d,p,k,...). Notice the start of /t/ and /d/.
+- BFA misses the tail endings and breathy h#
+
+### Samples
+
+- "in being compartively modern..." - LJ
+
+<audio controls>
+    <source src="examples/samples/LJSpeech/LJ001-0002.wav" type="audio/wav">
+    Your browser does not support the audio element.
+</audio>
+
 
 ![Praat Alignment Example](examples/samples/images/LJ02_praat.png)
 
-Currently, there are no reliable metrics to report other than speed. The timing distance error is 40ms on TIMIT (unreliable). MFA takes 10 seconds for 2 seconds audio which makes it difficult for real-time use. BFA has potential for real-time inference due to being contextless ([see CUPE](https://huggingface.co/Tabahi/CUPE-2i)). If you have any comparisons or suggestions for improvements then please let me know in the issues.
 
+- "Butterfly" with confidence values
 
+<audio controls>
+    <source src="examples/samples/audio/109867__timkahn__butterfly.wav" type="audio/wav">
+    Your browser does not support the audio element.
+</audio>
+
+![Butterfly Alignment Example](examples/samples/images/butterfly_praat.png)
+
+---
 
 ## How does it work?
 
