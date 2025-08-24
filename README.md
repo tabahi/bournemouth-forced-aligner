@@ -89,7 +89,7 @@ from bournemouth_aligner import PhonemeTimestampAligner
 # Configuration
 transcription = "butterfly"
 audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
-model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
 
 # Initialize aligner
 extractor = PhonemeTimestampAligner(
@@ -278,7 +278,7 @@ with open(srt_path, "w") as f:
 
 # Align with BFA
 extractor = PhonemeTimestampAligner(
-    model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
+    model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
     lang='en-us',
     duration_max=10,
     device='cpu'
@@ -306,7 +306,7 @@ from bournemouth_aligner import PhonemeTimestampAligner
 # Step 1: Initialize
 device = 'cpu'  # CPU is faster for single files
 duration_max = 10
-model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
 lang = 'en-us'
 
 extractor = PhonemeTimestampAligner(
