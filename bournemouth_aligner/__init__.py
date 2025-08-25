@@ -6,11 +6,11 @@ URL: https://github.com/tabahi/bournemouth-forced-aligner
 
 __version__ = "0.1.0"
 
-from .core import PhonemeTimestampAligner, process_single_clip, process_transcription
+from .core import PhonemeTimestampAligner, process_single_clip, process_sentence
 
 __all__ = [
     "PhonemeTimestampAligner",
     "process_single_clip", 
-    "process_transcription",
+    "process_sentence",
     "__version__"
 ]

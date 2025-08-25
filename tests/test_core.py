@@ -9,6 +9,9 @@ import torch
 import tempfile
 import json
 import os
+
+import sys
+sys.path.append('.')
 from bournemouth_aligner import PhonemeTimestampAligner
 
 class TestPhonemeTimestampAligner:
@@ -42,11 +45,11 @@ class TestPhonemeTimestampAligner:
         # This would need a real audio file to test properly
         # For now, just test that the method exists
         assert hasattr(aligner, 'load_audio')
-    
-    def test_process_transcription(self, aligner, dummy_audio):
-        """Test transcription processing."""
+
+    def test_process_text_sentence(self, aligner, dummy_audio):
+        """Test text sentence processing."""
         try:
-            result = aligner.process_transcription(
+            result = aligner.process_sentence(
                 "hello", 
                 dummy_audio, 
                 extract_embeddings=False,

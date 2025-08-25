@@ -90,7 +90,7 @@ class Phonemizer:
 
         if (language in alt_codes):
             language = alt_codes[language]
-        print(f"Setting backend for language: {language}")
+        print(f"Setting espeak backend for language: {language}")
         self.backend = EspeakBackend(language=language, preserve_punctuation=False, tie=False, with_stress=False)
 
     def break_words(self, single_sentence):

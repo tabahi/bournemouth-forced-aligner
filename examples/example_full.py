@@ -37,11 +37,11 @@ audio_wav =  extractor.load_audio(audio_path)
 
 # Step2: Load/create text transcriptions:
 
-transcription = "ah What!"
+text_sentence = "ah What!"
 
 
 
-timestamps = extractor.process_transcription(transcription, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False)
+timestamps = extractor.process_sentence(text_sentence, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False)
 
 
 # Step4 (optional): Convert to textgrid

@@ -6,7 +6,7 @@ from bournemouth_aligner import PhonemeTimestampAligner
 
 def example_audio_timestamps():
 
-    transcription = "butterfly"
+    text_sentence = "butterfly"
     audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
     
     model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" 
@@ -16,7 +16,7 @@ def example_audio_timestamps():
 
     t0 = time.time()
 
-    timestamps = extractor.process_transcription(transcription, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True)
+    timestamps = extractor.process_sentence(text_sentence, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True)
 
     t1 = time.time()
     print("Timestamps:")

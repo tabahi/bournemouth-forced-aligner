@@ -38,7 +38,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', duration_max=10, ph_seq_max=64, device="cuda", boost_targets=True, enforce_minimum=True):
+    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', duration_max=10, ms_per_frame=10, output_frames_key="phoneme_idx", device="cpu", boost_targets=True, enforce_minimum=True):
         """
         Initialize the phoneme timestamp extractor.
         
@@ -47,7 +47,8 @@ class PhonemeTimestampAligner:
             cupe_ckpt_path: Path to the CUPE model checkpoint. Download from: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
             lang: Language for phonemization (use espeak lang codes, see https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)
             duration_max: Maximum duration in seconds (Padding purposes when using batch processing). You can set it to 10 to 60 seconds.
-            ph_seq_max: Maximum phoneme sequence length
+            ms_per_frame: Milliseconds per frame in the framewise assortment of phoneme labels. You can set it to 1 to 80ms if your next task requires a specific frame rate. This does not effect the model or the alignment accuracy. See `framewise_assortment()`.
+            output_frames_key: Set which of the ouputs to use to assort frames (using ms_per_frame). Options: "phoneme_idx"(default), "phoneme_label", "group_idx", "group_label"
             device: Device to run inference on
             boost_targets: Boost the probabilities of target phonemes to ensure they can be aligned.
             enforce_minimum: Ensure target phonemes have minimum probability at each frame.
@@ -67,7 +68,9 @@ class PhonemeTimestampAligner:
         self.resampler_sample_rate = 16000
         self.padding_ph_label = -100
         self.ph_seq_min = 1
-        self.ph_seq_max = ph_seq_max
+        #self.ph_seq_max = ph_seq_max
+        self.output_frames_key = output_frames_key
+        self.ms_per_frame = ms_per_frame
         self.seg_duration_min = 0.05  # seconds
         self.seg_duration_min_samples = int(self.seg_duration_min * self.resampler_sample_rate)
         self.seg_duration_max = duration_max  # seconds
@@ -76,6 +79,12 @@ class PhonemeTimestampAligner:
 
         self.phonemes_key = self.phonemizer.phonemes_key
         self.phoneme_groups_key = self.phonemizer.phoneme_groups_key
+
+        self.phoneme_id_to_label = index_to_plabel
+        self.phoneme_label_to_id = {label: idx for idx, label in index_to_plabel.items()}
+        self.group_id_to_label = index_to_glabel
+        self.group_label_to_id = {label: idx for idx, label in index_to_glabel.items()}
+        self.phoneme_id_to_group_id = phoneme_groups_mapper
 
         self._setup_config()
         self._setup_decoders()
@@ -181,10 +190,10 @@ class PhonemeTimestampAligner:
 
 
 
-    def load_audio(self, audio_path):
+    def load_audio(self, audio_path, backend = "ffmpeg"):
         """Load and preprocess audio file."""
         
-        wav, sr = torchaudio.load(audio_path,  frame_offset=0,  normalize=True)
+        wav, sr = torchaudio.load(audio_path,  frame_offset=0,  normalize=True, backend=backend)
         
         if sr != self.resampler_sample_rate:
             print(f"Resampling {audio_path} from {sr}Hz to {self.resampler_sample_rate}Hz")
@@ -641,6 +650,20 @@ class PhonemeTimestampAligner:
         
         return words_ts
 
+    def phonemize_sentence(self, text):
+        """Phonemize a sentence.
+        Args:
+            text (str): The input text to phonemize.
+        Return
+            - segment_out dict with keys:
+                - text: original sentence
+                - ipa: list of phonemes in IPA format
+                - ph66: list of phoneme class indices (mapped to phoneme_mapped_index)
+                - pg16: list of phoneme group indices (mapped to phoneme_groups_mapper)
+                - words: list of words corresponding to the phonemes
+                - word_num: list of word indices corresponding to the phonemes
+        """
+        return self.phonemizer.phonemize_sentence(text)
 
     def process_segments(self, srt_data, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
         
@@ -654,7 +677,7 @@ class PhonemeTimestampAligner:
             start_time = segment["start"] # segment start time
             end_time = segment["end"]
 
-            ts_out = self.phonemizer.phonemize_sentence(segment["text"])
+            ts_out = self.phonemize_sentence(segment["text"])
             
 
 
@@ -742,7 +765,9 @@ class PhonemeTimestampAligner:
             ]
 
             vs2_segment["words_ts"] = self._align_words(vs2_segment["phoneme_ts"], ts_out.get("word_num", []), ts_out.get("words", []))
-            
+            vs2_segment["frames"] = self.framewise_assortment(vs2_segment, ms_per_frame=self.ms_per_frame, select_ts="group_ts" if (self.output_frames_key.startswith("group")) else "phoneme_ts", select_key=self.output_frames_key, gap_fill_frame_value=phoneme_mapped_index['SIL'])
+            vs2_segment["ms_per_frame"] = self.ms_per_frame
+            vs2_segment["frames_compressed"] = self.frames_compress(vs2_segment["frames"])
             vs2_segments.append(vs2_segment)
         
         if debug: 
@@ -833,12 +858,12 @@ class PhonemeTimestampAligner:
 
         return self.process_segments(srt_data["segments"], audio_wav, ts_out_path, extract_embeddings, vspt_path, do_groups, debug)
     
-    def process_transcription(self, text, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+    def process_sentence(self, text, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
         """
         Process a single transcription and audio waveform, generating vs2 output with timestamps.
 
         Args:
-            text: Transcription text (str).
+            text: Text (str).
             audio_wav: Audio waveform tensor (torch.Tensor).
             ts_out_path: Path to output vs2 file (optional).
             extract_embeddings: Whether to extract embeddings (bool, optional).
@@ -898,16 +923,92 @@ class PhonemeTimestampAligner:
         
         return analysis
 
+    def ceil(self, float_value): 
+        return int(float_value) + (float_value % 1 > 0)
+
+    def frames_compress(self, frames_list):
+        '''
+        Given frames list as [0,0,0,0,1,1,1,1,3,4,5,4,5,2,2,2], return compressed list as [(0,4),(1,4),(3,1),(4,1),(5,1),(4,1),(5,1),(2,3)] where each tuple represents (frame_value, frame_count)
+        '''
+        if not frames_list:
+            return []
+
+        compressed = []
+        current_value = frames_list[0]
+        current_count = 1
+
+        for i in range(1, len(frames_list)):
+            if frames_list[i] == current_value:
+                current_count += 1
+            else:
+                compressed.append((current_value, current_count))
+                current_value = frames_list[i]
+                current_count = 1
+
+        compressed.append((current_value, current_count))
+        return compressed
 
 
-def process_transcription(transcription, audio_path, model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", lang="en-us", duration_max=10, ts_out_path=None, device="cpu"):
+    def framewise_assortment(self, segment_ts_dict, ms_per_frame=10, select_ts="phoneme_ts", select_key="phoneme_idx", gap_fill_frame_value=0, gap_intolerance=1, total_frames=None):
+        """
+        Perform frame-wise assortment of aligned timestamps.
+        Args:
+            segment_ts_dict: Dictionary containing segment-level timestamp information.
+            ms_per_frame: Milliseconds per frame for the frame-wise assortment.
+            gap_fill_frame_value: Value to fill in for gaps in the frame-wise assortment. Default `0` maps to silence for phoneme_ts and group_ts.
+            gap_intolerance: extra gaps (in frames) to fill during the assortment process.
+            total_frames: Expected total number of frames for the segment. If not provided, it will be calculated based on the (segment_duration_ms / ms_per_frame).
+
+        """
+        '''
+        
+        where <segment_ts_dict> is expected to be in the following format:
+        `{"start": 0.0, "end": 1.899546485260771, 
+        "phoneme_ts": [{"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9967153072357178}, {"phoneme_idx": 53, "phoneme_label": "n", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7659286260604858}, {"phoneme_idx": 29, "phoneme_label": "b", "start_ms": 181.69129943847656, "end_ms": 198.2086944580078, "confidence": 0.978035569190979}, {"phoneme_idx": 2, "phoneme_label": "i:", "start_ms": 198.2086944580078, "end_ms": 214.72608947753906, "confidence": 0.8755438327789307}, {"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.31954720616340637}, {"phoneme_idx": 55, "phoneme_label": "ŋ", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.6084036231040955}, {"phoneme_idx": 32, "phoneme_label": "k", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5099813342094421}, {"phoneme_idx": 8, "phoneme_label": "ə", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.8283558487892151}, {"phoneme_idx": 52, "phoneme_label": "m", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.9580954909324646}, {"phoneme_idx": 28, "phoneme_label": "p", "start_ms": 594.6260986328125, "end_ms": 627.660888671875, "confidence": 0.6376017928123474}, {"phoneme_idx": 20, "phoneme_label": "æ", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8247546553611755}, {"phoneme_idx": 59, "phoneme_label": "ɹ", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5612516403198242}, {"phoneme_idx": 8, "phoneme_label": "ə", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.2321549355983734}, {"phoneme_idx": 30, "phoneme_label": "t", "start_ms": 941.4913330078125, "end_ms": 991.0435180664062, "confidence": 0.8491405844688416}, {"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.793982744216919}, {"phoneme_idx": 44, "phoneme_label": "v", "start_ms": 1040.595703125, "end_ms": 1123.1826171875, "confidence": 0.9437225461006165}, {"phoneme_idx": 56, "phoneme_label": "l", "start_ms": 1172.7347412109375, "end_ms": 1222.2869873046875, "confidence": 0.5690894722938538}, {"phoneme_idx": 1, "phoneme_label": "i", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.3983164429664612}, {"phoneme_idx": 52, "phoneme_label": "m", "start_ms": 1354.4261474609375, "end_ms": 1387.4608154296875, "confidence": 0.864766538143158}, {"phoneme_idx": 19, "phoneme_label": "a:", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.056571315973997116}, {"phoneme_idx": 31, "phoneme_label": "d", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.48222440481185913}, {"phoneme_idx": 9, "phoneme_label": "ɚ", "start_ms": 1668.2564697265625, "end_ms": 1684.77392578125, "confidence": 0.9793221354484558}, {"phoneme_idx": 53, "phoneme_label": "n", "start_ms": 1767.3609619140625, "end_ms": 1783.8782958984375, "confidence": 0.11690044403076172}, {"phoneme_idx": 0, "phoneme_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07832614332437515}], 
+        "group_ts": [{"group_idx": 1, "group_label": "front_vowels", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9991531372070312}, {"group_idx": 12, "group_label": "nasals", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7814053893089294}, {"group_idx": 7, "group_label": "voiced_stops", "start_ms": 165.17391967773438, "end_ms": 198.2086944580078, "confidence": 0.4964541494846344}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 198.2086944580078, "end_ms": 231.24346923828125, "confidence": 0.993299126625061}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.21188485622406006}, {"group_idx": 12, "group_label": "nasals", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.5997515320777893}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5166441202163696}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.9326215386390686}, {"group_idx": 12, "group_label": "nasals", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.748111367225647}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 561.59130859375, "end_ms": 627.660888671875, "confidence": 0.995503842830658}, {"group_idx": 4, "group_label": "low_vowels", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8065245151519775}, {"group_idx": 14, "group_label": "rhotics", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5473693013191223}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.15379419922828674}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 924.973876953125, "end_ms": 991.0435180664062, "confidence": 0.9740506410598755}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.7481966018676758}, {"group_idx": 9, "group_label": "voiced_fricatives", "start_ms": 1040.595703125, "end_ms": 1139.7000732421875, "confidence": 0.9575645327568054}, {"group_idx": 13, "group_label": "laterals", "start_ms": 1172.7347412109375, "end_ms": 1205.76953125, "confidence": 0.8053812384605408}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.9730117917060852}, {"group_idx": 12, "group_label": "nasals", "start_ms": 1271.839111328125, "end_ms": 1387.4608154296875, "confidence": 0.540493369102478}, {"group_idx": 4, "group_label": "low_vowels", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.1977187544107437}, {"group_idx": 7, "group_label": "voiced_stops", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.460404634475708}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 1618.704345703125, "end_ms": 1684.77392578125, "confidence": 0.5910724997520447}, {"group_idx": 12, "group_label": "nasals", "start_ms": 1750.843505859375, "end_ms": 1800.3956298828125, "confidence": 0.1525062620639801}, {"group_idx": 0, "group_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07381139695644379}], 
+        "words_ts": [{"word": "in", "start_ms": 33.03478240966797, "end_ms": 82.58695983886719, "confidence": 0.8813219666481018, "ph66": [4, 53], "ipa": ["ɪ", "n"]}, {"word": "being", "start_ms": 181.69129943847656, "end_ms": 396.4173889160156, "confidence": 0.6953825578093529, "ph66": [29, 2, 4, 55], "ipa": ["b", "i:", "ɪ", "ŋ"]}, {"word": "comparatively", "start_ms": 429.4521789550781, "end_ms": 1271.839111328125, "confidence": 0.6755372906724612, "ph66": [32, 8, 52, 28, 20, 59, 8, 30, 4, 44, 56, 1], "ipa": ["k", "ə", "m", "p", "æ", "ɹ", "ə", "t", "ɪ", "v", "l", "i"]}, {"word": "modern", "start_ms": 1354.4261474609375, "end_ms": 1783.8782958984375, "confidence": 0.4999569676816463, "ph66": [52, 19, 31, 9, 53], "ipa": ["m", "a:", "d", "ɚ", "n"]}`
+        
+
+        and `select_ts` and `select_key` are used to specify which timestamps to align.
+        '''
+        aligned_ts = segment_ts_dict[select_ts]
+        # first sort by start_ms
+        aligned_ts.sort(key=lambda x: x["start_ms"])
+
+        
+        if total_frames is None:
+            total_frames = self.ceil((segment_ts_dict["end"] - segment_ts_dict["start"]) * 1000 / ms_per_frame)
+
+        framewise_label = []
+
+        # fill with gap frames
+        if total_frames is not None:
+            framewise_label = [gap_fill_frame_value] * total_frames
+
+        
+        for ts_item in aligned_ts:
+            #print("Processing timestamp item:", ts_item)
+            framewise_start_index = max(int(max(0.0, ts_item["start_ms"]-(ms_per_frame / 2)) / ms_per_frame)-gap_intolerance, 0)
+            framewise_end_index = min(self.ceil(ts_item["end_ms"] / ms_per_frame)+gap_intolerance, total_frames)
+            #print(f"Filling frames {framewise_start_index} to {framewise_end_index} for timestamp item", ts_item)
+            for frame_i in range(framewise_start_index, framewise_end_index):
+                if framewise_label[frame_i]==gap_fill_frame_value or (frame_i > framewise_start_index+gap_intolerance):
+                    
+                    if select_key not in ts_item:
+                        raise ValueError(f"select_key '{select_key}' not found in timestamp item", ts_item)
+                    framewise_label[frame_i] = ts_item[select_key]
+
+        
+        return framewise_label
+
+def process_sentence(transcription, audio_path, model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", lang="en-us", duration_max=10, ts_out_path=None, device="cpu"):
 
     extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
 
     audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 
 
-    return extractor.process_transcription(transcription, audio_wav, ts_out_path=ts_out_path, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False)
+    return extractor.process_sentence(transcription, audio_wav, ts_out_path=ts_out_path, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False)
 
 
 
@@ -958,7 +1059,7 @@ def example_audio_timestamps():
 
     t0 = time.time()
 
-    timestamps = extractor.process_transcription(transcription, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True)
+    timestamps = extractor.process_sentence(transcription, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True)
 
     t1 = time.time()
     print("Timestamps:")

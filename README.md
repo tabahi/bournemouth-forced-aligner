@@ -19,7 +19,7 @@
 
 BFA is a lightning-fast Python library that extracts **phoneme-level timestamps** from audio files with millisecond precision. Built on the powerful [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers professional-grade forced alignment for speech analysis, linguistics research, and audio processing applications.
 
-> 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its transcription
+> 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
 
 ## 🌟 Key Features
 
@@ -87,7 +87,7 @@ import json
 from bournemouth_aligner import PhonemeTimestampAligner
 
 # Configuration
-transcription = "butterfly"
+text_sentence = "butterfly"
 audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
 
@@ -103,8 +103,8 @@ extractor = PhonemeTimestampAligner(
 audio_wav = extractor.load_audio(audio_path)
 
 t0 = time.time()
-timestamps = extractor.process_transcription(
-    transcription, 
+timestamps = extractor.process_sentence(
+    text_sentence, 
     audio_wav, 
     ts_out_path=None, 
     extract_embeddings=False, 
@@ -131,8 +131,24 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
             "start": 0.0,
             "end": 1.2588125,
             "text": "butterfly",
-            "ph66": [29, 10, 58, 9, 43, 56, 23],
-            "pg16": [7, 2, 14, 2, 8, 13, 5],
+            "ph66": [
+                29,
+                10,
+                58,
+                9,
+                43,
+                56,
+                23
+            ],
+            "pg16": [
+                7,
+                2,
+                14,
+                2,
+                8,
+                13,
+                5
+            ],
             "coverage_analysis": {
                 "target_count": 7,
                 "aligned_count": 7,
@@ -142,9 +158,27 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
                 "missing_phonemes": [],
                 "extra_phonemes": []
             },
-            "ipa": ["b", "ʌ", "ɾ", "ɚ", "f", "l", "aɪ"],
-            "word_num": [0, 0, 0, 0, 0, 0, 0],
-            "words": ["butterfly"],
+            "ipa": [
+                "b",
+                "ʌ",
+                "ɾ",
+                "ɚ",
+                "f",
+                "l",
+                "aɪ"
+            ],
+            "word_num": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "words": [
+                "butterfly"
+            ],
             "phoneme_ts": [
                 {
                     "phoneme_idx": 29,
@@ -154,11 +188,97 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
                     "confidence": 0.9849503040313721
                 },
                 {
+                    "phoneme_idx": 10,
+                    "phoneme_label": "ʌ",
+                    "start_ms": 100.70499420166016,
+                    "end_ms": 117.48916625976562,
+                    "confidence": 0.8435571193695068
+                },
+                {
+                    "phoneme_idx": 58,
+                    "phoneme_label": "ɾ",
+                    "start_ms": 134.27333068847656,
+                    "end_ms": 151.0574951171875,
+                    "confidence": 0.3894280791282654
+                },
+                {
+                    "phoneme_idx": 9,
+                    "phoneme_label": "ɚ",
+                    "start_ms": 285.3308410644531,
+                    "end_ms": 302.114990234375,
+                    "confidence": 0.3299962282180786
+                },
+                {
+                    "phoneme_idx": 43,
+                    "phoneme_label": "f",
+                    "start_ms": 369.2516784667969,
+                    "end_ms": 386.03582763671875,
+                    "confidence": 0.9150863289833069
+                },
+                {
+                    "phoneme_idx": 56,
+                    "phoneme_label": "l",
+                    "start_ms": 520.3091430664062,
+                    "end_ms": 553.8775024414062,
+                    "confidence": 0.9060741662979126
+                },
+                {
                     "phoneme_idx": 23,
                     "phoneme_label": "aɪ",
                     "start_ms": 604.22998046875,
                     "end_ms": 621.01416015625,
                     "confidence": 0.21650740504264832
+                }
+            ],
+            "group_ts": [
+                {
+                    "group_idx": 7,
+                    "group_label": "voiced_stops",
+                    "start_ms": 33.56833267211914,
+                    "end_ms": 50.35249710083008,
+                    "confidence": 0.9911064505577087
+                },
+                {
+                    "group_idx": 2,
+                    "group_label": "central_vowels",
+                    "start_ms": 100.70499420166016,
+                    "end_ms": 117.48916625976562,
+                    "confidence": 0.8446590304374695
+                },
+                {
+                    "group_idx": 14,
+                    "group_label": "rhotics",
+                    "start_ms": 134.27333068847656,
+                    "end_ms": 151.0574951171875,
+                    "confidence": 0.28526052832603455
+                },
+                {
+                    "group_idx": 2,
+                    "group_label": "central_vowels",
+                    "start_ms": 285.3308410644531,
+                    "end_ms": 302.114990234375,
+                    "confidence": 0.7377423048019409
+                },
+                {
+                    "group_idx": 8,
+                    "group_label": "voiceless_fricatives",
+                    "start_ms": 352.4674987792969,
+                    "end_ms": 402.8199768066406,
+                    "confidence": 0.9877637028694153
+                },
+                {
+                    "group_idx": 13,
+                    "group_label": "laterals",
+                    "start_ms": 520.3091430664062,
+                    "end_ms": 553.8775024414062,
+                    "confidence": 0.9163824915885925
+                },
+                {
+                    "group_idx": 5,
+                    "group_label": "diphthongs",
+                    "start_ms": 604.22998046875,
+                    "end_ms": 621.01416015625,
+                    "confidence": 0.4117060899734497
                 }
             ],
             "words_ts": [
@@ -167,9 +287,212 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
                     "start_ms": 33.56833267211914,
                     "end_ms": 621.01416015625,
                     "confidence": 0.6550856615815844,
-                    "ph66": [29, 10, 58, 9, 43, 56, 23],
-                    "ipa": ["b", "ʌ", "ɾ", "ɚ", "f", "l", "aɪ"]
+                    "ph66": [
+                        29,
+                        10,
+                        58,
+                        9,
+                        43,
+                        56,
+                        23
+                    ],
+                    "ipa": [
+                        "b",
+                        "ʌ",
+                        "ɾ",
+                        "ɚ",
+                        "f",
+                        "l",
+                        "aɪ"
+                    ]
                 }
+            ],
+            "frames": [
+                0,
+                29,
+                29,
+                29,
+                29,
+                29,
+                29,
+                0,
+                10,
+                10,
+                10,
+                10,
+                10,
+                58,
+                58,
+                58,
+                58,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                9,
+                9,
+                9,
+                9,
+                9,
+                0,
+                0,
+                0,
+                43,
+                43,
+                43,
+                43,
+                43,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                56,
+                56,
+                56,
+                56,
+                56,
+                56,
+                56,
+                0,
+                23,
+                23,
+                23,
+                23,
+                23,
+                23,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "ms_per_frame": 10,
+            "frames_compressed": [
+                [
+                    0,
+                    1
+                ],
+                [
+                    29,
+                    6
+                ],
+                [
+                    0,
+                    1
+                ],
+                [
+                    10,
+                    5
+                ],
+                [
+                    58,
+                    4
+                ],
+                [
+                    0,
+                    10
+                ],
+                [
+                    9,
+                    5
+                ],
+                [
+                    0,
+                    3
+                ],
+                [
+                    43,
+                    5
+                ],
+                [
+                    0,
+                    10
+                ],
+                [
+                    56,
+                    7
+                ],
+                [
+                    0,
+                    1
+                ],
+                [
+                    23,
+                    6
+                ],
+                [
+                    0,
+                    62
+                ]
             ]
         }
     ]
@@ -190,9 +513,183 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 | `group_ts` | Phoneme group timestamps | Often more accurate |
 | `word_num` | Word index for each phoneme | Maps phonemes to words |
 | `words_ts` | Word-level timestamps | Derived from phonemes |
+| `frames`   | List of Sequential frames of phoneme_idx (default) | Prealigned for 10ms (default) frames|
+| `ms_per_frame`   | frames length value for `frames` assortment | Modify: PhonemeTimestampAligner(ms_per_frame=10) |
+| `frames_compressed`   | List of `frames` compressed as [phoneme_idx, count] | Suitable for FastSpeech2 format |
 | `coverage_analysis` | Alignment quality metrics | Insertions/deletions |
 
 ---
+
+## 🛠️ Methods
+
+### Initialization
+
+```python
+PhonemeTimestampAligner(
+    model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
+    cupe_ckpt_path=None,
+    lang="en-us",
+    duration_max=10,
+    ms_per_frame=10,
+    output_frames_key="phoneme_idx",
+    device="cpu",
+    boost_targets=True,
+    enforce_minimum=True
+)
+```
+
+**Parameters:**
+- `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). It's automatically downloaded and cached if available.
+- `cupe_ckpt_path`: Local path to the model checkpoint.
+- `lang`: Language code for phonemization ([espeak codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)).
+- `duration_max`: Maximum segment duration (seconds, for batch padding).
+- `ms_per_frame`: Frame size in milliseconds (controls output frame rate, not alignment accuracy).
+- `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
+- `device`: Inference device (`cpu` or `cuda`).
+- `boost_targets`: Boost target phoneme probabilities for better alignment.
+- `enforce_minimum`: Enforce minimum probability for target phonemes.
+
+---
+
+### Process SRT File
+
+```python
+PhonemeTimestampAligner.process_srt_file(
+    srt_path,
+    audio_path,
+    ts_out_path=None,
+    extract_embeddings=False,
+    vspt_path=None,
+    do_groups=True,
+    debug=True
+)
+```
+
+**Parameters:**
+- `srt_path`: Path to input SRT file (whisper JSON format).
+- `audio_path`: Path to audio file.
+- `ts_out_path`: Output path for timestamps (vs2 format).
+- `extract_embeddings`: Extract embeddings.
+- `vspt_path`: Path to save embeddings (`.pt` file).
+- `do_groups`: Extract group timestamps.
+- `debug`: Enable debug output.
+
+**Returns:**  
+- `timestamps_dict`: Dictionary with extracted timestamps.
+
+---
+
+### Process text sentences
+
+```python
+PhonemeTimestampAligner.process_sentence(
+    text,
+    audio_wav,
+    ts_out_path=None,
+    extract_embeddings=False,
+    vspt_path=None,
+    do_groups=True,
+    debug=False
+)
+```
+
+**Parameters:**
+- `text`: Sentence/text.
+- `audio_wav`: Audio waveform tensor (`torch.Tensor`).
+- `ts_out_path`: Output path for timestamps (optional).
+- `extract_embeddings`: Extract embeddings (optional).
+- `vspt_path`: Path to save embeddings (`.pt`, optional).
+- `do_groups`: Extract group timestamps (optional).
+- `debug`: Enable debug output (optional).
+
+---
+### 🗣️ Convert Text to Phonemes
+
+Phonemization in BFA is powered by the [phonemizer](https://github.com/bootphon/phonemizer) package, using the [espeak-ng](https://github.com/espeak-ng/espeak-ng) backend for robust multi-language support.
+
+```python
+PhonemeTimestampAligner.phonemize_sentence(text)
+```
+
+**Optional:** Change the espeak language after initialization:
+```python
+PhonemeTimestampAligner.phonemizer.set_backend(language='en')
+```
+
+**Method Description:**
+
+Phonemizes a sentence and returns a detailed mapping:
+
+- `text`: Original input sentence
+- `ipa`: List of phonemes in IPA format
+- `ph66`: List of phoneme class indices (mapped to 66-class set)
+- `pg16`: List of phoneme group indices (16 broad categories)
+- `words`: List of words corresponding to phonemes
+- `word_num`: Word indices for each phoneme
+
+**Example Usage:**
+```python
+result = PhonemeTimestampAligner.phonemize_sentence("butterfly")
+print(result["ipa"])    # ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']
+print(result["ph66"])  # [29, 10, 58, 9, 43, 56, 23]
+print(result["pg16"])  # [7, 2, 14, 2, 8, 13, 5]
+```
+
+
+
+### Extract Timestamps from Segment
+
+```python
+PhonemeTimestampAligner.extract_timestamps_from_segment(
+    wav,
+    wav_len,
+    phoneme_sequence,
+    start_offset_time=0,
+    group_sequence=None,
+    extract_embeddings=True,
+    do_groups=True,
+    debug=True
+)
+```
+
+**Parameters:**
+- `wav`: Audio tensor for the segment. Shape: [1, samples]
+- `wav_len`: Length of the audio segment (samples).
+- `phoneme_sequence`: List/tensor of phoneme indices (ph66)
+- `start_offset_time`: Segment start offset (seconds).
+- `group_sequence`: Optional group indices (pg16).
+- `extract_embeddings`: Extract pooled phoneme embeddings.
+- `do_groups`: Extract phoneme group timestamps.
+- `debug`: Enable debug output.
+
+**Returns:**
+- `timestamp_dict`: Contains phoneme and group timestamps.
+- `pooled_embeddings_phonemes`: Pooled phoneme embeddings or `None`.
+- `pooled_embeddings_groups`: Pooled group embeddings or `None`.
+
+---
+
+### Convert to TextGrid
+
+```python
+PhonemeTimestampAligner.convert_to_textgrid(
+    timestamps_dict,
+    output_file=None,
+    include_confidence=False
+)
+```
+
+**Description:**  
+Converts VS2 timestamp data to [Praat TextGrid](https://www.fon.hum.uva.nl/praat/manual/TextGrid_file_format.html) format.
+
+**Parameters:**
+- `timestamps_dict`: Timestamp dictionary (from alignment).
+- `output_file`: Path to save TextGrid file (optional).
+- `include_confidence`: Include confidence values in output (optional).
+
+**Returns:**  
+- `textgrid_content`: TextGrid file content as string.
+
 
 ## 📈 Alignment Accuracy
 
@@ -338,10 +835,10 @@ audio_wav = (audio_wav / rms) if rms > 0 else audio_wav
 # Step 2b: Simplified loading
 # audio_wav = extractor.load_audio(audio_path)
 
-# Step 3: Process transcription
-transcription = "ah What!"
-timestamps = extractor.process_transcription(
-    transcription,
+# Step 3: Process text_sentence
+text_sentence = "ah What!"
+timestamps = extractor.process_sentence(
+    text_sentence,
     audio_wav,
     ts_out_path=None,
     extract_embeddings=False,

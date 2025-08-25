@@ -1,5 +1,12 @@
 # Changelog
 
+
+
+## [0.1.1] - 2024-08-24
+- Renamed `process_transcription` to `process_sentence`
+- Framewise assortment of phoneme_idx with variable output framerate.
+- `phoneme_id_to_label`, `phoneme_label_to_id` and `group_id_to_label`, `group_label_to_id` and `phoneme_id_to_group_id`.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
