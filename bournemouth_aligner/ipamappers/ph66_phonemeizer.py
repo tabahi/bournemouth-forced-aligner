@@ -6,7 +6,7 @@ from phonemizer.separator import Separator
 from unicodedata import normalize
 import re
 import json
-from .mapper66 import phoneme_mapper, phoneme_mapped_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
+from .ph66_mapper import phoneme_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
 
 
 SIL_PHN="SIL"
@@ -51,6 +51,11 @@ class Phonemizer:
             self.phoneme_vocab_mapped_counts.update({value: 0})
             
         #print(f"Mapping: {len(phoneme_mapper)} phonemes onto {len(self.phoneme_vocab_mapped_counts)} phonemes")
+
+        # set mapping dicts:
+        self.index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
+        self.index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
+        self.phoneme_id_to_group_id = phoneme_groups_mapper
         
         if (language is not None):
             self.set_backend(language=language)

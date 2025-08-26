@@ -17,7 +17,7 @@
 
 ## ✨ Overview
 
-BFA is a lightning-fast Python library that extracts **phoneme-level timestamps** from audio files with millisecond precision. Built on the powerful [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers professional-grade forced alignment for speech analysis, linguistics research, and audio processing applications.
+BFA is a lightning-fast Python library that extracts **phoneme-level timestamps** from audio files with millisecond precision. Built on the powerful [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
 
 > 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
 
@@ -56,6 +56,9 @@ BFA is a lightning-fast Python library that extracts **phoneme-level timestamps*
 ```bash
 # Install the package
 pip install bournemouth-forced-aligner
+
+# Alternatively, install the latest library directly from github:
+# pip install git+https://github.com/tabahi/bournemouth-forced-aligner.git
 
 # Install system dependencies
 apt-get install espeak-ng ffmpeg
@@ -514,7 +517,7 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 | `word_num` | Word index for each phoneme | Maps phonemes to words |
 | `words_ts` | Word-level timestamps | Derived from phonemes |
 | `frames`   | List of Sequential frames of phoneme_idx (default) | Prealigned for 10ms (default) frames|
-| `ms_per_frame`   | frames length value for `frames` assortment | Modify: PhonemeTimestampAligner(ms_per_frame=10) |
+| `ms_per_frame`   | frames length value for `frames` assortment | Set PhonemeTimestampAligner(ms_per_frame=10.67) for BigVGAN |
 | `frames_compressed`   | List of `frames` compressed as [phoneme_idx, count] | Suitable for FastSpeech2 format |
 | `coverage_analysis` | Alignment quality metrics | Insertions/deletions |
 
@@ -589,6 +592,7 @@ PhonemeTimestampAligner.process_sentence(
     extract_embeddings=False,
     vspt_path=None,
     do_groups=True,
+    compressed_only=False,
     debug=False
 )
 ```
@@ -600,6 +604,7 @@ PhonemeTimestampAligner.process_sentence(
 - `extract_embeddings`: Extract embeddings (optional).
 - `vspt_path`: Path to save embeddings (`.pt`, optional).
 - `do_groups`: Extract group timestamps (optional).
+- `compressed_only`: Whether to only return compressed frames (bool, optional) and skip the full length frames assortment.
 - `debug`: Enable debug output (optional).
 
 ---
@@ -648,6 +653,7 @@ PhonemeTimestampAligner.extract_timestamps_from_segment(
     group_sequence=None,
     extract_embeddings=True,
     do_groups=True,
+    compressed_only=False,
     debug=True
 )
 ```
@@ -660,6 +666,7 @@ PhonemeTimestampAligner.extract_timestamps_from_segment(
 - `group_sequence`: Optional group indices (pg16).
 - `extract_embeddings`: Extract pooled phoneme embeddings.
 - `do_groups`: Extract phoneme group timestamps.
+- `compressed_only`:  Whether to only return compressed frames (bool, optional) and skip the full length frames assortment. Enable it for longer clips to avoid huge JSON files.
 - `debug`: Enable debug output.
 
 **Returns:**

@@ -22,12 +22,12 @@ import traceback
 from .cupe2i.model2i import CUPEEmbeddingsExtractor
 from .cupe2i.windowing import slice_windows, stich_window_predictions, calc_spec_len_ext
 from .forced_alignment import AlignmentUtils 
-from .mapper66 import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
-from . import universal_phonemeizer
+#from .ipamappers.ph66_mapper import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
+from .ipamappers import ph66_phonemeizer
 from .utils import dict_to_textgrid
 # Create reverse mappings for interpretability
-index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
-index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
+#index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
+#index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
 
 
 
@@ -38,7 +38,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', duration_max=10, ms_per_frame=10, output_frames_key="phoneme_idx", device="cpu", boost_targets=True, enforce_minimum=True):
+    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, ms_per_frame=10.0, output_frames_key="phoneme_idx", device="cpu", boost_targets=True, enforce_minimum=True):
         """
         Initialize the phoneme timestamp extractor.
         
@@ -46,8 +46,9 @@ class PhonemeTimestampAligner:
             model_name: Name of the pre-trained model to use. Use the ckpt base filenames from:  https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
             cupe_ckpt_path: Path to the CUPE model checkpoint. Download from: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
             lang: Language for phonemization (use espeak lang codes, see https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)
+            mapper: Phoneme mapper to use (default: "ph66")
             duration_max: Maximum duration in seconds (Padding purposes when using batch processing). You can set it to 10 to 60 seconds.
-            ms_per_frame: Milliseconds per frame in the framewise assortment of phoneme labels. You can set it to 1 to 80ms if your next task requires a specific frame rate. This does not effect the model or the alignment accuracy. See `framewise_assortment()`.
+            ms_per_frame: Milliseconds per frame in the framewise assortment of phoneme labels. Set to `-1` to disable framewise assortment. Set to 1 to 80ms if your next task requires a specific frame rate. This does not effect the model or the alignment accuracy. See `framewise_assortment()`.
             output_frames_key: Set which of the ouputs to use to assort frames (using ms_per_frame). Options: "phoneme_idx"(default), "phoneme_label", "group_idx", "group_label"
             device: Device to run inference on
             boost_targets: Boost the probabilities of target phonemes to ensure they can be aligned.
@@ -75,16 +76,23 @@ class PhonemeTimestampAligner:
         self.seg_duration_min_samples = int(self.seg_duration_min * self.resampler_sample_rate)
         self.seg_duration_max = duration_max  # seconds
         self.wav_len_max = int(self.seg_duration_max * self.resampler_sample_rate)
-        self.phonemizer = universal_phonemeizer.Phonemizer(language=lang,remove_noise_phonemes=True)
+
+        self.selected_mapper = mapper
+        if self.selected_mapper != "ph66":
+            raise ValueError("Currently only 'ph66' mapper is supported.")
+
+        if (self.selected_mapper == "ph66"):
+            self.phonemizer = ph66_phonemeizer.Phonemizer(language=lang,remove_noise_phonemes=True)
 
         self.phonemes_key = self.phonemizer.phonemes_key
         self.phoneme_groups_key = self.phonemizer.phoneme_groups_key
 
-        self.phoneme_id_to_label = index_to_plabel
-        self.phoneme_label_to_id = {label: idx for idx, label in index_to_plabel.items()}
-        self.group_id_to_label = index_to_glabel
-        self.group_label_to_id = {label: idx for idx, label in index_to_glabel.items()}
-        self.phoneme_id_to_group_id = phoneme_groups_mapper
+        self.phoneme_id_to_label = self.phonemizer.index_to_plabel
+        self.phoneme_label_to_id = {label: idx for idx, label in self.phoneme_id_to_label.items()}
+        self.group_id_to_label = self.phonemizer.index_to_glabel
+        self.group_label_to_id = {label: idx for idx, label in self.group_id_to_label.items()}
+        self.phoneme_id_to_group_id = self.phonemizer.phoneme_id_to_group_id
+
 
         self._setup_config()
         self._setup_decoders()
@@ -356,7 +364,7 @@ class PhonemeTimestampAligner:
         log_probs_p = F.log_softmax(logits_class, dim=2)
         
         if debug:
-            print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
+            print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
             print(f"Spectral length: {spectral_len}")
         
         t0 = time.time()
@@ -395,7 +403,7 @@ class PhonemeTimestampAligner:
             
             missing_phonemes = set(target_phoneme_ids) - set(aligned_phoneme_ids)
             if missing_phonemes:
-                print(f"WARNING: Still missing {len(missing_phonemes)} phonemes: {[index_to_plabel.get(p, f'UNK_{p}') for p in missing_phonemes]}")
+                print(f"WARNING: Still missing {len(missing_phonemes)} phonemes: {[self.phonemizer.index_to_plabel.get(p, f'UNK_{p}') for p in missing_phonemes]}")
             else:
                 print("SUCCESS: All target phonemes were aligned!")
         
@@ -415,7 +423,7 @@ class PhonemeTimestampAligner:
             print("Predicted groups", len(frame_groups[0]))
             print("start_offset_time", start_offset_time)
             for i, (ph, grp) in enumerate(zip(frame_phonemes[0], frame_groups[0])):
-                print(f"{i+1:2d}: {index_to_plabel[ph[0]]:>3s}, {index_to_glabel[grp[0]]:>3s}  -> ({grp[4]:.3f} - {grp[5]:.3f}), Confidence: {grp[3]:.3f}")
+                print(f"{i+1:2d}: {self.phonemizer.index_to_plabel[ph[0]]:>3s}, {self.phonemizer.index_to_glabel[grp[0]]:>3s}  -> ({grp[4]:.3f} - {grp[5]:.3f}), Confidence: {grp[3]:.3f}")
         
         
         timestamp_dict = {
@@ -665,8 +673,8 @@ class PhonemeTimestampAligner:
         """
         return self.phonemizer.phonemize_sentence(text)
 
-    def process_segments(self, srt_data, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
-        
+    def process_segments(self, srt_data, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, compressed_only=False, debug=False):
+
         # Process each segment
         vs2_segments = [] # timestamps for each phoneme in the segment
         vspt_g_embds = []
@@ -691,7 +699,7 @@ class PhonemeTimestampAligner:
                 print(f"Skipping segment {i+1} due to insufficient phoneme sequence length: {len(phoneme_sequence)}")
                 continue
 
-            phoneme_labels = [index_to_plabel.get(ph, f'UNK_{ph}') for ph in phoneme_sequence]
+            phoneme_labels = [self.phonemizer.index_to_plabel.get(ph, f'UNK_{ph}') for ph in phoneme_sequence]
             if debug: 
                 print(f"Expected phonemes: {phoneme_labels}")
             
@@ -703,7 +711,7 @@ class PhonemeTimestampAligner:
             coverage_analysis = self.analyze_alignment_coverage(
                 phoneme_sequence, 
                 result["phoneme_timestamps"], 
-                index_to_plabel
+                self.phonemizer.index_to_plabel
             )
         
             if debug:
@@ -744,7 +752,7 @@ class PhonemeTimestampAligner:
             vs2_segment["phoneme_ts"] = [
                 {
                     "phoneme_idx": int(ph_idx),
-                    "phoneme_label": index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
+                    "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
                     "confidence": float(conf)
@@ -756,7 +764,7 @@ class PhonemeTimestampAligner:
             vs2_segment["group_ts"] = [
                 {
                     "group_idx": int(grp_idx),
-                    "group_label": index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
+                    "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
                     "confidence": float(conf)
@@ -765,9 +773,13 @@ class PhonemeTimestampAligner:
             ]
 
             vs2_segment["words_ts"] = self._align_words(vs2_segment["phoneme_ts"], ts_out.get("word_num", []), ts_out.get("words", []))
-            vs2_segment["frames"] = self.framewise_assortment(vs2_segment, ms_per_frame=self.ms_per_frame, select_ts="group_ts" if (self.output_frames_key.startswith("group")) else "phoneme_ts", select_key=self.output_frames_key, gap_fill_frame_value=phoneme_mapped_index['SIL'])
+            if self.ms_per_frame > 0:
+                gap_fill_value = self.phonemizer.phoneme_index['SIL'] if 'SIL' in self.phonemizer.phoneme_index else 0
+                frames_assortment = self.framewise_assortment(vs2_segment, ms_per_frame=self.ms_per_frame, select_ts="group_ts" if (self.output_frames_key.startswith("group")) else "phoneme_ts", select_key=self.output_frames_key, gap_fill_frame_value=gap_fill_value)
+                if (not compressed_only):
+                    vs2_segment["frames"] = frames_assortment
+                vs2_segment["frames_compressed"] = self.frames_compress(vs2_segment["frames"])
             vs2_segment["ms_per_frame"] = self.ms_per_frame
-            vs2_segment["frames_compressed"] = self.frames_compress(vs2_segment["frames"])
             vs2_segments.append(vs2_segment)
         
         if debug: 
@@ -856,9 +868,9 @@ class PhonemeTimestampAligner:
 
         audio_wav = self.load_audio(audio_path)
 
-        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path, extract_embeddings, vspt_path, do_groups, debug)
+        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path, extract_embeddings, vspt_path, do_groups, False, debug)
     
-    def process_sentence(self, text, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+    def process_sentence(self, text, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, compressed_only=False, debug=False):
         """
         Process a single transcription and audio waveform, generating vs2 output with timestamps.
 
@@ -869,13 +881,14 @@ class PhonemeTimestampAligner:
             extract_embeddings: Whether to extract embeddings (bool, optional).
             vspt_path: Path to save embeddings (.pt file, optional).
             do_groups: Whether to extract group timestamps (bool, optional).
+            compressed_only: Whether to only return compressed frames (bool, optional) and skip the full length frames assortment.
             debug: Whether to print debug information (bool, optional).
         """
 
         duration = audio_wav.shape[1] / self.sample_rate
         srt_data = {"segments": [{"start": 0.0, "end": duration, "text": text.strip()}]}  # create whisper style SRT data
 
-        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
+        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, compressed_only=compressed_only, debug=debug)
 
     def convert_to_textgrid(self, timestamps_dict, output_file=None, include_confidence=False):
         """
@@ -884,7 +897,7 @@ class PhonemeTimestampAligner:
 
         textgrid_content = dict_to_textgrid(timestamps_dict, output_file=None, include_confidence=include_confidence)
 
-        if output_file:
+        if output_file and textgrid_content is not None:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(textgrid_content)
 
@@ -949,7 +962,7 @@ class PhonemeTimestampAligner:
         return compressed
 
 
-    def framewise_assortment(self, segment_ts_dict, ms_per_frame=10, select_ts="phoneme_ts", select_key="phoneme_idx", gap_fill_frame_value=0, gap_intolerance=1, total_frames=None):
+    def framewise_assortment(self, segment_ts_dict, ms_per_frame=10.0, select_ts="phoneme_ts", select_key="phoneme_idx", gap_fill_frame_value=0, gap_intolerance=1, total_frames=None):
         """
         Perform frame-wise assortment of aligned timestamps.
         Args:
