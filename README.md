@@ -21,6 +21,7 @@ BFA is a lightning-fast Python library that extracts **phoneme-level timestamps*
 
 > 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
 
+
 ## 🌟 Key Features
 
 <div align="center">
@@ -48,7 +49,6 @@ BFA is a lightning-fast Python library that extracts **phoneme-level timestamps*
 - **📋 Multiple output formats**: JSON and TextGrid for Praat integration
 
 ---
-
 ## 🚀 Installation
 
 ### 📦 From PyPI (Recommended)
@@ -98,7 +98,7 @@ model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at
 extractor = PhonemeTimestampAligner(
     model_name=model_name, 
     lang='en-us', 
-    duration_max=10, 
+    duration_max=10,   # keep audio segments under 60
     device='cpu'
 )
 
@@ -311,191 +311,11 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
                 }
             ],
             "frames": [
-                0,
-                29,
-                29,
-                29,
-                29,
-                29,
-                29,
-                0,
-                10,
-                10,
-                10,
-                10,
-                10,
-                58,
-                58,
-                58,
-                58,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                9,
-                9,
-                9,
-                9,
-                9,
-                0,
-                0,
-                0,
-                43,
-                43,
-                43,
-                43,
-                43,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                56,
-                56,
-                56,
-                56,
-                56,
-                56,
-                56,
-                0,
-                23,
-                23,
-                23,
-                23,
-                23,
-                23,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0
+               0,29,29,29,29,29,29,0,10,10,10,10,10,58,58,58,58,0,0,0,0,0,0,0,0,0,0,9,9,9,9,9,0,0,0,43,43,43,43,43,0,0,0,0,0,0,0,0,0,0,56,56,56,56,56,56,56,0,23,23,23,23,23,23,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
             ],
             "ms_per_frame": 10,
             "frames_compressed": [
-                [
-                    0,
-                    1
-                ],
-                [
-                    29,
-                    6
-                ],
-                [
-                    0,
-                    1
-                ],
-                [
-                    10,
-                    5
-                ],
-                [
-                    58,
-                    4
-                ],
-                [
-                    0,
-                    10
-                ],
-                [
-                    9,
-                    5
-                ],
-                [
-                    0,
-                    3
-                ],
-                [
-                    43,
-                    5
-                ],
-                [
-                    0,
-                    10
-                ],
-                [
-                    56,
-                    7
-                ],
-                [
-                    0,
-                    1
-                ],
-                [
-                    23,
-                    6
-                ],
-                [
-                    0,
-                    62
-                ]
+                [0,1],[29,6],[0,1],[10,5],[58,4],[0,10],[9,5],[0,3],[43,5],[0,10],[56,7],[0,1],[23,6],[0,62]
             ]
         }
     ]
@@ -545,7 +365,7 @@ PhonemeTimestampAligner(
 - `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). It's automatically downloaded and cached if available.
 - `cupe_ckpt_path`: Local path to the model checkpoint.
 - `lang`: Language code for phonemization ([espeak codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)).
-- `duration_max`: Maximum segment duration (seconds, for batch padding).
+- `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
 - `ms_per_frame`: Frame size in milliseconds (controls output frame rate, not alignment accuracy).
 - `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
 - `device`: Inference device (`cpu` or `cuda`).
@@ -728,7 +548,6 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 
 ![Butterfly Alignment Example](examples/samples/images/butterfly_praat.png)
 
-> **Note**: Timing distance error is ~40ms on TIMIT dataset. BFA excels in real-time applications where MFA's 5x slower processing becomes prohibitive.
 
 ---
 
@@ -754,6 +573,28 @@ graph LR
 4. **📊 Confidence Scoring**: Provides alignment quality metrics
 
 > **Performance Note**: The algorithm is CPU-optimized due to iterative loops. GPU acceleration is planned for future releases.
+
+
+> **Note**: Timing distance error is ~40ms on TIMIT dataset. BFA excels in real-time applications where MFA's 5x slower processing becomes prohibitive.
+### 📊 Alignment Error Analysis
+
+**Alignment error histogram on [Buckeye Corpus](https://buckeyecorpus.osu.edu/):**
+
+<div align="center">
+    <img src="examples/samples/images/alignment_distance_histogram_log_500ms.png" alt="Alignment Error Histogram - Buckeye Corpus" width="600"/>
+</div>
+
+- Most phoneme boundaries are aligned within **±40ms** of ground truth.
+- Errors above **500ms** are rare and typically due to ambiguous or noisy segments.
+
+**For comparison:**  
+See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
+
+
+
+
+> ⚠️ **Best Performance**: For optimal results, use audio segments **under 30 seconds**. For longer audio, segment first using Whisper or VAD. Audio duration above 60 seconds creates too many possibilities for the Viterbi algorithm to handle properly.
+
 
 ---
 
@@ -951,7 +792,7 @@ balign german_audio.wav transcription.srt.json output.json --lang de
 # GPU acceleration
 balign large_audio.wav transcription.srt.json output.json --device cuda
 
-# Custom model with extended duration
+# Custom model with extended duration (avoid longer than 1 minute)
 balign audio.wav transcription.srt.json output.json \
     --model "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" \
     --duration-max 15 \
