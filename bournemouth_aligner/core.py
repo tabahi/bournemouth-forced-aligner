@@ -38,7 +38,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, ms_per_frame=10.0, output_frames_key="phoneme_idx", device="cpu", boost_targets=True, enforce_minimum=True):
+    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, ms_per_frame=10.0, output_frames_key="phoneme_idx", device="cpu", boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
         """
         Initialize the phoneme timestamp extractor.
         
@@ -52,7 +52,8 @@ class PhonemeTimestampAligner:
             output_frames_key: Set which of the ouputs to use to assort frames (using ms_per_frame). Options: "phoneme_idx"(default), "phoneme_label", "group_idx", "group_label"
             device: Device to run inference on
             boost_targets: Boost the probabilities of target phonemes to ensure they can be aligned.
-            enforce_minimum: Ensure target phonemes have minimum probability at each frame.
+            enforce_minimum: Ensure target phonemes meet a minimum probability threshold in the predicted frames.
+            enforce_all_targets: Whether to enforce all target phonemes to be present. Band-aid postprocessing patch: It will insert phonemes missed by viterbi decoding at their expected positions based on targets.
         """
         self.device = device
 
@@ -99,6 +100,7 @@ class PhonemeTimestampAligner:
 
         self.boost_targets = boost_targets
         self.enforce_minimum = enforce_minimum
+        self.enforce_all_targets = enforce_all_targets
 
         # Initialize audio processing
         self.default_resampler = torchaudio.transforms.Resample(
@@ -377,7 +379,8 @@ class PhonemeTimestampAligner:
             true_seqs_lens=ph_seq_lens, 
             forced_alignment=True,
             boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum
+            enforce_minimum=self.enforce_minimum,
+            enforce_all_targets=self.enforce_all_targets
         )
         
         frame_phonemes = self.alignment_utils_p.decode_alignments(
@@ -387,7 +390,8 @@ class PhonemeTimestampAligner:
             true_seqs_lens=ph_seq_lens, 
             forced_alignment=True,
             boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum
+            enforce_minimum=self.enforce_minimum,
+            enforce_all_targets=self.enforce_all_targets
         )
         
         

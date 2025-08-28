@@ -79,7 +79,7 @@ class ViterbiDecoder:
         return modified_log_probs
     
     def decode_with_forced_alignment(self, log_probs, true_sequence, return_scores=False, 
-                                   boost_targets=True, enforce_minimum=True):
+                                   boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
         """
         Decode that ensures all target phonemes are aligned.
         
@@ -89,7 +89,8 @@ class ViterbiDecoder:
             return_scores: Whether to return alignment scores
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
-            
+            enforce_all_targets: Whether to enforce all target phonemes to be present
+
         Returns:
             frame_phonemes: Frame-level phoneme assignments
             alignment_score: Optional alignment score
@@ -127,10 +128,11 @@ class ViterbiDecoder:
         frame_phonemes = self._viterbi_decode(modified_log_probs, ctc_path, ctc_len)
         
         # Post-process to ensure all target phonemes appear
-        frame_phonemes = self._ensure_all_phonemes_aligned(
-            frame_phonemes, true_sequence, modified_log_probs
-        )
-        
+        if enforce_all_targets:
+            frame_phonemes = self._ensure_all_phonemes_aligned(
+                frame_phonemes, true_sequence, modified_log_probs
+            )
+
         if return_scores:
             alignment_score = self._calculate_alignment_score(log_probs, frame_phonemes)
             return frame_phonemes, alignment_score
@@ -345,7 +347,7 @@ class AlignmentUtils: # 2025-08-07
     
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
                          true_seqs_lens=None, forced_alignment=True, 
-                         boost_targets=True, enforce_minimum=True):
+                         boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
         """
         Decode alignments with better forced alignment.
         
@@ -357,7 +359,8 @@ class AlignmentUtils: # 2025-08-07
             forced_alignment: Whether to use forced alignment
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
-            
+            enforce_all_targets: Whether to enforce all target phonemes to be present
+
         Returns:
             List of frame-level alignments
         """
@@ -389,7 +392,8 @@ class AlignmentUtils: # 2025-08-07
                             log_probs_seq, 
                             true_seq,
                             boost_targets=boost_targets,
-                            enforce_minimum=enforce_minimum
+                            enforce_minimum=enforce_minimum,
+                            enforce_all_targets=enforce_all_targets
                         )
                     
                     all_frame_phonemes.append(frame_phonemes)

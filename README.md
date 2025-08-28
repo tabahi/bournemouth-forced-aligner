@@ -113,6 +113,7 @@ timestamps = extractor.process_sentence(
     extract_embeddings=False, 
     vspt_path=None, 
     do_groups=True, 
+    compressed_only=False,
     debug=True
 )
 t1 = time.time()
@@ -357,7 +358,8 @@ PhonemeTimestampAligner(
     output_frames_key="phoneme_idx",
     device="cpu",
     boost_targets=True,
-    enforce_minimum=True
+    enforce_minimum=True,
+    enforce_all_targets=True,
 )
 ```
 
@@ -371,6 +373,7 @@ PhonemeTimestampAligner(
 - `device`: Inference device (`cpu` or `cuda`).
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
 - `enforce_minimum`: Enforce minimum probability for target phonemes.
+- `enforce_all_targets`: Band-aid postprocessing patch. It will insert phonemes missed by viterbi decoding at their expected positions based on target positions.
 
 ---
 
@@ -518,9 +521,50 @@ Converts VS2 timestamp data to [Praat TextGrid](https://www.fon.hum.uva.nl/praat
 - `textgrid_content`: TextGrid file content as string.
 
 
-## 📈 Alignment Accuracy
 
-### 🔬 Comparative Analysis
+### 📊 Alignment Error Analysis
+
+**Alignment error histogram on [Buckeye Corpus](https://buckeyecorpus.osu.edu/):**
+
+<div align="center">
+    <img src="examples/samples/images/alignment_distance_histogram_log_500ms.png" alt="Alignment Error Histogram - Buckeye Corpus" width="600"/>
+</div>
+
+- Most phoneme boundaries are aligned within **±40ms** of ground truth.
+- Errors above **500ms** are rare and typically due to ambiguous or noisy segments.
+
+**For comparison:**  
+See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
+
+
+**Alignment Statistics for 245 files in Buckeye Corpus:**
+- **Model used**: "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+- **Segment max duration**: 60s
+- **Total SRT boundaries (ground truth):** 1,519,843  
+- **VS boundaries (predicted):** 1,003,710  
+- **Boundary ratio (SRT/VS):** 1.51
+
+**Alignment error:**
+- **Mean distance:** 31.4 ms  
+- **Median distance:** 26.5 ms  
+- **Standard deviation:** 24.3 ms
+
+**Accuracy within time thresholds:**
+- **≤20 ms:** 38.8%  
+- **≤50 ms:** 65.4%  
+- **≤100 ms:** 74.3%
+
+> These results demonstrate high phoneme-level alignment precision, with most boundaries detected within 50 ms of ground truth.
+
+
+
+> ⚠️ **Best Performance**: For optimal results, use audio segments **under 30 seconds**. For longer audio, segment first using Whisper or VAD. Audio duration above 60 seconds creates too many possibilities for the Viterbi algorithm to handle properly.
+
+
+---
+
+
+## 🔬 Comparison with MFA
 
 Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](https://www.fon.hum.uva.nl/praat/) TextGrid visualization:
 
@@ -556,44 +600,124 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 ### 🔄 Processing Pipeline
 
 ```mermaid
-graph LR
-    A[Audio Input] --> B[CUPE Feature Extraction]
-    B --> C[Phoneme Probabilities]
-    C --> D[Viterbi Algorithm]
-    D --> E[Forward/Backward Tracing]
-    E --> F[Timestamp Alignment]
-    F --> G[Confidence Scoring]
+graph TD
+    A[Audio Input] --> B[RMS Normalization]
+    B --> C[Audio Windowing]
+    C --> D[CUPE Model Inference]
+    D --> E[Phoneme/Group Probabilities]
+    E --> F[Text Phonemization]
+    F --> G[Target Boosting]
+    G --> H[Viterbi Forced Alignment]
+    H --> I[Missing Phoneme Recovery]
+    I --> J[Confidence Calculation]
+    J --> K[Frame-to-Time Conversion]
+    K --> L[Output Generation]
 ```
+
+### 🔍 Viterbi Algorithm Details
+
+```mermaid
+graph TD
+    A[Target Sequence: /b/ /ʌ/ /t/] --> B[Create CTC Path]
+    B --> C[CTC Path: BLANK-b-BLANK-ʌ-BLANK-t-BLANK]
+    C --> D[Initialize DP Table]
+    D --> E[Frame t=0: Set initial probabilities]
+    E --> F[For each frame t=1 to T]
+    F --> G[For each CTC state s]
+    G --> H{Can Stay?}
+    H -->|Yes| I[Stay: DP[t-1,s] + log_prob[t,phoneme[s]]]
+    G --> J{Can Advance?}
+    J -->|Yes| K[Advance: DP[t-1,s-1] + log_prob[t,phoneme[s]]]
+    G --> L{Can Skip?}
+    L -->|Yes| M[Skip: DP[t-1,s-2] + log_prob[t,phoneme[s]]]
+    I --> N[Take Maximum Score]
+    K --> N
+    M --> N
+    N --> O[Store Best Transition]
+    O --> P{More States?}
+    P -->|Yes| G
+    P -->|No| Q{More Frames?}
+    Q -->|Yes| F
+    Q -->|No| R[Backtrack from Best Final State]
+    R --> S[Extract Frame-to-Phoneme Alignment]
+    S --> T{enforce_all_targets?}
+    T -->|Yes| U[Check Missing Phonemes]
+    U --> V[Force-align Missing Phonemes]
+    V --> W[Final Alignment]
+    T -->|No| W
+```
+
+**CTC Transition Rules:**
+- **Stay**: Remain in current state (repeat phoneme or blank)
+- **Advance**: Move to next state in sequence
+- **Skip**: Jump over blank to next phoneme (when consecutive phonemes differ)
 
 **Core Components:**
 
-1. **🎵 CUPE Integration**: Extracts phoneme probabilities from [CUPE models](https://huggingface.co/Tabahi/CUPE-2i)
-2. **🧮 Viterbi Algorithm**: Performs optimal path finding through probability matrices
-3. **🔄 Forward/Backward Tracing**: Identifies precise phoneme boundaries
-4. **📊 Confidence Scoring**: Provides alignment quality metrics
+1. **🎵 Audio Preprocessing**: RMS normalization and windowing (120ms windows, 80ms stride)
+2. **🧠 CUPE Model**: Contextless Universal Phoneme Encoder extracts frame-level phoneme probabilities
+3. **📝 Phonemization**: espeak-ng converts text to 66-class phoneme indices (ph66) and 16 phoneme groups (pg16)
+4. **🎯 Target Boosting**: Enhances probabilities of expected phonemes for better alignment
+5. **🔍 CTC style Viterbi**: CTC-based forced alignment with minimum probability enforcement
+6. **🛠️ Recovery Mechanism**: Ensures all target phonemes appear in alignment, even with low confidence
+7. **📊 Confidence Scoring**: Frame-level probability averaging with adaptive thresholding
+8. **⏱️ Timestamp Conversion**: Frame indices to millisecond timestamps with segment offset
 
-> **Performance Note**: The algorithm is CPU-optimized due to iterative loops. GPU acceleration is planned for future releases.
+### 🎛️ Key Alignment Parameters
 
+BFA provides several unique control parameters not available in traditional aligners like MFA:
 
-> **Note**: Timing distance error is ~40ms on TIMIT dataset. BFA excels in real-time applications where MFA's 5x slower processing becomes prohibitive.
-### 📊 Alignment Error Analysis
+#### 🎯 `boost_targets` (Default: `True`)
+Increases log-probabilities of expected phonemes by a fixed boost factor (typically +5.0) before Viterbi decoding. If the sentence is very long or contains every possible phoneme, then boosting them all equally doesn't have much effect—because no phoneme stands out more than the others.
 
-**Alignment error histogram on [Buckeye Corpus](https://buckeyecorpus.osu.edu/):**
+**When it helps:**
+- **Cross-lingual scenarios**: Using English models on other languages where some phonemes are underrepresented
+- **Noisy audio**: When target phonemes have very low confidence but should be present
+- **Domain mismatch**: When model training data differs significantly from your audio
 
-<div align="center">
-    <img src="examples/samples/images/alignment_distance_histogram_log_500ms.png" alt="Alignment Error Histogram - Buckeye Corpus" width="600"/>
-</div>
+**Important caveat:** For monolingual sentences, boosting affects ALL phonemes in the target sequence equally, making it equivalent to no boosting. The real benefit comes when using multilingual models or when certain phonemes are systematically underrepresented.
 
-- Most phoneme boundaries are aligned within **±40ms** of ground truth.
-- Errors above **500ms** are rare and typically due to ambiguous or noisy segments.
+#### 🛡️ `enforce_minimum` (Default: `True`) 
+Ensures every target phoneme has at least a minimum probability (default: 1e-8) at each frame, preventing complete elimination during alignment.
 
-**For comparison:**  
-See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
+**Why this matters:**
+- Prevents target phonemes from being "zeroed out" by the model
+- Guarantees that even very quiet or unclear phonemes can be aligned
+- Helps for highly noisy audio in which all phonemes, not just targets, have extremely low probabilities.
 
+#### 🔒 `enforce_all_targets` (Default: `True`)
+**This is BFA's key differentiator from MFA.** After Viterbi decoding, BFA applies post-processing to guarantee that every target phoneme is present in the final alignment—even those with low acoustic probability. However, **downstream tasks can filter out these "forced" phonemes using their confidence scores**. For practical use, consider setting a confidence threshold  e.g., `timestamps["phoneme_ts"][p]["confidence"] <0.05`) to exclude phonemes that were aligned with little to no acoustic evidence.
 
+**Recovery mechanism:**
+1. Identifies any missing target phonemes after initial alignment
+2. Finds frames with highest probability for each missing phoneme
+3. Strategically inserts missing phonemes by:
+   - Replacing blank frames when possible
+   - Searching nearby frames within a small radius
+   - Force-replacing frames as last resort
 
+**Use cases:**
+- **Guaranteed coverage**: When you need every phoneme to be timestamped
+- **Noisy environments**: Where some phonemes might be completely missed by standard Viterbi
+- **Research applications**: When completeness is more important than probabilistic accuracy
 
-> ⚠️ **Best Performance**: For optimal results, use audio segments **under 30 seconds**. For longer audio, segment first using Whisper or VAD. Audio duration above 60 seconds creates too many possibilities for the Viterbi algorithm to handle properly.
+#### ⚖️ Parameter Interaction Effects
+
+| Scenario | Recommended Settings | Outcome |
+|----------|---------------------|---------|
+| **Clean monolingual audio** | All defaults | Standard high-quality alignment |
+| **Cross-lingual/noisy** | `boost_targets=True` | Better phoneme recovery |
+| **Research/completeness** | `enforce_all_targets=True` | 100% phoneme coverage |
+| **Probabilistically strict** | `enforce_all_targets=False` | Only high-confidence alignments |
+
+**Technical Details:**
+
+- **Audio Processing**: 16kHz sampling, sliding window approach for long audio
+- **Model Architecture**: Pre-trained CUPE-2i models from [HuggingFace](https://huggingface.co/Tabahi/CUPE-2i)  
+- **Alignment Strategy**: CTC path construction with blank tokens between phonemes
+- **Quality Assurance**: Post-processing ensures 100% target phoneme coverage (when enabled)
+
+> **Performance Note**: CPU-optimized implementation. The iterative Viterbi algorithm and windowing operations are designed for single-threaded efficiency. Most operations are vectorized where possible, so batch processing should be faster on GPUs.
 
 
 ---
