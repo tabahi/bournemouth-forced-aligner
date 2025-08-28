@@ -618,32 +618,32 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Target Sequence: /b/ /ʌ/ /t/] --> B[Create CTC Path]
-    B --> C[CTC Path: BLANK-b-BLANK-ʌ-BLANK-t-BLANK]
-    C --> D[Initialize DP Table]
-    D --> E[Frame t=0: Set initial probabilities]
-    E --> F[For each frame t=1 to T]
-    F --> G[For each CTC state s]
-    G --> H{Can Stay?}
-    H -->|Yes| I[Stay: DP[t-1,s] + log_prob[t,phoneme[s]]]
-    G --> J{Can Advance?}
-    J -->|Yes| K[Advance: DP[t-1,s-1] + log_prob[t,phoneme[s]]]
-    G --> L{Can Skip?}
-    L -->|Yes| M[Skip: DP[t-1,s-2] + log_prob[t,phoneme[s]]]
-    I --> N[Take Maximum Score]
+    A["Target Sequence: /b/ /ʌ/ /t/"] --> B["Create CTC Path"]
+    B --> C["CTC Path: BLANK-b-BLANK-ʌ-BLANK-t-BLANK"]
+    C --> D["Initialize DP Table"]
+    D --> E["Frame t=0: Set initial probabilities"]
+    E --> F["For each frame t=1 to T"]
+    F --> G["For each CTC state s"]
+    G --> H{"Can Stay?"}
+    H -->|Yes| I["Stay: DP(t-1,s) + log_prob(t,phoneme_s)"]
+    G --> J{"Can Advance?"}
+    J -->|Yes| K["Advance: DP(t-1,s-1) + log_prob(t,phoneme_s)"]
+    G --> L{"Can Skip?"}
+    L -->|Yes| M["Skip: DP(t-1,s-2) + log_prob(t,phoneme_s)"]
+    I --> N["Take Maximum Score"]
     K --> N
     M --> N
-    N --> O[Store Best Transition]
-    O --> P{More States?}
+    N --> O["Store Best Transition"]
+    O --> P{"More States?"}
     P -->|Yes| G
-    P -->|No| Q{More Frames?}
+    P -->|No| Q{"More Frames?"}
     Q -->|Yes| F
-    Q -->|No| R[Backtrack from Best Final State]
-    R --> S[Extract Frame-to-Phoneme Alignment]
-    S --> T{enforce_all_targets?}
-    T -->|Yes| U[Check Missing Phonemes]
-    U --> V[Force-align Missing Phonemes]
-    V --> W[Final Alignment]
+    Q -->|No| R["Backtrack from Best Final State"]
+    R --> S["Extract Frame-to-Phoneme Alignment"]
+    S --> T{"enforce_all_targets?"}
+    T -->|Yes| U["Check Missing Phonemes"]
+    U --> V["Force-align Missing Phonemes"]
+    V --> W["Final Alignment"]
     T -->|No| W
 ```
 
