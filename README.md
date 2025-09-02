@@ -48,6 +48,15 @@ BFA is a lightning-fast Python library that extracts **phoneme-level timestamps*
 - **⚙️ Command-line interface** for hands-off batch processing
 - **📋 Multiple output formats**: JSON and TextGrid for Praat integration
 
+
+
+**Phonemes aligned to Mel-spectrum frames:**
+
+![Aligned mel-spectrum plot](examples/samples/images/LJ02_mel_phonemes.png)
+
+Try [mel_spectrum_alignment.py](examples/mel_spectrum_alignment.py)
+
+
 ---
 ## 🚀 Installation
 
@@ -113,7 +122,6 @@ timestamps = extractor.process_sentence(
     extract_embeddings=False, 
     vspt_path=None, 
     do_groups=True, 
-    compressed_only=False,
     debug=True
 )
 t1 = time.time()
@@ -311,13 +319,6 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
                     ]
                 }
             ],
-            "frames": [
-               0,29,29,29,29,29,29,0,10,10,10,10,10,58,58,58,58,0,0,0,0,0,0,0,0,0,0,9,9,9,9,9,0,0,0,43,43,43,43,43,0,0,0,0,0,0,0,0,0,0,56,56,56,56,56,56,56,0,23,23,23,23,23,23,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-            ],
-            "ms_per_frame": 10,
-            "frames_compressed": [
-                [0,1],[29,6],[0,1],[10,5],[58,4],[0,10],[9,5],[0,3],[43,5],[0,10],[56,7],[0,1],[23,6],[0,62]
-            ]
         }
     ]
 }
@@ -337,9 +338,6 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 | `group_ts` | Phoneme group timestamps | Often more accurate |
 | `word_num` | Word index for each phoneme | Maps phonemes to words |
 | `words_ts` | Word-level timestamps | Derived from phonemes |
-| `frames`   | List of Sequential frames of phoneme_idx (default) | Prealigned for 10ms (default) frames|
-| `ms_per_frame`   | frames length value for `frames` assortment | Set PhonemeTimestampAligner(ms_per_frame=10.67) for BigVGAN |
-| `frames_compressed`   | List of `frames` compressed as [phoneme_idx, count] | Suitable for FastSpeech2 format |
 | `coverage_analysis` | Alignment quality metrics | Insertions/deletions |
 
 ---
@@ -354,7 +352,6 @@ PhonemeTimestampAligner(
     cupe_ckpt_path=None,
     lang="en-us",
     duration_max=10,
-    ms_per_frame=10,
     output_frames_key="phoneme_idx",
     device="cpu",
     boost_targets=True,
@@ -368,7 +365,6 @@ PhonemeTimestampAligner(
 - `cupe_ckpt_path`: Local path to the model checkpoint.
 - `lang`: Language code for phonemization ([espeak codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)).
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
-- `ms_per_frame`: Frame size in milliseconds (controls output frame rate, not alignment accuracy).
 - `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
 - `device`: Inference device (`cpu` or `cuda`).
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
@@ -415,7 +411,6 @@ PhonemeTimestampAligner.process_sentence(
     extract_embeddings=False,
     vspt_path=None,
     do_groups=True,
-    compressed_only=False,
     debug=False
 )
 ```
@@ -427,8 +422,9 @@ PhonemeTimestampAligner.process_sentence(
 - `extract_embeddings`: Extract embeddings (optional).
 - `vspt_path`: Path to save embeddings (`.pt`, optional).
 - `do_groups`: Extract group timestamps (optional).
-- `compressed_only`: Whether to only return compressed frames (bool, optional) and skip the full length frames assortment.
 - `debug`: Enable debug output (optional).
+
+Returns: `timestamps_dict`
 
 ---
 ### 🗣️ Convert Text to Phonemes
@@ -476,7 +472,6 @@ PhonemeTimestampAligner.extract_timestamps_from_segment(
     group_sequence=None,
     extract_embeddings=True,
     do_groups=True,
-    compressed_only=False,
     debug=True
 )
 ```
@@ -489,7 +484,6 @@ PhonemeTimestampAligner.extract_timestamps_from_segment(
 - `group_sequence`: Optional group indices (pg16).
 - `extract_embeddings`: Extract pooled phoneme embeddings.
 - `do_groups`: Extract phoneme group timestamps.
-- `compressed_only`:  Whether to only return compressed frames (bool, optional) and skip the full length frames assortment. Enable it for longer clips to avoid huge JSON files.
 - `debug`: Enable debug output.
 
 **Returns:**
@@ -724,107 +718,169 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 
 ## 🔧 Advanced Usage
 
-### 🎙️ Whisper Integration
 
-Extract timestamps directly from audio using Whisper transcription:
+### 🎙️ Mel-Spectrum Alignment
+
+BFA provides advanced mel-spectrogram compatibility methods for audio synthesis workflows. These methods enable seamless integration with BigVGAN vocoder and other mel-based audio processing pipelines.
+
+See full [example here](examples/mel_spectrum_alignment.py).
+
+#### Extract Mel Spectrogram
 
 ```python
-# pip install git+https://github.com/openai/whisper.git 
-
-import whisper
-import json
-from bournemouth_aligner import PhonemeTimestampAligner
-
-# Transcribe with Whisper
-model = whisper.load_model("turbo")
-audio_path = "audio.wav"
-result = model.transcribe(audio_path)
-
-# Save transcription
-srt_path = "whisper_output.srt.json"
-with open(srt_path, "w") as f:
-    json.dump(result, f)
-
-# Align with BFA
-extractor = PhonemeTimestampAligner(
-    model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
-    lang='en-us',
-    duration_max=10,
-    device='cpu'
-)
-
-timestamps = extractor.process_srt_file(
-    srt_path, 
-    audio_path, 
-    "timestamps.json",
-    extract_embeddings=False,
-    debug=False
+PhonemeTimestampAligner.extract_mel_spectrum(
+    wav,
+    wav_sample_rate,
+    bigvgan_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}
 )
 ```
 
-### 🔬 Step-by-Step Processing
+**Description:**  
+Extracts mel spectrogram from audio with BigVGAN vocoder compatibility.
+
+**Parameters:**
+- `wav`: Input waveform tensor of shape `(1, T)`
+- `wav_sample_rate`: Sample rate of the input waveform
+- `bigvgan_config`: Configuration dictionary for BigVGAN vocoder compatibility
+
+**Returns:**  
+- `mel`: Mel spectrogram tensor of shape `(frames, mel_bins)` - transposed for easy frame-wise processing
+
+#### Frame-wise Assortment
+
+```python
+PhonemeTimestampAligner.framewise_assortment(
+    aligned_ts,
+    total_frames,
+    frames_per_second,
+    gap_contraction=5,
+    select_key="phoneme_idx"
+)
+```
+
+**Description:**  
+Converts timestamp-based phoneme alignment to frame-wise labels matching mel-spectrogram frames.
+
+**Parameters:**
+- `aligned_ts`: List of timestamp dictionaries (from `phoneme_ts`, `group_ts`, or `word_ts`)
+- `total_frames`: Total number of frames in the mel spectrogram
+- `frames_per_second`: Frame rate of the mel spectrogram
+- `gap_contraction`: Number of frames to fill silent gaps on either side of segments (default: 5)
+- `select_key`: Key to extract from timestamps (`"phoneme_idx"`, `"group_idx"`, etc.)
+
+**Returns:**  
+- List of frame labels with length `total_frames`
+
+#### Frame Compression
+
+```python
+PhonemeTimestampAligner.compress_frames(frames_list)
+```
+
+**Description:**  
+Compresses consecutive identical frame values into run-length encoded format.
+
+**Example:**
+```python
+frames = [0,0,0,0,1,1,1,1,3,4,5,4,5,2,2,2]
+compressed = compress_frames(frames)
+# Returns: [(0,4), (1,4), (3,1), (4,1), (5,1), (4,1), (5,1), (2,3)]
+```
+
+**Returns:**  
+- List of `(frame_value, count)` tuples
+
+#### Frame Decompression
+
+```python
+PhonemeTimestampAligner.decompress_frames(compressed_frames)
+```
+
+**Description:**  
+Decompresses run-length encoded frames back to full frame sequence.
+
+**Parameters:**
+- `compressed_frames`: List of `(phoneme_id, count)` tuples
+
+**Returns:**  
+- Decompressed list of frame labels
 
 <details>
-<summary>📖 Detailed notebook-style implementation</summary>
+<summary>📊 Complete mel-spectrum alignment example</summary>
+
+```python
+# pip install librosa
+import torch
+from bournemouth_aligner import PhonemeTimestampAligner
+
+# Initialize aligner
+extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", 
+                                  lang='en-us', duration_max=10, device='cpu')
+
+# Process audio and get timestamps
+audio_wav = extractor.load_audio("examples/samples/audio/109867__timkahn__butterfly.wav")
+timestamps = extractor.process_sentence("butterfly", audio_wav)
+
+# Extract mel spectrogram with BigVGAN compatibility
+bigvgan_config = {'num_mels': 80, 'hop_size': 256, 'sampling_rate': 22050}
+segment_wav = audio_wav[:, :int(timestamps['segments'][0]['end'] * extractor.resampler_sample_rate)]
+mel_spec = extractor.extract_mel_spectrum(segment_wav, extractor.resampler_sample_rate, bigvgan_config)
+
+# Create frame-wise phoneme alignment
+total_frames = mel_spec.shape[0]
+frames_per_second = total_frames / timestamps['segments'][0]['end']
+frames_assorted = extractor.framewise_assortment(
+    aligned_ts=timestamps['segments'][0]['phoneme_ts'], 
+    total_frames=total_frames, 
+    frames_per_second=frames_per_second
+)
+
+# Compress and visualize
+compress_framesed = extractor.compress_frames(frames_assorted)
+# Use provided plot_mel_phonemes() function to visualize
+```
+
+</details>
+
+
+
+### 🔗 Integration Examples
+
+<details>
+<summary>🎙️ Whisper Integration</summary>
+
+```python
+# pip install git+https://github.com/openai/whisper.git 
+import whisper, json
+from bournemouth_aligner import PhonemeTimestampAligner
+
+# Transcribe and align
+model = whisper.load_model("turbo")
+result = model.transcribe("audio.wav")
+with open("whisper_output.srt.json", "w") as f:
+    json.dump(result, f)
+
+# Process with BFA
+extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt")
+timestamps = extractor.process_srt_file("whisper_output.srt.json", "audio.wav", "timestamps.json")
+```
+
+</details>
+
+<details>
+<summary>🔬 Manual Processing Pipeline</summary>
 
 ```python
 import torch
-import torchaudio
 from bournemouth_aligner import PhonemeTimestampAligner
 
-# Step 1: Initialize
-device = 'cpu'  # CPU is faster for single files
-duration_max = 10
-model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
-lang = 'en-us'
+# Initialize and process
+extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt")
+audio_wav = extractor.load_audio("audio.wav")  # Handles resampling and normalization
+timestamps = extractor.process_sentence("your text here", audio_wav)
 
-extractor = PhonemeTimestampAligner(
-    model_name=model_name,
-    lang=lang,
-    duration_max=duration_max,
-    device=device
-)
-
-# Step 2a: Manual audio preprocessing
-audio_path = "examples/samples/audio/Schwa-What.wav"
-audio_wav, sr = torchaudio.load(audio_path, normalize=True)
-
-# Resample to CUPE's 16kHz
-resampler = torchaudio.transforms.Resample(
-    orig_freq=sr,
-    new_freq=16000,
-    lowpass_filter_width=64,
-    rolloff=0.9475937167399596,
-    resampling_method="sinc_interp_kaiser",
-    beta=14.769656459379492,
-)
-audio_wav = resampler(audio_wav)
-
-# RMS normalize
-rms = torch.sqrt(torch.mean(audio_wav ** 2))
-audio_wav = (audio_wav / rms) if rms > 0 else audio_wav
-
-# Step 2b: Simplified loading
-# audio_wav = extractor.load_audio(audio_path)
-
-# Step 3: Process text_sentence
-text_sentence = "ah What!"
-timestamps = extractor.process_sentence(
-    text_sentence,
-    audio_wav,
-    ts_out_path=None,
-    extract_embeddings=False,
-    vspt_path=None,
-    do_groups=True,
-    debug=False
-)
-
-# Step 4: Export to TextGrid
-extractor.convert_to_textgrid(
-    timestamps,
-    output_file="output_timestamps.TextGrid",
-    include_confidence=False
-)
+# Export to Praat
+extractor.convert_to_textgrid(timestamps, "output.TextGrid")
 ```
 
 </details>
@@ -887,54 +943,19 @@ balign [OPTIONS] AUDIO_PATH SRT_PATH OUTPUT_PATH
 
 ### 🌟 CLI Examples
 
-<details>
-<summary>📚 Comprehensive usage examples</summary>
-
-#### Basic Operations
 ```bash
-# Simple English alignment
-balign speech.wav transcription.srt.json timestamps.json
+# Basic usage
+balign audio.wav transcription.srt.json output.json
 
-# With embeddings for ML
-balign speech.wav transcription.srt.json timestamps.json --embeddings speech_embeddings.pt
+# With GPU and embeddings  
+balign audio.wav transcription.srt.json output.json --device cuda --embeddings embeddings.pt
+
+# Multi-language (*English model available)
+balign audio.wav transcription.srt.json output.json --lang es
+
+# Batch processing
+for audio in *.wav; do balign "$audio" "${audio%.wav}.srt" "${audio%.wav}.json"; done
 ```
-
-#### Multi-language Support (*Planned)
-```bash
-# Spanish audio
-balign spanish_audio.wav transcription.srt.json output.json --lang es
-
-# French audio  
-balign french_audio.wav transcription.srt.json output.json --lang fr
-
-# German audio
-balign german_audio.wav transcription.srt.json output.json --lang de
-```
-
-#### Performance Optimization
-```bash
-# GPU acceleration
-balign large_audio.wav transcription.srt.json output.json --device cuda
-
-# Custom model with extended duration (avoid longer than 1 minute)
-balign audio.wav transcription.srt.json output.json \
-    --model "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" \
-    --duration-max 15 \
-    --debug \
-    --embeddings embeddings.pt
-```
-
-#### Batch Processing
-```bash
-#!/bin/bash
-# Process multiple files
-for audio in *.wav; do
-    base=$(basename "$audio" .wav)
-    balign "$audio" "${base}.srt" "${base}_timestamps.json" --debug
-done
-```
-
-</details>
 
 ### 📊 Input Format
 
@@ -959,42 +980,7 @@ SRT files must be in JSON format:
 
 ### 🎯 Creating Input Files
 
-<details>
-<summary>📝 Methods for generating SRT files</summary>
-
-**From Whisper:**
-```python
-import whisper
-import json
-
-model = whisper.load_model("base")
-result = model.transcribe("audio.wav")
-
-# Convert to BFA format
-srt_data = {"segments": result["segments"]}
-with open("transcription.srt.json", "w") as f:
-    json.dump(srt_data, f, indent=2)
-```
-
-**Manual Creation:**
-```python
-import json
-
-srt_data = {
-    "segments": [
-        {
-            "start": 0.0,
-            "end": 2.5,
-            "text": "your transcribed text here"
-        }
-    ]
-}
-
-with open("transcription.srt.json", "w") as f:
-    json.dump(srt_data, f, indent=2)
-```
-
-</details>
+Use Whisper for transcription (see [Integration Examples](#-integration-examples)) or create SRT JSON manually with the format shown above.
 
 ### 🔍 Debug Mode
 
