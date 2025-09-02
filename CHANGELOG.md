@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.1.3] - 2025-09-02
+## [0.1.4] - 2025-09-02
 - `framewise_assortment` updated.
 - timestamps_dict won't include frames and compressed frames.
 - Use method `framewise_assortment(aligned_ts)` to get the frames assortment as needed.
@@ -54,4 +54,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.0
 [0.1.1]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.1
 [0.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.2
-[0.1.3]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.3
+[0.1.4]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.3

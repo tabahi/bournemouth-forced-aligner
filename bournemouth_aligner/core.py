@@ -866,7 +866,7 @@ class PhonemeTimestampAligner:
 
         audio_wav = self.load_audio(audio_path)
 
-        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path, extract_embeddings, vspt_path, do_groups, False, debug)
+        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path, extract_embeddings, vspt_path, do_groups, debug)
     
     def process_sentence(self, text, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
         """
