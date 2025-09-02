@@ -12,7 +12,7 @@ def read_readme():
 
 setup(
     name="bournemouth-forced-aligner",
-    version="0.1.2",
+    version="0.1.3",
     packages=find_packages(exclude=["tests*", "docs*", "examples*"]),
     python_requires=">=3.8",
     
@@ -24,6 +24,7 @@ setup(
         "numpy>=1.19.0",
         "click>=8.0.0",
         "phonemizer>=3.3.0",
+        "librosa>=0.8.0"
     ],
     
     # Optional dependencies
