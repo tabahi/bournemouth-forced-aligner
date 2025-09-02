@@ -8,6 +8,8 @@
 [![GitHub stars](https://img.shields.io/github/stars/tabahi/bournemouth-forced-aligner.svg)](https://github.com/tabahi/bournemouth-forced-aligner/stargazers)
 
 **High-precision phoneme-level timestamp extraction from audio files**
+> 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
+
 
 [🚀 Quick Start](#-getting-started) • [📚 Documentation](#-how-does-it-work) • [🔧 Installation](#-installation) • [💻 CLI](#-command-line-interface-cli) • [🤝 Contributing](https://github.com/tabahi/bournemouth-forced-aligner/issues)
 
@@ -17,9 +19,7 @@
 
 ## ✨ Overview
 
-BFA is a lightning-fast Python library that extracts **phoneme-level timestamps** from audio files with millisecond precision. Built on the powerful [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
-
-> 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
+BFA is a lightning-fast Python library that extracts **phoneme/word timestamps** from audio files with millisecond precision. Built on the powerful [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
 
 
 ## 🌟 Key Features
@@ -1051,6 +1051,10 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 [![GitHub Issues](https://img.shields.io/badge/Issues-GitHub-red?style=for-the-badge&logo=github)](https://github.com/tabahi/bournemouth-forced-aligner/issues)
 
 </div>
+
+### Collaboration for new languges
+Help us, linguistically, analyze data for new languages. `deepen-spool-skies <@> duck .com`
+
 
 
 ### 💡 Feature Requests
