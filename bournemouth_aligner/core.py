@@ -38,7 +38,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_idx", device="cpu", boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
+    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_idx", device="cpu", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
         """
         Initialize the phoneme timestamp extractor.
         
@@ -51,9 +51,11 @@ class PhonemeTimestampAligner:
             ms_per_frame: Milliseconds per frame in the framewise assortment of phoneme labels. Set to `-1` to disable framewise assortment. Set to 1 to 80ms if your next task requires a specific frame rate. This does not effect the model or the alignment accuracy. See `framewise_assortment()`.
             output_frames_key: Set which of the ouputs to use to assort frames (using ms_per_frame). Options: "phoneme_idx"(default), "phoneme_label", "group_idx", "group_label"
             device: Device to run inference on
+            silence_anchors: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
             boost_targets: Boost the probabilities of target phonemes to ensure they can be aligned.
             enforce_minimum: Ensure target phonemes meet a minimum probability threshold in the predicted frames.
             enforce_all_targets: Whether to enforce all target phonemes to be present. Band-aid postprocessing patch: It will insert phonemes missed by viterbi decoding at their expected positions based on targets.
+            ignore_noise: Whether to ignore the predicted "noise" in the alignment. If set to True, noise will be skipped over. If False, long noisy/silent segments will be included as "noise" timestamps.
         """
         self.device = device
 
@@ -95,12 +97,13 @@ class PhonemeTimestampAligner:
         self.phoneme_id_to_group_id = self.phonemizer.phoneme_id_to_group_id
 
 
-        self._setup_config()
-        self._setup_decoders()
-
+        self.silence_anchors = silence_anchors
         self.boost_targets = boost_targets
         self.enforce_minimum = enforce_minimum
         self.enforce_all_targets = enforce_all_targets
+        self.ignore_noise = ignore_noise
+        self._setup_config()
+        self._setup_decoders()
 
         # Initialize audio processing
         self.default_resampler = torchaudio.transforms.Resample(
@@ -124,17 +127,22 @@ class PhonemeTimestampAligner:
         self.frames_per_window = self.extractor.model.update_frames_per_window(self.window_size_wav)
         
         # Phoneme class configuration
-        self.phoneme_classes = 66
-        self.phoneme_groups = 16
-        self.blank_class = self.phoneme_classes
-        self.blank_group = self.phoneme_groups
-        
+        self.phoneme_classes = len(self.phoneme_id_to_label)-1  # exclude padding 'noise' = 66
+        self.phoneme_groups = len(self.group_id_to_label)-1 # exclude padding 'noise' = 16  
+        self.blank_class = self.phoneme_label_to_id['noise']
+        self.blank_group = self.group_label_to_id['noise']
+        self.silence_class = self.phoneme_label_to_id['SIL']
+        self.silence_group = self.group_label_to_id['SIL']
+        # print all these:
+        #print(f"Phoneme classes: {self.phoneme_classes}, groups: {self.phoneme_groups}, blank_class: {self.blank_class}, blank_group: {self.blank_group}, silence_class: {self.silence_class}, silence_group: {self.silence_group}")
+
     def _setup_decoders(self):
         """Setup Viterbi decoders for phoneme classes and groups."""
         
         # Alignment utilities
-        self.alignment_utils_g = AlignmentUtils(blank_id=self.blank_group)
-        self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class)
+        self.alignment_utils_g = AlignmentUtils(blank_id=self.blank_group, silence_id=self.silence_class, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise)
+        self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class, silence_id=self.silence_group, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise)
+
 
     def download_model(self, model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", model_dir="./models"):
         """Download the specified model from hugging face using huggingface_hub."""
@@ -934,41 +942,41 @@ class PhonemeTimestampAligner:
         return analysis
 
 
-    def extract_mel_spectrum(self, wav, wav_sample_rate, bigvgan_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}):
+    def extract_mel_spectrum(self, wav, wav_sample_rate, vocoder_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}):
         '''
         Args:
             wav: Input waveform tensor of shape (1, T)
             wav_sample_rate: Sample rate of the input waveform
-            bigvgan_config: Configuration dictionary for BigVGAN vocoder. Use the same config to generate mel-spectrum as bigvan vocoder model, so that the mel-spectrum can be converted back to audio easily.
+            vocoder_config: Configuration dictionary for HiFiGAN/BigVGAN vocoder. Use the same config to generate mel-spectrum as bigvan vocoder model, so that the mel-spectrum can be converted back to audio easily.
 
         Returns:
             mel: Mel spectrogram tensor of shape (num_mels, T)
 
-        Ensure compatability with BigVGAN vocoder https://github.com/NVIDIA/BigVGAN
+        Ensure compatability with HiFiGAN/BigVGAN vocoder https://github.com/NVIDIA/BigVGAN
         '''
         from .helpers.mel_spec import mel_spectrogram
 
         assert (wav.dim() == 2) and (wav.shape[0] == 1), f"Expected input shape (1, T), got {wav.shape}"
 
-        if wav_sample_rate != bigvgan_config['sampling_rate']:
-            print ("Resampling waveform from {} to {} for BigVGAN model compatibility".format(wav_sample_rate, bigvgan_config['sampling_rate']))
+        if wav_sample_rate != vocoder_config['sampling_rate']:
+            print ("Resampling waveform from {} to {} for vocoder compatibility".format(wav_sample_rate, vocoder_config['sampling_rate']))
             # use librosa resampling:
             import librosa
-            wav = librosa.resample(wav.numpy(), orig_sr=wav_sample_rate, target_sr=bigvgan_config['sampling_rate'])
+            wav = librosa.resample(wav.numpy(), orig_sr=wav_sample_rate, target_sr=vocoder_config['sampling_rate'])
             wav = torch.from_numpy(wav)
 
         mel = mel_spectrogram(
             wav,
-            n_fft=bigvgan_config['n_fft'],
-            num_mels=bigvgan_config['num_mels'],
-            sampling_rate=bigvgan_config['sampling_rate'],
-            hop_size=bigvgan_config['hop_size'],
-            win_size=bigvgan_config['win_size'],
-            fmin=bigvgan_config['fmin'],
-            fmax=bigvgan_config['fmax']
+            n_fft=vocoder_config['n_fft'],
+            num_mels=vocoder_config['num_mels'],
+            sampling_rate=vocoder_config['sampling_rate'],
+            hop_size=vocoder_config['hop_size'],
+            win_size=vocoder_config['win_size'],
+            fmin=vocoder_config['fmin'],
+            fmax=vocoder_config['fmax']
         )
 
-        if mel.dim() == 3 and mel.shape[0] == 1 and mel.shape[1] == bigvgan_config['num_mels']:
+        if mel.dim() == 3 and mel.shape[0] == 1 and mel.shape[1] == vocoder_config['num_mels']:
             mel = mel.squeeze(0)
         else:
             raise ValueError(f"Unexpected mel shape: {mel.shape}, expected [1, mel_dim, mel_len] or [mel_dim, mel_len]")
@@ -1012,7 +1020,7 @@ class PhonemeTimestampAligner:
             decompressed.extend([phn_id] * count)
         return decompressed
 
-    def framewise_assortment(self, aligned_ts, total_frames, frames_per_second, gap_contraction=5, select_key="phoneme_idx"):
+    def framewise_assortment(self, aligned_ts, total_frames, frames_per_second, gap_contraction=5, select_key="phoneme_idx", offset_ms=0):
         """
         Perform frame-wise assortment of aligned timestamps.
         Args:
@@ -1021,7 +1029,7 @@ class PhonemeTimestampAligner:
             frames_per_second: Frame rate of the mel spectrogram.
             gap_contraction: extra gaps (in frames) to fill during the assortment process. Compensate for silence overwhelment on either side of unvoiced segments.
             select_key: Key to select timestamps from the aligned_ts dictionary. Default is "phoneme_idx".
-
+            offset_ms: Offset in milliseconds to adjust the start and end times of each timestamp. Pass `timestamps["segments"][segment_id]["start"]*1000` to align with the original audio.
         """
         '''
         
@@ -1050,11 +1058,11 @@ class PhonemeTimestampAligner:
         # Stage 1: Fill frames using exact timestamp boundaries (no tolerance)
         for i, ts_item in enumerate(aligned_ts):
             # Calculate exact frame boundaries without any gap tolerance
-            framewise_start_index = max(int(ts_item["start_ms"] / ms_per_frame), 0)
-            framewise_end_index = min(self.ceil(ts_item["end_ms"] / ms_per_frame), total_frames)
+            framewise_start_index = max(int((ts_item["start_ms"]-offset_ms) / ms_per_frame), 0)
+            framewise_end_index = min(self.ceil((ts_item["end_ms"]-offset_ms) / ms_per_frame), total_frames)
             
             
-            if framewise_start_index >= total_frames:
+            if framewise_end_index-framewise_start_index >= total_frames:
                 print(f"Warning: Timestamp start frame {framewise_start_index} exceeds total frames {total_frames}, skipping.")
                 continue
             elif framewise_end_index > total_frames:
@@ -1119,6 +1127,7 @@ class PhonemeTimestampAligner:
                             # then right side
                             for j in range(gap_end - 1, max(gap_end - gap_contraction - 1, gap_start - 1), -1):
                                 framewise_label[j] = right_value    
+
 
         return framewise_label
 

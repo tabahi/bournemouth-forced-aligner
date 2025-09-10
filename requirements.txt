@@ -3,3 +3,4 @@ torchaudio>=0.9.0
 huggingface_hub>=0.8.0
 numpy>=1.19.0
 phonemizer>=3.3.0
+librosa>=0.8.0

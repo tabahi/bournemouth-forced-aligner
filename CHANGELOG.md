@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.1.5] - 2025-09-10
+- `silence_anchors` parameter for spliting search path at long silnces.
+- `offset_ms=0` parameter in `framewise_assortment` for same audio, multiple segemsnt start correct .
+- `ignore_noise=False` parameter to view predicted noise.
+
 ## [0.1.4] - 2025-09-02
 - `framewise_assortment` updated.
 - timestamps_dict won't include frames and compressed frames.

@@ -220,3 +220,6 @@ marimo/_lsp/
 __marimo__/
 notes.txt
 examples/x_basic_usage__.py
+mel_phonemes_ref.png
+.gitignore
+mel_phonemes.png

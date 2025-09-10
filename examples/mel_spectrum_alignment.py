@@ -70,8 +70,8 @@ def plot_mel_phonemes(mel, compress_framesed, save_path="mel_phonemes.png"):
 
 def example_audio_timestamps():
 
-    text_sentences = "butterfly."
-    audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
+    text_sentences = "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition"
+    audio_path = "examples/samples/LJSpeech/LJ001-0001.wav"
     
     model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" 
     extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu', enforce_all_targets=False)
@@ -85,13 +85,13 @@ def example_audio_timestamps():
     
     # Extract Mel-Spectrum
     # Use the same config to generate mel-spectrum as bigvan vocoder model, so that the mel-spectrum can be converted back to audio easily.
-    bigvgan_config = {'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}
+    vocoder_config = {'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}
 
     # we just need to extract the mel-spectrogram for the segment 0
     segment_start_frame = int(timestamps['segments'][0]['start'] * extractor.resampler_sample_rate)
     segment_end_frame = int(timestamps['segments'][0]['end'] * extractor.resampler_sample_rate)
     segment_wav = full_clip_wav[segment_start_frame:segment_end_frame]
-    mel_spec = extractor.extract_mel_spectrum(segment_wav, wav_sample_rate=extractor.resampler_sample_rate, bigvgan_config=bigvgan_config)
+    mel_spec = extractor.extract_mel_spectrum(segment_wav, wav_sample_rate=extractor.resampler_sample_rate, vocoder_config=vocoder_config)
 
 
     # Assort phonemes into frame steps to match the mel-spectrogram hop-size

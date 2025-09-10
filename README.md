@@ -19,7 +19,7 @@
 
 ## ✨ Overview
 
-BFA is a lightning-fast Python library that extracts **phoneme/word timestamps** from audio files with millisecond precision. Built on the powerful [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
+BFA is a lightning-fast Python library that extracts **phoneme/word timestamps** from audio files with millisecond precision. Built on  [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
 
 
 ## 🌟 Key Features
@@ -30,29 +30,16 @@ BFA is a lightning-fast Python library that extracts **phoneme/word timestamps**
 |---------|-------------|-------------|
 | ⚡ **Ultra-Fast** | CPU-optimized processing | 0.2s for 10s audio |
 | 🎯 **Phoneme-Level** | Millisecond-precision timestamps | High accuracy alignment |
-| 🧠 **Smart Algorithm** | Viterbi with confidence scoring | Target boosting support |
 | 🌍 **Multi-Language** | Via espeak phonemization | *English model ready |
 | 🔧 **Easy Integration** | JSON & TextGrid output | Praat compatibility |
-| 📊 **Rich Embeddings** | Contextless phoneme features | ML-ready format |
-| 💻 **CLI Ready** | Command-line interface | Batch processing support |
 
 </div>
 
-### 🎨 Core Capabilities
 
-- **🎵 Phoneme-level timestamp extraction** with high accuracy
-- **🔍 Viterbi algorithm** with confidence scoring and target boosting  
-- **🌐 Multi-language support** via espeak phonemization (*English model currently available)
-- **📊 Embedding extraction** - contextless, pure phoneme embeddings for ML tasks
-- **📝 Word-level alignment** derived from phoneme timestamps
-- **⚙️ Command-line interface** for hands-off batch processing
-- **📋 Multiple output formats**: JSON and TextGrid for Praat integration
+**Words+Phonemes aligned to Mel-spectrum frames:**
 
-
-
-**Phonemes aligned to Mel-spectrum frames:**
-
-![Aligned mel-spectrum plot](examples/samples/images/LJ02_mel_phonemes.png)
+![Aligned mel-spectrum plot](examples/samples/images/LJ02_mel_words.png)
+![Aligned mel-spectrum plot](examples/samples/images/LJ01_mel_phonemes.png)
 
 Try [mel_spectrum_alignment.py](examples/mel_spectrum_alignment.py)
 
@@ -357,6 +344,7 @@ PhonemeTimestampAligner(
     boost_targets=True,
     enforce_minimum=True,
     enforce_all_targets=True,
+    ignore_noise=True
 )
 ```
 
@@ -367,10 +355,11 @@ PhonemeTimestampAligner(
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
 - `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
 - `device`: Inference device (`cpu` or `cuda`).
+- `silence_anchors`: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
 - `enforce_minimum`: Enforce minimum probability for target phonemes.
 - `enforce_all_targets`: Band-aid postprocessing patch. It will insert phonemes missed by viterbi decoding at their expected positions based on target positions.
-
+- `ignore_noise`:  Whether to ignore the predicted "noise" in the alignment. If set to True, noise will be skipped over. If False, long noisy/silent segments will be included as "noise" timestamps.
 ---
 
 ### Process SRT File
@@ -525,7 +514,7 @@ Converts VS2 timestamp data to [Praat TextGrid](https://www.fon.hum.uva.nl/praat
 
 ### 🎙️ Mel-Spectrum Alignment
 
-BFA provides advanced mel-spectrogram compatibility methods for audio synthesis workflows. These methods enable seamless integration with [BigVGAN vocoder](https://github.com/NVIDIA/BigVGAN) and other mel-based audio processing pipelines.
+BFA provides advanced mel-spectrogram compatibility methods for audio synthesis workflows. These methods enable seamless integration with [HiFi-GAN](https://github.com/jik876/hifi-gan) and [BigVGAN vocoder](https://github.com/NVIDIA/BigVGAN) and other mel-based audio processing pipelines.
 
 See full [example here](examples/mel_spectrum_alignment.py).
 
@@ -535,17 +524,17 @@ See full [example here](examples/mel_spectrum_alignment.py).
 PhonemeTimestampAligner.extract_mel_spectrum(
     wav,
     wav_sample_rate,
-    bigvgan_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}
+    vocoder_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}
 )
 ```
 
 **Description:**  
-Extracts mel spectrogram from audio with BigVGAN vocoder compatibility.
+Extracts mel spectrogram from audio with vocoder compatibility.
 
 **Parameters:**
 - `wav`: Input waveform tensor of shape `(1, T)`
 - `wav_sample_rate`: Sample rate of the input waveform
-- `bigvgan_config`: Configuration dictionary for BigVGAN vocoder compatibility
+- `vocoder_config`: Configuration dictionary for HiFiGAN/BigVGAN vocoder compatibility
 
 **Returns:**  
 - `mel`: Mel spectrogram tensor of shape `(frames, mel_bins)` - transposed for easy frame-wise processing
@@ -625,10 +614,10 @@ extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=
 audio_wav = extractor.load_audio("examples/samples/audio/109867__timkahn__butterfly.wav")
 timestamps = extractor.process_sentence("butterfly", audio_wav)
 
-# Extract mel spectrogram with BigVGAN compatibility
-bigvgan_config = {'num_mels': 80, 'hop_size': 256, 'sampling_rate': 22050}
+# Extract mel spectrogram with vocoder compatibility
+vocoder_config = {'num_mels': 80, 'hop_size': 256, 'sampling_rate': 22050}
 segment_wav = audio_wav[:, :int(timestamps['segments'][0]['end'] * extractor.resampler_sample_rate)]
-mel_spec = extractor.extract_mel_spectrum(segment_wav, extractor.resampler_sample_rate, bigvgan_config)
+mel_spec = extractor.extract_mel_spectrum(segment_wav, extractor.resampler_sample_rate, vocoder_config)
 
 # Create frame-wise phoneme alignment
 total_frames = mel_spec.shape[0]
@@ -861,39 +850,6 @@ graph TD
     K --> L[Output Generation]
 ```
 
-### 🔍 Viterbi Algorithm Details
-
-```mermaid
-graph TD
-    A["Target Sequence: /b/ /ʌ/ /t/"] --> B["Create CTC Path"]
-    B --> C["CTC Path: BLANK-b-BLANK-ʌ-BLANK-t-BLANK"]
-    C --> D["Initialize DP Table"]
-    D --> E["Frame t=0: Set initial probabilities"]
-    E --> F["For each frame t=1 to T"]
-    F --> G["For each CTC state s"]
-    G --> H{"Can Stay?"}
-    H -->|Yes| I["Stay: DP(t-1,s) + log_prob(t,phoneme_s)"]
-    G --> J{"Can Advance?"}
-    J -->|Yes| K["Advance: DP(t-1,s-1) + log_prob(t,phoneme_s)"]
-    G --> L{"Can Skip?"}
-    L -->|Yes| M["Skip: DP(t-1,s-2) + log_prob(t,phoneme_s)"]
-    I --> N["Take Maximum Score"]
-    K --> N
-    M --> N
-    N --> O["Store Best Transition"]
-    O --> P{"More States?"}
-    P -->|Yes| G
-    P -->|No| Q{"More Frames?"}
-    Q -->|Yes| F
-    Q -->|No| R["Backtrack from Best Final State"]
-    R --> S["Extract Frame-to-Phoneme Alignment"]
-    S --> T{"enforce_all_targets?"}
-    T -->|Yes| U["Check Missing Phonemes"]
-    U --> V["Force-align Missing Phonemes"]
-    V --> W["Final Alignment"]
-    T -->|No| W
-```
-
 **CTC Transition Rules:**
 - **Stay**: Remain in current state (repeat phoneme or blank)
 - **Advance**: Move to next state in sequence
@@ -980,7 +936,7 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 </div>
 
 - Most phoneme boundaries are aligned within **±40ms** of ground truth.
-- Errors above **500ms** are rare and typically due to ambiguous or noisy segments.
+- Errors above **100ms** are rare and typically due to ambiguous or noisy segments.
 
 **For comparison:**  
 See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
@@ -989,9 +945,9 @@ See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcau
 **Alignment Statistics for 245 files in Buckeye Corpus:**
 - **Model used**: "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
 - **Segment max duration**: 60s
-- **Total SRT boundaries (ground truth):** 1,519,843  
-- **VS boundaries (predicted):** 1,003,710  
-- **Boundary ratio (SRT/VS):** 1.51
+- **Total Known boundaries (ground truth):** 1,519,843  
+- **Aligned boundaries (predicted):** 1,003,710  
+- **Boundary ratio (Known/Predicted):** 1.51
 
 **Alignment error:**
 - **Mean distance:** 31.4 ms  

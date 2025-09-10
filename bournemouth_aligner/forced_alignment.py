@@ -13,9 +13,12 @@ class ViterbiDecoder:
     Viterbi decoder that ensures all phonemes in the target sequence are aligned,
     even when they have very low probabilities.
     """
-    def __init__(self, blank_id=None, min_phoneme_prob=1e-8):
+    def __init__(self, blank_id, silence_id, silence_anchors=3,  min_phoneme_prob=1e-8, ignore_noise=True):
         self.blank_id = blank_id
+        self.silence_id = silence_id
+        self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
         self.min_phoneme_prob = min_phoneme_prob  # Minimum probability floor for phonemes
+        self.ignore_noise = ignore_noise
         self._neg_inf = -1000.0
         
     def set_blank_id(self, blank_id):
@@ -79,7 +82,7 @@ class ViterbiDecoder:
         return modified_log_probs
     
     def decode_with_forced_alignment(self, log_probs, true_sequence, return_scores=False, 
-                                   boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
+                                   boost_targets=True, enforce_minimum=True, enforce_all_targets=True, anchor_pauses=True):
         """
         Decode that ensures all target phonemes are aligned.
         
@@ -90,7 +93,7 @@ class ViterbiDecoder:
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
             enforce_all_targets: Whether to enforce all target phonemes to be present
-
+            anchor_pauses: Whether anchor the search paths at silences, to segment the search.
         Returns:
             frame_phonemes: Frame-level phoneme assignments
             alignment_score: Optional alignment score
@@ -118,14 +121,18 @@ class ViterbiDecoder:
         if enforce_minimum:
             modified_log_probs = self._enforce_minimum_probabilities(modified_log_probs, true_sequence)
         
-        # Create CTC path: blank + phoneme + blank + phoneme + ... + blank
-        ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
-        ctc_path[::2] = self.blank_id  # Even indices are blanks
-        ctc_path[1::2] = true_sequence  # Odd indices are phonemes
-        ctc_len = len(ctc_path)
-        
-        # Run standard Viterbi with modified probabilities
-        frame_phonemes = self._viterbi_decode(modified_log_probs, ctc_path, ctc_len)
+        # Use segmented Viterbi if anchor_pauses is enabled and we have silence_id
+        if anchor_pauses and self.silence_id is not None:
+            frame_phonemes = self._segmented_viterbi_decode(modified_log_probs, true_sequence)
+        else:
+            # Create CTC path: blank + phoneme + blank + phoneme + ... + blank
+            ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
+            ctc_path[::2] = self.blank_id  # Even indices are blanks
+            ctc_path[1::2] = true_sequence  # Odd indices are phonemes
+            ctc_len = len(ctc_path)
+            
+            # Run standard Viterbi with modified probabilities
+            frame_phonemes = self._viterbi_decode(modified_log_probs, ctc_path, ctc_len)
         
         # Post-process to ensure all target phonemes appear
         if enforce_all_targets:
@@ -138,6 +145,201 @@ class ViterbiDecoder:
             return frame_phonemes, alignment_score
         
         return frame_phonemes
+    
+    def _segmented_viterbi_decode(self, log_probs, true_sequence):
+        """
+        Segmented Viterbi decoding that breaks the search at long pauses.
+        
+        Args:
+            log_probs: Log probabilities tensor [T, C]
+            true_sequence: Target phoneme sequence [S]
+            
+        Returns:
+            frame_phonemes: Frame-level phoneme assignments
+        """
+        device = log_probs.device
+        num_frames = log_probs.shape[0]
+        
+        # Detect long silence segments
+        silence_segments = self._detect_silence_segments(log_probs)
+        
+        if not silence_segments:
+            # No long silences found, use standard Viterbi
+            seq_len = true_sequence.shape[0]
+            ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
+            ctc_path[::2] = self.blank_id
+            ctc_path[1::2] = true_sequence
+            return self._viterbi_decode(log_probs, ctc_path, len(ctc_path))
+        
+        # Split audio and target sequence at silence segments
+        audio_segments, target_segments = self._split_at_silences(
+            log_probs, true_sequence, silence_segments
+        )
+        
+        # Process each segment independently
+        all_frame_phonemes = []
+        
+        for i, (audio_seg, target_seg) in enumerate(zip(audio_segments, target_segments)):
+            start_frame, end_frame, seg_log_probs = audio_seg
+            target_start, target_end, seg_target = target_seg
+            
+            if seg_target.shape[0] == 0:
+                # Empty target sequence - fill with blanks
+                seg_frames = torch.full((end_frame - start_frame,), self.blank_id, 
+                                      dtype=torch.long, device=device)
+            else:
+                # Create CTC path for this segment
+                seq_len = seg_target.shape[0]
+                ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
+                ctc_path[::2] = self.blank_id
+                ctc_path[1::2] = seg_target
+                
+                # Run Viterbi on this segment
+                seg_frames = self._viterbi_decode(seg_log_probs, ctc_path, len(ctc_path))
+            
+            all_frame_phonemes.append(seg_frames)
+            
+            # Add silence frames between segments (except after last segment)
+            if i < len(silence_segments):
+                silence_start, silence_end = silence_segments[i]
+                silence_frames = torch.full((silence_end - silence_start,), self.silence_id,
+                                          dtype=torch.long, device=device)
+                all_frame_phonemes.append(silence_frames)
+        
+        # Concatenate all segments
+        if all_frame_phonemes:
+            frame_phonemes = torch.cat(all_frame_phonemes, dim=0)
+        else:
+            # No segments found - return all blanks
+            frame_phonemes = torch.full((num_frames,), self.blank_id, dtype=torch.long, device=device)
+        
+        return frame_phonemes
+    
+    def _detect_silence_segments(self, log_probs):
+        """
+        Detect segments of long silence using sliding window averages.
+        
+        Args:
+            log_probs: Log probabilities tensor [T, C]
+            
+        Returns:
+            List of (start_frame, end_frame) tuples for silence segments
+        """
+        sliding_frames = self.silence_anchors
+        sliding_step = 1
+
+        if self.silence_id >= log_probs.shape[1]:
+            return []
+        
+        num_frames = log_probs.shape[0]
+        if num_frames < sliding_frames:
+            return []
+            
+        # Calculate sliding window averages
+        window_predictions = []
+        for t in range(0, num_frames - sliding_frames + 1, sliding_step):
+            # Average log probs over sliding window
+            window_avg = log_probs[t:t + sliding_frames].mean(dim=0)
+            
+            # Get top-2 predictions to handle CTC where blank often dominates
+            top_values, top_indices = torch.topk(window_avg, k=min(2, window_avg.shape[0]))
+            
+            # Check if silence is the top prediction or top non-blank prediction
+            predicted_class = top_indices[0].item()
+            if predicted_class == self.blank_id and len(top_indices) > 1:
+                # If blank is top, check if silence is second
+                predicted_class = top_indices[1].item()
+            
+            window_predictions.append((t + sliding_frames // 2, predicted_class))
+        
+        # Find contiguous silence segments based on window predictions
+        silence_segments = []
+        in_silence = False
+        silence_start = 0
+        
+        for center_frame, predicted_class in window_predictions:
+            is_silence_window = predicted_class == self.silence_id
+            
+            if is_silence_window and not in_silence:
+                # Start of silence
+                in_silence = True
+                silence_start = center_frame - sliding_frames // 2
+            elif not is_silence_window and in_silence:
+                # End of silence
+                in_silence = False
+                silence_end = center_frame - sliding_frames // 2
+                silence_length = silence_end - silence_start
+                if silence_length >= self.silence_anchors:
+                    silence_segments.append((silence_start, silence_end))
+        
+        # Handle case where sequence ends in silence
+        if in_silence:
+            silence_end = num_frames
+            silence_length = silence_end - silence_start
+            if silence_length >= self.silence_anchors:
+                silence_segments.append((silence_start, silence_end))
+        
+        #print(f"Detected {len(silence_segments)} silence segments for anchoring.")
+        return silence_segments
+    
+    def _split_at_silences(self, log_probs, true_sequence, silence_segments):
+        """
+        Split audio and target sequence at silence segments.
+        
+        Args:
+            log_probs: Log probabilities tensor [T, C]
+            true_sequence: Target phoneme sequence [S]
+            silence_segments: List of (start_frame, end_frame) tuples
+            
+        Returns:
+            audio_segments: List of (start_frame, end_frame, log_probs_segment) tuples
+            target_segments: List of (target_start, target_end, target_segment) tuples
+        """
+        device = log_probs.device
+        num_frames = log_probs.shape[0]
+        
+        # Calculate non-silence segments
+        audio_segments = []
+        current_start = 0
+        
+        for silence_start, silence_end in silence_segments:
+            if current_start < silence_start:
+                # Add segment before this silence
+                seg_log_probs = log_probs[current_start:silence_start]
+                audio_segments.append((current_start, silence_start, seg_log_probs))
+            current_start = silence_end
+        
+        # Add final segment after last silence
+        if current_start < num_frames:
+            seg_log_probs = log_probs[current_start:num_frames]
+            audio_segments.append((current_start, num_frames, seg_log_probs))
+        
+        # Split target sequence proportionally
+        target_segments = []
+        total_non_silence_frames = sum(end - start for start, end, _ in audio_segments)
+        
+        if total_non_silence_frames == 0:
+            # All frames are silence
+            for _ in audio_segments:
+                empty_target = torch.tensor([], dtype=torch.long, device=device)
+                target_segments.append((0, 0, empty_target))
+        else:
+            target_pos = 0
+            target_len = true_sequence.shape[0]
+            
+            for start_frame, end_frame, seg_log_probs in audio_segments:
+                segment_frames = end_frame - start_frame
+                # Proportional allocation of target phonemes
+                target_proportion = segment_frames / total_non_silence_frames
+                target_count = max(0, min(target_len - target_pos, 
+                                        round(target_proportion * target_len)))
+                
+                target_end = min(target_pos + target_count, target_len)
+                seg_target = true_sequence[target_pos:target_end]
+                target_segments.append((target_pos, target_end, seg_target))
+                target_pos = target_end
+        
+        return audio_segments, target_segments
     
     def _viterbi_decode(self, log_probs, ctc_path, ctc_len):
         """Standard Viterbi decoding implementation."""
@@ -228,7 +430,7 @@ class ViterbiDecoder:
         Post-processing step to ensure all target phonemes appear in the alignment.
         If any phonemes are missing, assign them to the frames where they have highest probability.
         """
-        device = frame_phonemes.device
+        #device = frame_phonemes.device
         num_frames = len(frame_phonemes)
         
         # Get unique target phonemes
@@ -306,7 +508,7 @@ class ViterbiDecoder:
             frame_phonemes = torch.tensor(frame_phonemes, device=device)
         
         # Find all non-blank segments
-        is_blank = frame_phonemes == self.blank_id
+        #is_blank = frame_phonemes == self.blank_id
         
         # Find transition points
         transitions = torch.cat([
@@ -317,33 +519,48 @@ class ViterbiDecoder:
         transition_indices = torch.where(transitions)[0]
         
         framestamps = []
-        
         for i in range(len(transition_indices)):
             start_idx = transition_indices[i].item()
             end_idx = transition_indices[i + 1].item() if i + 1 < len(transition_indices) else len(frame_phonemes)
             
             segment_phoneme = frame_phonemes[start_idx].item()
             
+        
             # Skip overly long blank segments
             if segment_phoneme == self.blank_id:
                 segment_length = end_idx - start_idx
-                if segment_length > max_blanks:
-                    continue
+                if (self.ignore_noise):
+                    if segment_length > max_blanks:
+                        continue
+                else:
+                    # If ignore_noise is False, include long blank segments as noise
+                    if segment_length > max_blanks:
+                        framestamps.append((segment_phoneme, start_idx, end_idx))
             
             # For non-blank segments, always include them (even if very short)
             if segment_phoneme != self.blank_id:
                 framestamps.append((segment_phoneme, start_idx, end_idx))
+                
         
         return framestamps
 
-class AlignmentUtils: # 2025-08-07
+class AlignmentUtils: # 2025-09-10
     """
     Alignment utilities with forced alignment fixes.
     """
     
-    def __init__(self, blank_id):
+    def __init__(self, blank_id, silence_id, silence_anchors=10, ignore_noise=True):
+        '''
+        Initialize AlignmentUtils.
+        Args:
+            blank_id: ID of the blank token
+            silence_id: ID of the silence token
+            silence_anchors: Number of silence frames to anchor pauses (slice at silences for easy alignment). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
+        '''
         self.blank_id = blank_id
-        self.viterbi_decoder = ViterbiDecoder(blank_id)
+        self.silence_id = silence_id
+        self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
+        self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise)
     
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
                          true_seqs_lens=None, forced_alignment=True, 
@@ -360,7 +577,6 @@ class AlignmentUtils: # 2025-08-07
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
             enforce_all_targets: Whether to enforce all target phonemes to be present
-
         Returns:
             List of frame-level alignments
         """
@@ -380,7 +596,7 @@ class AlignmentUtils: # 2025-08-07
                         log_probs_seq = log_probs[i][:pred_lens[i]]
                     else:
                         log_probs_seq = log_probs[i]
-                    
+                        
                     true_seq_len = true_seqs_lens[i]
                     true_seq = true_seqs[i, :true_seq_len]
                     
@@ -393,7 +609,8 @@ class AlignmentUtils: # 2025-08-07
                             true_seq,
                             boost_targets=boost_targets,
                             enforce_minimum=enforce_minimum,
-                            enforce_all_targets=enforce_all_targets
+                            enforce_all_targets=enforce_all_targets,
+                            anchor_pauses=(self.silence_anchors>0)
                         )
                     
                     all_frame_phonemes.append(frame_phonemes)
