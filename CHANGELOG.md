@@ -2,8 +2,8 @@
 
 
 ## [0.1.5] - 2025-09-10
-- `silence_anchors` parameter for spliting search path at long silnces.
-- `offset_ms=0` parameter in `framewise_assortment` for same audio, multiple segemsnt start correct .
+- `silence_anchors` parameter for spliting search path at long silences.
+- `offset_ms=0` parameter in `framewise_assortment` for same audio, multiple segments start offset corrected.
 - `ignore_noise=False` parameter to view predicted noise.
 
 ## [0.1.4] - 2025-09-02
@@ -56,7 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
-[0.1.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.0
-[0.1.1]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.1
-[0.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.2
+[0.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.5
 [0.1.4]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.3
+[0.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.2
+[0.1.1]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.1
+[0.1.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.0

@@ -30,7 +30,7 @@ BFA is a lightning-fast Python library that extracts **phoneme/word timestamps**
 |---------|-------------|-------------|
 | ⚡ **Ultra-Fast** | CPU-optimized processing | 0.2s for 10s audio |
 | 🎯 **Phoneme-Level** | Millisecond-precision timestamps | High accuracy alignment |
-| 🌍 **Multi-Language** | Via espeak phonemization | *English model ready |
+| 🌍 **Multi-Language** | Via espeak phonemization | 4 models ready |
 | 🔧 **Easy Integration** | JSON & TextGrid output | Praat compatibility |
 
 </div>
@@ -317,7 +317,7 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 
 | Key | Description | Format |
 |-----|-------------|--------|
-| `ph66` | Standardized 66 phoneme classes (including silence) | See [mapper66.py](bournemouth_aligner/mapper66.py) |
+| `ph66` | Standardized 66 phoneme classes (including silence) | See [ph66_mapper.py](bournemouth_aligner/ipamappers/ph66_mapper.py) |
 | `pg16` | 16 phoneme category groups (lateral, vowels, rhotics, etc.) | Grouped classifications |
 | `ipa` | IPA sequences from espeak | Unicode IPA symbols |
 | `words` | Word segmentation | Regex-based: `\b\w+\b` |
@@ -351,7 +351,7 @@ PhonemeTimestampAligner(
 **Parameters:**
 - `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). It's automatically downloaded and cached if available.
 - `cupe_ckpt_path`: Local path to the model checkpoint.
-- `lang`: Language code for phonemization ([espeak codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)).
+- `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)).
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
 - `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
 - `device`: Inference device (`cpu` or `cuda`).
@@ -361,6 +361,16 @@ PhonemeTimestampAligner(
 - `enforce_all_targets`: Band-aid postprocessing patch. It will insert phonemes missed by viterbi decoding at their expected positions based on target positions.
 - `ignore_noise`:  Whether to ignore the predicted "noise" in the alignment. If set to True, noise will be skipped over. If False, long noisy/silent segments will be included as "noise" timestamps.
 ---
+
+**Models:**
+- `model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"` for best performance on English. This model is trained on 1000 hours LibriSpeech.
+- `model_name="en_libri1000_uj01d_e62_val_GER=0.2438.ckpt"` for best performance on heavy accented English speech. This is the same as above, just unsettled weights.
+- `model_name="multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"` for best performance on 8 european languages including English, German, French, Dutch, Italian, Spanish, Italian, Portuguese, Polish. This model's accuracy on English (buckeye corpus) is on par with the above (main) English model. We can only assume that the performance will be the same on the rest of the 7 languages.
+- `model_name="multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"` universal model for all non-tonal languages. This model is extremely acoustic, if it hears /i/, it will mark an /i/ regardless of the language.
+- Models for tonal languages (Mandarin, Vietnamese, Thai) will have to wait.
+
+Do not forget to set `lang="en-us"` parameter based on your model and [Language Identifier](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
+
 
 ### Process SRT File
 
@@ -524,7 +534,7 @@ See full [example here](examples/mel_spectrum_alignment.py).
 PhonemeTimestampAligner.extract_mel_spectrum(
     wav,
     wav_sample_rate,
-    vocoder_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'}
+    vocoder_config={'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024, 'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050, 'fmin': 0, 'fmax': 8000, 'model': 'whatever_22khz_80band_fmax8k_256x'}
 )
 ```
 
@@ -534,7 +544,7 @@ Extracts mel spectrogram from audio with vocoder compatibility.
 **Parameters:**
 - `wav`: Input waveform tensor of shape `(1, T)`
 - `wav_sample_rate`: Sample rate of the input waveform
-- `vocoder_config`: Configuration dictionary for HiFiGAN/BigVGAN vocoder compatibility
+- `vocoder_config`: Configuration dictionary for HiFiGAN/BigVGAN vocoder compatibility.
 
 **Returns:**  
 - `mel`: Mel spectrogram tensor of shape `(frames, mel_bins)` - transposed for easy frame-wise processing
@@ -743,7 +753,7 @@ balign audio.wav transcription.srt.json output.json
 # With GPU and embeddings  
 balign audio.wav transcription.srt.json output.json --device cuda --embeddings embeddings.pt
 
-# Multi-language (*English model available)
+# Multi-language (English + 8 european langauges model available)
 balign audio.wav transcription.srt.json output.json --lang es
 
 # Batch processing
@@ -932,35 +942,27 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 **Alignment error histogram on [Buckeye Corpus](https://buckeyecorpus.osu.edu/):**
 
 <div align="center">
-    <img src="examples/samples/images/alignment_distance_histogram_log_500ms.png" alt="Alignment Error Histogram - Buckeye Corpus" width="600"/>
+    <img src="examples/samples/images/buckeye_bfa_alignment_error.png" alt="Alignment Error Histogram - Buckeye Corpus" width="600"/>
 </div>
 
-- Most phoneme boundaries are aligned within **±40ms** of ground truth.
+- Most phoneme boundaries are aligned within **±30ms** of ground truth.
 - Errors above **100ms** are rare and typically due to ambiguous or noisy segments.
 
 **For comparison:**  
 See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
 
 
-**Alignment Statistics for 245 files in Buckeye Corpus:**
+**Alignment Statistics for Buckeye Corpus:**
 - **Model used**: "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
-- **Segment max duration**: 60s
-- **Total Known boundaries (ground truth):** 1,519,843  
-- **Aligned boundaries (predicted):** 1,003,710  
-- **Boundary ratio (Known/Predicted):** 1.51
+- **Segment max duration**: 20s
+- **Boundary ratio (Predicted/Known):** 1.635
 
-**Alignment error:**
-- **Mean distance:** 31.4 ms  
-- **Median distance:** 26.5 ms  
-- **Standard deviation:** 24.3 ms
 
-**Accuracy within time thresholds:**
-- **≤20 ms:** 38.8%  
-- **≤50 ms:** 65.4%  
-- **≤100 ms:** 74.3%
+Recall within 10ms error: 36.1%
+Recall within 20ms error: 51.5%
+Recall within 50ms error: 73.3%
 
-> These results demonstrate high phoneme-level alignment precision, with most boundaries detected within 50 ms of ground truth.
-
+Median error for BFA is 19.0ms. For reference, median error for MFA is also ~20ms, except it takes 1000 times longer to process.
 
 
 > ⚠️ **Best Performance**: For optimal results, use audio segments **under 30 seconds**. For longer audio, segment first using Whisper or VAD. Audio duration above 60 seconds creates too many possibilities for the Viterbi algorithm to handle properly.
@@ -983,17 +985,13 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 
 </div>
 
-### 📊 Sample Visualizations
+### 📊 Sample Visualizations in Praat
 
 **"In being comparatively modern..."** - LJ Speech Dataset  
 [🎵 Audio Sample](examples/samples/LJSpeech/LJ001-0002.wav)
 
 ![Praat Alignment Example](examples/samples/images/LJ02_praat.png)
 
-**"Butterfly" with Confidence Values**  
-[🎵 Audio Sample](examples/samples/audio/109867__timkahn__butterfly.wav)
-
-![Butterfly Alignment Example](examples/samples/images/butterfly_praat.png)
 
 
 ---
