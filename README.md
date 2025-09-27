@@ -128,16 +128,14 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 
 ```python
 # German with MLS8 model
-extractor_de = PhonemeTimestampAligner(preset="de")
+aligner_de = PhonemeTimestampAligner(preset="de")
 
 # Hindi with Universal model
-extractor_hi = PhonemeTimestampAligner(preset="hi")
+aligner_hi = PhonemeTimestampAligner(preset="hi")
 
 # French with MLS8 model
-extractor_fr = PhonemeTimestampAligner(preset="fr")
+aligner_fr = PhonemeTimestampAligner(preset="fr")
 
-# Japanese with Universal model
-extractor_ja = PhonemeTimestampAligner(preset="ja")
 ```
 
 ### 📊 Sample Output
@@ -1123,10 +1121,10 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 
 ### 📊 Alignment Error Analysis
 
-**Alignment error histogram on [Buckeye Corpus](https://buckeyecorpus.osu.edu/):**
+**Alignment error histogram on [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1):**
 
 <div align="center">
-    <img src="examples/samples/images/buckeye_bfa_alignment_error.png" alt="Alignment Error Histogram - Buckeye Corpus" width="600"/>
+    <img src="examples/samples/images/BFA_vs_MFA_errors_on_TIMIT.png" alt="Alignment Error Histogram - TIMIT Dataset" width="600"/>
 </div>
 
 - Most phoneme boundaries are aligned within **±30ms** of ground truth.
@@ -1136,17 +1134,7 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
 
 
-**Alignment Statistics for Buckeye Corpus:**
-- **Model used**: "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
-- **Segment max duration**: 20s
-- **Boundary ratio (Predicted/Known):** 1.635
 
-
-Recall within 10ms error: 36.1%
-Recall within 20ms error: 51.5%
-Recall within 50ms error: 73.3%
-
-Median error for BFA is 19.0ms. For reference, median error for MFA is also ~20ms, except it takes 1000 times longer to process.
 
 
 > ⚠️ **Best Performance**: For optimal results, use audio segments **under 30 seconds**. For longer audio, segment first using Whisper or VAD. Audio duration above 60 seconds creates too many possibilities for the Viterbi algorithm to handle properly.
@@ -1163,9 +1151,10 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 |--------|-----|-----|
 | **Speed** | 0.2s per 10s audio | 10s per 2s audio |
 | **Real-time potential** | ✅ Yes (contextless) | ❌ No |
-| **Stop consonants** | ✅ Better (t,d,p,k) | ⚠️ Standard |
-| **Tail endings** | ⚠️ Sometimes missed | ✅ Good |
+| **Stop consonants** | ✅ Better (t,d,p,k) | ⚠️ Extends too much |
+| **Tail endings** | ⚠️ Sometimes missed | ❌ Onset only |
 | **Breathy sounds** | ⚠️ Misses h# | ✅ Captures |
+| **Punctuation** | ✅ Silence aware | ❌ No punctuation |
 
 </div>
 
