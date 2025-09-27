@@ -30,7 +30,7 @@ BFA is a lightning-fast Python library that extracts **phoneme/word timestamps**
 |---------|-------------|-------------|
 | ⚡ **Ultra-Fast** | CPU-optimized processing | 0.2s for 10s audio |
 | 🎯 **Phoneme-Level** | Millisecond-precision timestamps | High accuracy alignment |
-| 🌍 **Multi-Language** | Via espeak phonemization | All non-tonal languages |
+| 🌍 **Multi-Language** | Via espeak phonemization | 80+ Indo-European + related |
 | 🔧 **Easy Integration** | JSON & TextGrid output | Praat compatibility |
 
 </div>
@@ -355,7 +355,9 @@ extractor_ja = PhonemeTimestampAligner(preset="ja")
 
 ### 🌍 Language Presets
 
-BFA supports **127+ languages** through intelligent preset selection. Simply specify a language code as `preset` parameter for automatic model and language configuration.
+BFA supports **80+ languages** through intelligent preset selection, focusing on Indo-European and closely related language families. Simply specify a language code as `preset` parameter for automatic model and language configuration.
+
+**⚠️ Note**: Tonal languages (Chinese, Vietnamese, Thai) and distant language families (Japanese, Korean, Bantu, etc.) are not supported through presets due to CUPE model limitations.
 
 ```python
 # Using presets (recommended)
@@ -373,7 +375,7 @@ aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
 #### 📋 Complete Preset Table
 
 <details>
-<summary>🔍 Click to view all 127+ supported language presets</summary>
+<summary>🔍 Click to view all 80+ supported language presets</summary>
 
 | **Language** | **Preset Code** | **Model Used** | **Language Family** |
 |--------------|-----------------|----------------|-------------------|
@@ -470,42 +472,18 @@ aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
 | Hebrew | `he` | Universal Model | Semitic |
 | Amharic | `am` | Universal Model | Semitic |
 | Maltese | `mt` | Universal Model | Semitic |
-| **🇻🇳 AUSTROASIATIC LANGUAGES (Universal)** | | |
-| Vietnamese (North) | `vi` | Universal Model | Austroasiatic |
-| Vietnamese (Central) | `vi-vn-x-central` | Universal Model | Austroasiatic |
-| Vietnamese (South) | `vi-vn-x-south` | Universal Model | Austroasiatic |
 | **🏝️ MALAYO-POLYNESIAN LANGUAGES (Universal)** | | |
 | Indonesian | `id` | Universal Model | Malayo-Polynesian |
 | Malay | `ms` | Universal Model | Malayo-Polynesian |
-| Māori | `mi` | Universal Model | Malayo-Polynesian |
-| Hawaiian | `haw` | Universal Model | Malayo-Polynesian |
 | **🇮🇳 DRAVIDIAN LANGUAGES (Universal)** | | |
 | Tamil | `ta` | Universal Model | Dravidian |
 | Telugu | `te` | Universal Model | Dravidian |
 | Kannada | `kn` | Universal Model | Dravidian |
 | Malayalam | `ml` | Universal Model | Dravidian |
-| **🌍 AFRICAN LANGUAGES (Universal)** | | |
-| Swahili | `sw` | Universal Model | Bantu |
-| Setswana | `tn` | Universal Model | Bantu |
-| Oromo | `om` | Universal Model | Cushitic |
-| **🇹🇭 TAI LANGUAGES (Universal)** | | |
-| Thai | `th` | Universal Model | Tai |
-| Shan (Tai Yai) | `shn` | Universal Model | Tai |
-| **🇲🇲 SINO-TIBETAN LANGUAGES (Universal)** | | |
-| Burmese | `my` | Universal Model | Sino-Tibetan |
 | **🇬🇪 SOUTH CAUCASIAN LANGUAGES (Universal)** | | |
 | Georgian | `ka` | Universal Model | South Caucasian |
-| **❄️ ESKIMO-ALEUT LANGUAGES (Universal)** | | |
-| Greenlandic | `kl` | Universal Model | Eskimo-Aleut |
-| **🌎 AMERICAN LANGUAGES (Universal)** | | |
-| Guarani | `gn` | Universal Model | South American Indian |
-| Nahuatl (Classical) | `nci` | Universal Model | Uto-Aztecan |
-| K'iche' | `quc` | Universal Model | Mayan |
-| Cherokee | `chr` | Universal Model | Iroquoian |
 | **🗾 LANGUAGE ISOLATES & OTHERS (Universal)** | | |
 | Basque | `eu` | Universal Model | Language Isolate |
-| Korean | `ko` | Universal Model | Language Isolate |
-| Japanese | `ja` | Universal Model | Japanese |
 | Quechua | `qu` | Universal Model | Quechuan |
 | **🛸 CONSTRUCTED LANGUAGES (Universal)** | | |
 | Esperanto | `eo` | Universal Model | Constructed |
@@ -518,10 +496,6 @@ aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
 | Quenya | `qya` | Universal Model | Constructed |
 | Klingon | `piqd` | Universal Model | Constructed |
 | Sindarin | `sjn` | Universal Model | Constructed |
-| **🏮 TONAL LANGUAGES (Universal - Limited)** | | |
-| Chinese (Mandarin) | `cmn` | Universal Model | Sino-Tibetan |
-| Chinese (Cantonese) | `yue` | Universal Model | Sino-Tibetan |
-| Chinese (Hakka) | `hak` | Universal Model | Sino-Tibetan |
 
 </details>
 
@@ -531,7 +505,13 @@ aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
 |-----------|---------------|--------------|-----------------|
 | **English Model** | English variants | Best for English | Highest accuracy for English |
 | **MLS8 Model** | 8 European + similar | European languages | High accuracy for European |
-| **Universal Model** | 100+ languages | All other languages | Good for non-European languages |
+| **Universal Model** | 60+ Indo-European + related | Other supported languages | Good for Indo-European families |
+
+**⚠️ Unsupported Language Types:**
+- **Tonal languages**: Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese
+- **Distant families**: Japanese, Korean, most African languages (Swahili, etc.)
+- **Indigenous languages**: Most Native American, Polynesian (except Indonesian/Malay)
+- **Recommendation**: For unsupported languages, use explicit `model_name` parameter with caution
 
 ### Initialization
 

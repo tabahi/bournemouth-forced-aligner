@@ -44,8 +44,9 @@ class PhonemeTimestampAligner:
 
         Args:
             preset (str): Language preset for automatic model and language selection.
-                Supports 127+ languages including English variants, European languages,
-                Indo-European families, and many others. Examples: "en-us", "de", "fr", "hi", "zh", etc.
+                Supports 80+ languages including English variants, European languages,
+                Indo-European families, and closely related languages. Examples: "en-us", "de", "fr", "hi", "ar", etc.
+                Note: Tonal languages (Chinese, Vietnamese, Thai) and distant language families are not supported.
                 See README.md for complete preset list.
             model_name (str, optional): Name of the pre-trained model to use.
                 Overrides preset model selection. Available models:
@@ -80,15 +81,20 @@ class PhonemeTimestampAligner:
             - en_libri1000_uj01d_e62_val_GER=0.2438.ckpt: For accented English speech
             - multi_MLS8_uh02_e36_val_GER=0.2334.ckpt: 8 European languages
               (English, German, French, Dutch, Italian, Spanish, Portuguese, Polish)
-            - multi_mswc38_ug20_e59_val_GER=0.5611.ckpt: Universal model for all
-              non-tonal languages (127+ languages supported)
+            - multi_mswc38_ug20_e59_val_GER=0.5611.ckpt: Universal model for
+              Indo-European and closely related languages (80+ languages supported)
 
         Preset Categories:
             - English: en-us, en, en-gb, etc. → English model
             - European (MLS8): de, fr, es, it, pt, pl, nl, da, sv, etc. → MLS8 model
             - Indo-European: hi, bn, ru, fa, el, etc. → Universal model
-            - Other families: ar, tr, ja, ko, sw, th, etc. → Universal model
+            - Related families: ar, tr, id, ms, etc. → Universal model
             - Constructed: eo, ia, jbo, etc. → Universal model
+
+        Unsupported Language Types:
+            - Tonal languages: Chinese (cmn, yue, hak), Vietnamese (vi), Thai (th)
+            - Distant families: Japanese (ja), Korean (ko), Bantu languages, etc.
+            - For unsupported languages, consider using explicit model_name parameter
 
         Examples:
             # Using presets (recommended)
@@ -209,14 +215,9 @@ class PhonemeTimestampAligner:
                     lang = preset
                 model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
-            # Austroasiatic languages
-            elif preset in ["vi", "vi-vn-x-central", "vi-vn-x-south"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
-            # Malayo-Polynesian languages
-            elif preset in ["id", "ms", "mi", "haw"]:
+            # Malayo-Polynesian languages (Indonesian/Malay only - closer to Indo-European contact)
+            elif preset in ["id", "ms"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
                 model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
@@ -227,29 +228,6 @@ class PhonemeTimestampAligner:
                     lang = preset
                 model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
-            # Bantu languages
-            elif preset in ["sw", "tn"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Tai languages
-            elif preset in ["th", "shn"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Sino-Tibetan languages (non-tonal approximation)
-            elif preset in ["my"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Cushitic languages
-            elif preset in ["om"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
             # South Caucasian languages
             elif preset in ["ka"]:
@@ -257,38 +235,9 @@ class PhonemeTimestampAligner:
                     lang = preset
                 model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
-            # Eskimo-Aleut languages
-            elif preset in ["kl"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
-            # South American Indian languages
-            elif preset in ["gn"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Uto-Aztecan languages
-            elif preset in ["nci"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Mayan languages
-            elif preset in ["quc"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Iroquoian languages
-            elif preset in ["chr"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
-
-            # Language isolates and other families
-            elif preset in ["eu", "ko", "ja", "qu"]:
+            # Language isolates (maintain only Basque and Quechua - European/Indo-European contact)
+            elif preset in ["eu", "qu"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
                 model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
@@ -299,11 +248,6 @@ class PhonemeTimestampAligner:
                     lang = preset
                 model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
-            # Tonal languages - note: these require special handling but using universal model as fallback
-            elif preset in ["cmn", "yue", "hak"]:  # Chinese variants
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
 
             # Default fallback for unrecognized presets
             elif preset:
