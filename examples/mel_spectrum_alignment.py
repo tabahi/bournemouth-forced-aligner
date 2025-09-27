@@ -72,9 +72,13 @@ def example_audio_timestamps():
 
     text_sentences = "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition"
     audio_path = "examples/samples/LJSpeech/LJ001-0001.wav"
-    
-    model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" 
-    extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu', enforce_all_targets=False)
+
+    # Using language preset (recommended) - automatically selects best English model
+    extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu', enforce_all_targets=False)
+
+    # Alternative: explicit model selection
+    # model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+    # extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu', enforce_all_targets=False)
 
     full_clip_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 

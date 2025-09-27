@@ -38,26 +38,278 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_idx", device="cpu", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_idx", device="cpu", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
         """
         Initialize the phoneme timestamp extractor.
-        
+
         Args:
-            model_name: Name of the pre-trained model to use. Use the ckpt base filenames from:  https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
-            cupe_ckpt_path: Path to the CUPE model checkpoint. Download from: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
-            lang: Language for phonemization (use espeak lang codes, see https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)
-            mapper: Phoneme mapper to use (default: "ph66")
-            duration_max: Maximum duration in seconds (Padding purposes when using batch processing). You can set it to 10 to 60 seconds.
-            ms_per_frame: Milliseconds per frame in the framewise assortment of phoneme labels. Set to `-1` to disable framewise assortment. Set to 1 to 80ms if your next task requires a specific frame rate. This does not effect the model or the alignment accuracy. See `framewise_assortment()`.
-            output_frames_key: Set which of the ouputs to use to assort frames (using ms_per_frame). Options: "phoneme_idx"(default), "phoneme_label", "group_idx", "group_label"
-            device: Device to run inference on
-            silence_anchors: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
-            boost_targets: Boost the probabilities of target phonemes to ensure they can be aligned.
-            enforce_minimum: Ensure target phonemes meet a minimum probability threshold in the predicted frames.
-            enforce_all_targets: Whether to enforce all target phonemes to be present. Band-aid postprocessing patch: It will insert phonemes missed by viterbi decoding at their expected positions based on targets.
-            ignore_noise: Whether to ignore the predicted "noise" in the alignment. If set to True, noise will be skipped over. If False, long noisy/silent segments will be included as "noise" timestamps.
+            preset (str): Language preset for automatic model and language selection.
+                Supports 127+ languages including English variants, European languages,
+                Indo-European families, and many others. Examples: "en-us", "de", "fr", "hi", "zh", etc.
+                See README.md for complete preset list.
+            model_name (str, optional): Name of the pre-trained model to use.
+                Overrides preset model selection. Available models:
+                - "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" (English)
+                - "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt" (8 European languages)
+                - "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt" (Universal)
+                Models downloaded from: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
+            cupe_ckpt_path (str, optional): Direct path to CUPE model checkpoint.
+                Highest priority - overrides both preset and model_name.
+            lang (str): Language code for phonemization (espeak format).
+                Examples: "en-us", "de", "fr", "hi". Only overridden by preset if using default.
+                See: https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
+            mapper (str): Phoneme mapper to use (default: "ph66").
+            duration_max (float): Maximum segment duration in seconds for padding (10-60 recommended).
+            output_frames_key (str): Frame output format. Options: "phoneme_idx", "phoneme_label",
+                "group_idx", "group_label".
+            device (str): Processing device ("cpu" or "cuda").
+            silence_anchors (int): Silent frames threshold for segment splitting (0 to disable).
+            boost_targets (bool): Enhance target phoneme probabilities for better alignment.
+            enforce_minimum (bool): Ensure minimum probability threshold for target phonemes.
+            enforce_all_targets (bool): Force all target phonemes to appear in alignment.
+            ignore_noise (bool): Skip predicted noise in alignment output.
+
+        Parameter Priority (highest to lowest):
+            1. Explicit cupe_ckpt_path
+            2. Explicit model_name
+            3. Preset values (only if no explicit model specified)
+            4. Default values
+
+        Available Models:
+            - en_libri1000_uj01d_e199_val_GER=0.2307.ckpt: Best for English (1000hrs LibriSpeech)
+            - en_libri1000_uj01d_e62_val_GER=0.2438.ckpt: For accented English speech
+            - multi_MLS8_uh02_e36_val_GER=0.2334.ckpt: 8 European languages
+              (English, German, French, Dutch, Italian, Spanish, Portuguese, Polish)
+            - multi_mswc38_ug20_e59_val_GER=0.5611.ckpt: Universal model for all
+              non-tonal languages (127+ languages supported)
+
+        Preset Categories:
+            - English: en-us, en, en-gb, etc. → English model
+            - European (MLS8): de, fr, es, it, pt, pl, nl, da, sv, etc. → MLS8 model
+            - Indo-European: hi, bn, ru, fa, el, etc. → Universal model
+            - Other families: ar, tr, ja, ko, sw, th, etc. → Universal model
+            - Constructed: eo, ia, jbo, etc. → Universal model
+
+        Examples:
+            # Using presets (recommended)
+            aligner = PhonemeTimestampAligner(preset="de")  # German with MLS8 model
+            aligner = PhonemeTimestampAligner(preset="hi")  # Hindi with universal model
+
+            # Explicit model selection
+            aligner = PhonemeTimestampAligner(
+                lang="ja",
+                model_name="multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+            )
+
+            # Direct checkpoint path (highest priority)
+            aligner = PhonemeTimestampAligner(
+                cupe_ckpt_path="/path/to/model.ckpt",
+                lang="zh"
+            )
         """
         self.device = device
+
+        # Parameter priority handling:
+        # 1st priority: Explicit cupe_ckpt_path (highest)
+        # 2nd priority: Explicit model_name
+        # 3rd priority: Preset values (only if no explicit model specified)
+        # 4th priority: Default values
+
+        # Only apply preset logic if no explicit checkpoint path or model name provided
+        if cupe_ckpt_path is None and model_name is None:
+            # Language preset mappings based on available models
+
+            # English - Use dedicated English model for best performance
+            if preset in ["en-us", "en", "en-gb", "en-029", "en-gb-x-gbclan", "en-gb-x-rp", "en-gb-scotland", "en-gb-x-gbcwmd"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+
+            # MLS8 European languages (trained on 8 European languages)
+            elif preset in ["de", "fr", "fr-be", "fr-ch", "es", "es-419", "it", "pt", "pt-br", "pl", "nl"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
+
+            # Other European languages (similar to MLS8 training data)
+            elif preset in ["da", "sv", "nb", "is", "cs", "sk", "sl", "hr", "bs", "sr", "mk", "bg", "ro", "hu", "et", "lv", "lt"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
+
+            # Romance languages (similar to trained Romance languages)
+            elif preset in ["ca", "an", "pap", "ht"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
+
+            # Germanic languages (similar to trained Germanic languages)
+            elif preset in ["af", "lb"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
+
+            # Celtic languages
+            elif preset in ["ga", "gd", "cy"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
+
+            # Indo-European languages - Use MSWC38 universal model
+            elif preset in ["ru", "ru-lv", "uk", "be"]:  # Slavic
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            elif preset in ["hi", "bn", "ur", "pa", "gu", "mr", "ne", "as", "or", "si", "kok", "bpy", "sd"]:  # Indic
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            elif preset in ["fa", "fa-latn", "ku"]:  # Iranian
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            elif preset in ["el", "grc"]:  # Greek
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            elif preset in ["hy", "hyw"]:  # Armenian
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            elif preset in ["sq"]:  # Albanian
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            elif preset in ["la"]:  # Latin
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Turkic languages
+            elif preset in ["tr", "az", "kk", "ky", "uz", "tt", "tk", "ug", "ba", "cu", "nog"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Uralic languages (note: Finnish is in both MLS8 and here, prioritize MLS8 above)
+            elif preset in ["fi", "et", "hu", "smj"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Semitic languages
+            elif preset in ["ar", "he", "am", "mt"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Austroasiatic languages
+            elif preset in ["vi", "vi-vn-x-central", "vi-vn-x-south"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Malayo-Polynesian languages
+            elif preset in ["id", "ms", "mi", "haw"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Dravidian languages
+            elif preset in ["ta", "te", "kn", "ml"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Bantu languages
+            elif preset in ["sw", "tn"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Tai languages
+            elif preset in ["th", "shn"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Sino-Tibetan languages (non-tonal approximation)
+            elif preset in ["my"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Cushitic languages
+            elif preset in ["om"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # South Caucasian languages
+            elif preset in ["ka"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Eskimo-Aleut languages
+            elif preset in ["kl"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # South American Indian languages
+            elif preset in ["gn"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Uto-Aztecan languages
+            elif preset in ["nci"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Mayan languages
+            elif preset in ["quc"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Iroquoian languages
+            elif preset in ["chr"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Language isolates and other families
+            elif preset in ["eu", "ko", "ja", "qu"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Constructed languages
+            elif preset in ["eo", "ia", "io", "lfn", "jbo", "py", "qdb", "qya", "piqd", "sjn"]:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Tonal languages - note: these require special handling but using universal model as fallback
+            elif preset in ["cmn", "yue", "hak"]:  # Chinese variants
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+
+            # Default fallback for unrecognized presets
+            elif preset:
+                if lang == 'en-us':  # Only override if using default lang
+                    lang = preset
+                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"  # Universal model as fallback
 
         if cupe_ckpt_path is not None:
             cupe_ckpt_path = cupe_ckpt_path
@@ -451,7 +703,7 @@ class PhonemeTimestampAligner:
                 pooled_embeddings_groups = self.weighted_pool_embeddings(embeddings[0][:spectral_len], log_probs_g[0][:spectral_len], frame_groups[0])
                 return timestamp_dict, pooled_embeddings_phonemes, pooled_embeddings_groups
             else: 
-                return timestamp_dict, pooled_embeddings_phonemes
+                return timestamp_dict, pooled_embeddings_phonemes, None
 
         return timestamp_dict, None, None
 

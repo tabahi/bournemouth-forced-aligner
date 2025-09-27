@@ -8,9 +8,13 @@ def example_audio_timestamps():
 
     text_sentence = "butterfly"
     audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
-    
-    model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" 
-    extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
+
+    # Using language preset (recommended) - automatically selects best English model
+    extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
+
+    # Alternative: explicit model selection
+    # model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+    # extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
 
     audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 

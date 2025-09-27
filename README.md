@@ -7,7 +7,7 @@
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-yellow.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![GitHub stars](https://img.shields.io/github/stars/tabahi/bournemouth-forced-aligner.svg)](https://github.com/tabahi/bournemouth-forced-aligner/stargazers)
 
-**High-precision phoneme-level timestamp extraction from audio files**
+**High-precision multi-lingual phoneme-level timestamp extraction from audio files**
 > 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
 
 
@@ -30,7 +30,7 @@ BFA is a lightning-fast Python library that extracts **phoneme/word timestamps**
 |---------|-------------|-------------|
 | ⚡ **Ultra-Fast** | CPU-optimized processing | 0.2s for 10s audio |
 | 🎯 **Phoneme-Level** | Millisecond-precision timestamps | High accuracy alignment |
-| 🌍 **Multi-Language** | Via espeak phonemization | 4 models ready |
+| 🌍 **Multi-Language** | Via espeak phonemization | All non-tonal languages |
 | 🔧 **Easy Integration** | JSON & TextGrid output | Praat compatibility |
 
 </div>
@@ -88,27 +88,33 @@ from bournemouth_aligner import PhonemeTimestampAligner
 # Configuration
 text_sentence = "butterfly"
 audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
-model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
 
-# Initialize aligner
+# Initialize aligner using language preset (recommended)
 extractor = PhonemeTimestampAligner(
-    model_name=model_name, 
-    lang='en-us', 
-    duration_max=10,   # keep audio segments under 60
+    preset="en-us",  # Automatically selects best English model
+    duration_max=10,
     device='cpu'
 )
+
+# Alternative: explicit model selection
+# extractor = PhonemeTimestampAligner(
+#     model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
+#     lang='en-us',
+#     duration_max=10,
+#     device='cpu'
+# )
 
 # Load and process
 audio_wav = extractor.load_audio(audio_path)
 
 t0 = time.time()
 timestamps = extractor.process_sentence(
-    text_sentence, 
-    audio_wav, 
-    ts_out_path=None, 
-    extract_embeddings=False, 
-    vspt_path=None, 
-    do_groups=True, 
+    text_sentence,
+    audio_wav,
+    ts_out_path=None,
+    extract_embeddings=False,
+    vspt_path=None,
+    do_groups=True,
     debug=True
 )
 t1 = time.time()
@@ -116,6 +122,22 @@ t1 = time.time()
 print("🎯 Timestamps:")
 print(json.dumps(timestamps, indent=4, ensure_ascii=False))
 print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
+```
+
+### 🌐 Multi-Language Examples
+
+```python
+# German with MLS8 model
+extractor_de = PhonemeTimestampAligner(preset="de")
+
+# Hindi with Universal model
+extractor_hi = PhonemeTimestampAligner(preset="hi")
+
+# French with MLS8 model
+extractor_fr = PhonemeTimestampAligner(preset="fr")
+
+# Japanese with Universal model
+extractor_ja = PhonemeTimestampAligner(preset="ja")
 ```
 
 ### 📊 Sample Output
@@ -331,13 +353,194 @@ print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 
 ## 🛠️ Methods
 
+### 🌍 Language Presets
+
+BFA supports **127+ languages** through intelligent preset selection. Simply specify a language code as `preset` parameter for automatic model and language configuration.
+
+```python
+# Using presets (recommended)
+aligner = PhonemeTimestampAligner(preset="de")  # German with MLS8 model
+aligner = PhonemeTimestampAligner(preset="hi")  # Hindi with Universal model
+aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
+```
+
+#### 🎯 Parameter Priority
+1. **Explicit `cupe_ckpt_path`** (highest priority)
+2. **Explicit `model_name`**
+3. **Preset values** (only if no explicit model specified)
+4. **Default values**
+
+#### 📋 Complete Preset Table
+
+<details>
+<summary>🔍 Click to view all 127+ supported language presets</summary>
+
+| **Language** | **Preset Code** | **Model Used** | **Language Family** |
+|--------------|-----------------|----------------|-------------------|
+| **🇺🇸 ENGLISH VARIANTS** | | |
+| English (US) | `en-us`, `en` | English Model | West Germanic |
+| English (UK) | `en-gb` | English Model | West Germanic |
+| English (Caribbean) | `en-029` | English Model | West Germanic |
+| English (Lancastrian) | `en-gb-x-gbclan` | English Model | West Germanic |
+| English (RP) | `en-gb-x-rp` | English Model | West Germanic |
+| English (Scottish) | `en-gb-scotland` | English Model | West Germanic |
+| English (West Midlands) | `en-gb-x-gbcwmd` | English Model | West Germanic |
+| **🇪🇺 EUROPEAN LANGUAGES (MLS8)** | | |
+| German | `de` | MLS8 Model | West Germanic |
+| French | `fr` | MLS8 Model | Romance |
+| French (Belgium) | `fr-be` | MLS8 Model | Romance |
+| French (Switzerland) | `fr-ch` | MLS8 Model | Romance |
+| Spanish | `es` | MLS8 Model | Romance |
+| Spanish (Latin America) | `es-419` | MLS8 Model | Romance |
+| Italian | `it` | MLS8 Model | Romance |
+| Portuguese | `pt` | MLS8 Model | Romance |
+| Portuguese (Brazil) | `pt-br` | MLS8 Model | Romance |
+| Polish | `pl` | MLS8 Model | West Slavic |
+| Dutch | `nl` | MLS8 Model | West Germanic |
+| Danish | `da` | MLS8 Model | North Germanic |
+| Swedish | `sv` | MLS8 Model | North Germanic |
+| Norwegian Bokmål | `nb` | MLS8 Model | North Germanic |
+| Icelandic | `is` | MLS8 Model | North Germanic |
+| Czech | `cs` | MLS8 Model | West Slavic |
+| Slovak | `sk` | MLS8 Model | West Slavic |
+| Slovenian | `sl` | MLS8 Model | South Slavic |
+| Croatian | `hr` | MLS8 Model | South Slavic |
+| Bosnian | `bs` | MLS8 Model | South Slavic |
+| Serbian | `sr` | MLS8 Model | South Slavic |
+| Macedonian | `mk` | MLS8 Model | South Slavic |
+| Bulgarian | `bg` | MLS8 Model | South Slavic |
+| Romanian | `ro` | MLS8 Model | Romance |
+| Hungarian | `hu` | MLS8 Model | Uralic |
+| Estonian | `et` | MLS8 Model | Uralic |
+| Latvian | `lv` | MLS8 Model | Baltic |
+| Lithuanian | `lt` | MLS8 Model | Baltic |
+| Catalan | `ca` | MLS8 Model | Romance |
+| Aragonese | `an` | MLS8 Model | Romance |
+| Papiamento | `pap` | MLS8 Model | Romance |
+| Haitian Creole | `ht` | MLS8 Model | Romance |
+| Afrikaans | `af` | MLS8 Model | West Germanic |
+| Luxembourgish | `lb` | MLS8 Model | West Germanic |
+| Irish Gaelic | `ga` | MLS8 Model | Celtic |
+| Scottish Gaelic | `gd` | MLS8 Model | Celtic |
+| Welsh | `cy` | MLS8 Model | Celtic |
+| **🌏 INDO-EUROPEAN LANGUAGES (Universal)** | | |
+| Russian | `ru` | Universal Model | East Slavic |
+| Russian (Latvia) | `ru-lv` | Universal Model | East Slavic |
+| Ukrainian | `uk` | Universal Model | East Slavic |
+| Belarusian | `be` | Universal Model | East Slavic |
+| Hindi | `hi` | Universal Model | Indic |
+| Bengali | `bn` | Universal Model | Indic |
+| Urdu | `ur` | Universal Model | Indic |
+| Punjabi | `pa` | Universal Model | Indic |
+| Gujarati | `gu` | Universal Model | Indic |
+| Marathi | `mr` | Universal Model | Indic |
+| Nepali | `ne` | Universal Model | Indic |
+| Assamese | `as` | Universal Model | Indic |
+| Oriya | `or` | Universal Model | Indic |
+| Sinhala | `si` | Universal Model | Indic |
+| Konkani | `kok` | Universal Model | Indic |
+| Bishnupriya Manipuri | `bpy` | Universal Model | Indic |
+| Sindhi | `sd` | Universal Model | Indic |
+| Persian | `fa` | Universal Model | Iranian |
+| Persian (Latin) | `fa-latn` | Universal Model | Iranian |
+| Kurdish | `ku` | Universal Model | Iranian |
+| Greek (Modern) | `el` | Universal Model | Greek |
+| Greek (Ancient) | `grc` | Universal Model | Greek |
+| Armenian (East) | `hy` | Universal Model | Indo-European |
+| Armenian (West) | `hyw` | Universal Model | Indo-European |
+| Albanian | `sq` | Universal Model | Indo-European |
+| Latin | `la` | Universal Model | Italic |
+| **🇹🇷 TURKIC LANGUAGES (Universal)** | | |
+| Turkish | `tr` | Universal Model | Turkic |
+| Azerbaijani | `az` | Universal Model | Turkic |
+| Kazakh | `kk` | Universal Model | Turkic |
+| Kyrgyz | `ky` | Universal Model | Turkic |
+| Uzbek | `uz` | Universal Model | Turkic |
+| Tatar | `tt` | Universal Model | Turkic |
+| Turkmen | `tk` | Universal Model | Turkic |
+| Uyghur | `ug` | Universal Model | Turkic |
+| Bashkir | `ba` | Universal Model | Turkic |
+| Chuvash | `cu` | Universal Model | Turkic |
+| Nogai | `nog` | Universal Model | Turkic |
+| **🇫🇮 URALIC LANGUAGES (Universal)** | | |
+| Finnish | `fi` | Universal Model | Uralic |
+| Lule Saami | `smj` | Universal Model | Uralic |
+| **🕌 SEMITIC LANGUAGES (Universal)** | | |
+| Arabic | `ar` | Universal Model | Semitic |
+| Hebrew | `he` | Universal Model | Semitic |
+| Amharic | `am` | Universal Model | Semitic |
+| Maltese | `mt` | Universal Model | Semitic |
+| **🇻🇳 AUSTROASIATIC LANGUAGES (Universal)** | | |
+| Vietnamese (North) | `vi` | Universal Model | Austroasiatic |
+| Vietnamese (Central) | `vi-vn-x-central` | Universal Model | Austroasiatic |
+| Vietnamese (South) | `vi-vn-x-south` | Universal Model | Austroasiatic |
+| **🏝️ MALAYO-POLYNESIAN LANGUAGES (Universal)** | | |
+| Indonesian | `id` | Universal Model | Malayo-Polynesian |
+| Malay | `ms` | Universal Model | Malayo-Polynesian |
+| Māori | `mi` | Universal Model | Malayo-Polynesian |
+| Hawaiian | `haw` | Universal Model | Malayo-Polynesian |
+| **🇮🇳 DRAVIDIAN LANGUAGES (Universal)** | | |
+| Tamil | `ta` | Universal Model | Dravidian |
+| Telugu | `te` | Universal Model | Dravidian |
+| Kannada | `kn` | Universal Model | Dravidian |
+| Malayalam | `ml` | Universal Model | Dravidian |
+| **🌍 AFRICAN LANGUAGES (Universal)** | | |
+| Swahili | `sw` | Universal Model | Bantu |
+| Setswana | `tn` | Universal Model | Bantu |
+| Oromo | `om` | Universal Model | Cushitic |
+| **🇹🇭 TAI LANGUAGES (Universal)** | | |
+| Thai | `th` | Universal Model | Tai |
+| Shan (Tai Yai) | `shn` | Universal Model | Tai |
+| **🇲🇲 SINO-TIBETAN LANGUAGES (Universal)** | | |
+| Burmese | `my` | Universal Model | Sino-Tibetan |
+| **🇬🇪 SOUTH CAUCASIAN LANGUAGES (Universal)** | | |
+| Georgian | `ka` | Universal Model | South Caucasian |
+| **❄️ ESKIMO-ALEUT LANGUAGES (Universal)** | | |
+| Greenlandic | `kl` | Universal Model | Eskimo-Aleut |
+| **🌎 AMERICAN LANGUAGES (Universal)** | | |
+| Guarani | `gn` | Universal Model | South American Indian |
+| Nahuatl (Classical) | `nci` | Universal Model | Uto-Aztecan |
+| K'iche' | `quc` | Universal Model | Mayan |
+| Cherokee | `chr` | Universal Model | Iroquoian |
+| **🗾 LANGUAGE ISOLATES & OTHERS (Universal)** | | |
+| Basque | `eu` | Universal Model | Language Isolate |
+| Korean | `ko` | Universal Model | Language Isolate |
+| Japanese | `ja` | Universal Model | Japanese |
+| Quechua | `qu` | Universal Model | Quechuan |
+| **🛸 CONSTRUCTED LANGUAGES (Universal)** | | |
+| Esperanto | `eo` | Universal Model | Constructed |
+| Interlingua | `ia` | Universal Model | Constructed |
+| Ido | `io` | Universal Model | Constructed |
+| Lingua Franca Nova | `lfn` | Universal Model | Constructed |
+| Lojban | `jbo` | Universal Model | Constructed |
+| Pyash | `py` | Universal Model | Constructed |
+| Lang Belta | `qdb` | Universal Model | Constructed |
+| Quenya | `qya` | Universal Model | Constructed |
+| Klingon | `piqd` | Universal Model | Constructed |
+| Sindarin | `sjn` | Universal Model | Constructed |
+| **🏮 TONAL LANGUAGES (Universal - Limited)** | | |
+| Chinese (Mandarin) | `cmn` | Universal Model | Sino-Tibetan |
+| Chinese (Cantonese) | `yue` | Universal Model | Sino-Tibetan |
+| Chinese (Hakka) | `hak` | Universal Model | Sino-Tibetan |
+
+</details>
+
+#### 🔧 Model Selection Guide
+
+| **Model** | **Languages** | **Use Case** | **Performance** |
+|-----------|---------------|--------------|-----------------|
+| **English Model** | English variants | Best for English | Highest accuracy for English |
+| **MLS8 Model** | 8 European + similar | European languages | High accuracy for European |
+| **Universal Model** | 100+ languages | All other languages | Good for non-European languages |
+
 ### Initialization
 
 ```python
 PhonemeTimestampAligner(
-    model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
-    cupe_ckpt_path=None,
-    lang="en-us",
+    preset="en-us",  # Language preset (recommended)
+    model_name=None,  # Optional: explicit model override
+    cupe_ckpt_path=None,  # Optional: direct checkpoint path
+    lang="en-us",  # Language for phonemization
     duration_max=10,
     output_frames_key="phoneme_idx",
     device="cpu",
@@ -349,9 +552,10 @@ PhonemeTimestampAligner(
 ```
 
 **Parameters:**
-- `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). It's automatically downloaded and cached if available.
-- `cupe_ckpt_path`: Local path to the model checkpoint.
-- `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)).
+- `preset`: **[NEW]** Language preset for automatic model and language selection. Use language codes like "de", "fr", "hi", "ja", etc. Supports 127+ languages with intelligent model selection.
+- `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). Overrides preset selection. Downloaded automatically if available.
+- `cupe_ckpt_path`: Local path to model checkpoint. Highest priority - overrides both preset and model_name.
+- `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
 - `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
 - `device`: Inference device (`cpu` or `cuda`).

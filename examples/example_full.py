@@ -5,11 +5,16 @@ from bournemouth_aligner import PhonemeTimestampAligner
 
 
 # Step1: Initialize PhonemeTimestampAligner
-device = 'cpu' # CPU is faster for sigle file processing
+device = 'cpu' # CPU is faster for single file processing
 duration_max = 10 # it's only for padding and clipping. Set it more than your expected duration
-model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
-lang = 'en-us' # Each CUPE model is trained on a specific language(s)
-extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device='cpu')
+
+# Using language preset (recommended) - automatically selects best English model
+extractor = PhonemeTimestampAligner(preset="en-us", duration_max=duration_max, device=device)
+
+# Alternative: explicit model selection
+# model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
+# lang = 'en-us' # Each CUPE model is trained on a specific language(s)
+# extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
 
 # Step 2a: Load and preprocess audio - manually
 
