@@ -33,6 +33,8 @@ BFA is a lightning-fast Python library that extracts **phoneme/word timestamps**
 | 🌍 **Multi-Language** | Via espeak phonemization | 80+ Indo-European + related |
 | 🔧 **Easy Integration** | JSON & TextGrid output | Praat compatibility |
 
+
+
 </div>
 
 
@@ -1025,6 +1027,8 @@ Results saved to: output.json
 
 ## 🧠 How Does It Work?
 
+Read full paper: [BFA: REAL-TIME MULTILINGUAL TEXT-TO-SPEECH FORCED ALIGNMENT](https://arxiv.org/pdf/2509.23147)
+
 ### 🔄 Processing Pipeline
 
 ```mermaid
@@ -1169,39 +1173,24 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 
 ---
 
-## 🤝 Contributing & Support
-
-<div align="center">
-
-### 📞 Get Help
-
-[![GitHub Issues](https://img.shields.io/badge/Issues-GitHub-red?style=for-the-badge&logo=github)](https://github.com/tabahi/bournemouth-forced-aligner/issues)
-
-</div>
-
-### Collaboration for new languges
-Help us, linguistically, analyze data for new languages. `deepen-spool-skies <@> duck .com`
 
 
 
-### 💡 Feature Requests
+### Citation
 
-We welcome suggestions for:
-- Additional language models
-- Performance improvements  
-- New output formats
-- Integration examples
+[Rehman, A., Cai, J., Zhang, J.-J., & Yang, X. (2025). BFA: Real-time multilingual text-to-speech forced alignment. *arXiv*. https://arxiv.org/abs/2509.23147](https://arxiv.org/pdf/2509.23147)
 
-### 🔬 Research Collaboration
-
-If you use BFA in academic research, we'd love to hear about it! Consider:
-- Sharing your findings and comparisons
-- Contributing evaluation datasets
-- Proposing algorithmic improvements
-
-
-
-
+```bibtex
+@misc{rehman2025bfa,
+      title={BFA: Real-time Multilingual Text-to-speech Forced Alignment}, 
+      author={Abdul Rehman and Jingyao Cai and Jian-Jun Zhang and Xiaosong Yang},
+      year={2025},
+      eprint={2509.23147},
+      archivePrefix={arXiv},
+      primaryClass={eess.AS},
+      url={https://arxiv.org/abs/2509.23147}, 
+}
+```
 ---
 
 <div align="center">

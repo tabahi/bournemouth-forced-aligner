@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.6] - 2025-09-30
+- `preser` parameter for automatically selecting language suitable model.
+
 
 ## [0.1.5] - 2025-09-10
 - `silence_anchors` parameter for spliting search path at long silences.
@@ -56,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
+[0.1.6]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.6
 [0.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.5
 [0.1.4]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.3
 [0.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.2
