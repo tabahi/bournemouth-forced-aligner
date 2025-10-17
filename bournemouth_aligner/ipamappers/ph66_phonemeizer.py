@@ -6,7 +6,7 @@ from phonemizer.separator import Separator
 from unicodedata import normalize
 import re
 import json
-from .ph66_mapper import phoneme_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
+from .ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
 
 
 SIL_PHN="SIL"
@@ -178,55 +178,58 @@ class Phonemizer:
             # Filter out empty phonemes
             word_phonemes = [ph for ph in word_phonemes if ph != ""]
             
-            
+            #print(f"Word: '{word}' -> Phonemes: {word_phonemes}")
             
             has_valid_phonemes = False
             
             # Process each phoneme
-            for ph in word_phonemes:
-                ph = ph.strip()
-                ph = normalize('NFC', ph)
-                
+            for eph in word_phonemes:
+                eph = eph.strip()
+                eph = normalize('NFC', eph)
+
                 # Update phoneme count statistics
-                if ph not in self.phoneme_vocab_counts:
-                    self.phoneme_vocab_counts[ph] = 1
+                if eph not in self.phoneme_vocab_counts:
+                    self.phoneme_vocab_counts[eph] = 1
                 else:
-                    self.phoneme_vocab_counts[ph] += 1
+                    self.phoneme_vocab_counts[eph] += 1
                 
                 # Handle unmapped phonemes
-                if ph not in phoneme_mapper:
-                    if ph not in self.unmapped_phonemes:
-                        print(f"Warning: phoneme not found in mapper: {ph}")
-                        self.unmapped_phonemes.update({ph: 1})
+                if eph not in phoneme_mapper and eph not in compound_mapper:
+                    if eph not in self.unmapped_phonemes:
+                        print(f"Warning: phoneme not found in mapper: {eph}")
+                        self.unmapped_phonemes.update({eph: 1})
                     else:
-                        self.unmapped_phonemes[ph] += 1
-                    ph = noise_PHN
-                
+                        self.unmapped_phonemes[eph] += 1
+                    eph = noise_PHN
+
                 # Get compound phoneme mapping
-                ph = get_compound_phoneme_mapping(ph)
-                if ph not in self.phoneme_index:
-                    ph = noise_PHN
-                
-                # Skip noise phonemes if configured to do so
-                if self.remove_noise_phonemes and ph == noise_PHN:
-                    self.noise_count += 1
-                    continue
-                
-                # At this point, we have a valid phoneme that will be included
-                has_valid_phonemes = True
-                
-                # Get phoneme index and group
-                ph_idx = self.phoneme_index[ph]
-                ph_group = phoneme_groups_mapper.get(ph_idx, noise_group)  # Default to noise_group if not found
-                
-                # Add to segment output
-                segment_out[self.phonemes_key].append(ph_idx)
-                segment_out[self.phoneme_groups_key].append(ph_group)
-                segment_out[self.phonemes_ipa_key].append(ph)
-                segment_out["word_num"].append(word_idx)
-                
-                self.phn_counts += 1
-                self.ph_total_count += 1
+                ph_comp = get_compound_phoneme_mapping(eph)
+                assert isinstance(ph_comp, list), f"Compound mapping should return a list, got {type(ph_comp)} for phoneme {eph}"
+
+                for ph in ph_comp:
+                    if ph not in self.phoneme_index:
+                        ph = noise_PHN
+                    
+                    # Skip noise phonemes if configured to do so
+                    if self.remove_noise_phonemes and ph == noise_PHN:
+                        self.noise_count += 1
+                        continue
+                    
+                    # At this point, we have a valid phoneme that will be included
+                    has_valid_phonemes = True
+                    
+                    # Get phoneme index and group
+                    ph_idx = self.phoneme_index[ph]
+                    ph_group = phoneme_groups_mapper.get(ph_idx, noise_group)  # Default to noise_group if not found
+                    
+                    # Add to segment output
+                    segment_out[self.phonemes_key].append(ph_idx)
+                    segment_out[self.phoneme_groups_key].append(ph_group)
+                    segment_out[self.phonemes_ipa_key].append(ph)
+                    segment_out["word_num"].append(word_idx)
+                    
+                    self.phn_counts += 1
+                    self.ph_total_count += 1
             # end phoneme loop
 
             # Track which words actually have phonemes in the final output

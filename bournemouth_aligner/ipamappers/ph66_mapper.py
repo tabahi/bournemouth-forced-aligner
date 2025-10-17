@@ -111,6 +111,82 @@ phoneme_groups_index = {'SIL': 0, 'front_vowels': 1, 'central_vowels': 2, 'back_
 complete_vocab = {'SIL': 4914031, 'a': 1604572, 'n': 1501496, 't': 1345451, 's': 1242856, 'i': 1207390, 'e': 985568, 'o': 850470, 'm': 840466, 'l': 840200, 'r': 825931, 'd': 821689, 'k': 814493, 'ɛ': 700232, 'p': 607786, 'ə': 492948, 'v': 432914, 'j': 430514, 'u': 422499, 'ɾ': 419723, 'b': 413539, 'ɑ': 399576, 'ɔ': 344276, 'ʌ': 334025, 'ɪ': 294767, 'f': 292469, 'z': 286215, 'ɡ': 267606, 'ʃ': 249935, 'ɐ': 247989, 'w': 222719, 'ʊ': 200737, 'h': 189391, 'ʁ': 161395, 'ð': 159285, 'ɨ': 157902, 'x': 151422, 'eː': 141335, 'y': 138328, 'iː': 135167, 'ŋ': 118468, 'aɪ': 104170, 'ts': 96727, 'ɹ': 96111, 'æ': 83801, 'tʃ': 83484, 'θ': 81846, 'ʒ': 81251, 'uː': 79788, 'aː': 69487, 'ɕ': 68197, 'β': 67991, 'oː': 67190, 'ɑː': 66515, 'ɣ': 64902, 'eɪ': 63049, 'tʲ': 60946, 'ø': 58520, 'ɭ': 58455, 'nʲ': 56439, 'dʒ': 54175, 'ɑ̃': 53516, 'aʊ': 53297, 'q': 49319, 'ɲ': 48479, 'rʲ': 46853, 'ɭʲ': 45521, 'ɔ̃': 44985, 'ɯ': 43339, 'sʲ': 38535, 'ɲʲ': 38014, 'ɒ': 37682, 'vʲ': 37231, 'ʎ': 37145, 'ç': 35610, 'ʋ': 32705, 'ɚ': 32019, 'tɕ': 32006, 'mʲ': 31189, 'dʲ': 29989, 'ɜ': 27714, 'ja': 27523, 'ʔ': 26931, 'oʊ': 26398, 'ɑɨ': 24604, 'tʃʲ': 24301, '1': 23766, 'dʑ': 22131, 'ɛɪ': 21834, 'tː': 21127, 'ᵻ': 20631, 'ɛ̃': 20508, 'uɨ': 20396, 'ɫ': 19763, 'ɬ': 19662, 'ʑ': 18169, 'œ': 17838, 'oɪ': 16897, 'ɔɨ': 16178, 'ɔː': 15555, 'ɐ̃': 15510, 'ɨː': 15065, 'ɜː': 14661, 'ju': 14500, 'pʲ': 14429, 'aɨ': 13971, 'əl': 13858, 'ɵ': 13512, 'kʲ': 13204, 'ss': 12685, 'ɐ̃ʊ̃': 12237, 't[': 12211, 'əɪ': 12209, 'ɑːɹ': 10053, 'bʲ': 9958, 'd[': 9275, 'yː': 9033, 'eʊ': 8931, 'ɨu': 7653, 'ɡʲ': 7633, 'ɔːɹ': 7072, '(en)': 6245, 'œy': 6018, 'kː': 5801, 'əɨ': 5629, 'ɔø': 5613, 'oːɹ': 5458, 'u"': 5356, 'fʲ': 5315, 'pː': 5307, 'ɛɹ': 5299, 'ɪː': 5068, '??': 5027, 'ɛː': 4894, 'øː': 4796, 'ɔɪ': 4603, 'dZ': 4345, 'ɪu': 4320, 'c': 4200, 'S': 4197, 'ʕ': 4050, '(fr)': 3885, 'ʌʊ': 3787, 'tS': 3731, 'oe': 3730, 'iə': 3654, 'dʒː': 3441, 'ɪɹ': 3101, 'r̝̊': 3099, 'bː': 3051, 'ɟ': 2761, 'uɪ': 2632, 'ʊɹ': 2589, 'tʃː': 2564, 'ħ': 2318, 'ũ': 2158, 's^': 2080, 't̪': 1778, 'r̝': 1702, 'ɪ^': 1651, 'tsː': 1558, 'dzː': 1479, 'r̩': 1272, 'u:': 1189, 'aɪɚ': 1180, '(de)': 1166, 's̪': 1070, 'dz': 1027, 'iʊ': 940, 'aɪə': 928, 'dˤ': 920, 'χ': 845, 'æi': 819, 'œ̃': 766, '(it)': 719, 'ɑ:': 715, 'o:': 623, 'n̩': 587, 'l̩': 536, 'æː': 534, 'dː': 532, 'õ': 491, 'N': 490, 'y:': 415, 'pf': 342, 'əʊ': 342, 'ʝ': 323, 't^': 288, 'oe:': 257, '(nl)': 237, 'ɛʊ': 237, '(ptpt)': 196, 'e:': 183, 'eə': 144, 'd^': 131, 'i.ː': 129, 'yʊ': 101, 't^ː': 79, 'nl': 76, '(fa)': 65, 'æiː': 64, 'yi': 63, '(es)': 61, 'dʒʲ': 47, 'qː': 43, '(ru)': 40, 'ɡː': 37, 'ɪuː': 37, 'ʊə': 34, 'X': 31, 'a.ː': 31, 'u.ː': 31, 'rr': 25, 'mb': 25, 'ɵː': 24, 'd̪w': 23, 'ʂ': 22, '(tt)': 22, 'dm': 20, 'daː': 17, 'əː': 17, 'it': 17, 'ɡd': 17, 'mj': 16, 'db': 16, 'wb': 16, 'iːː': 15, 'mt': 15, 'ɑk': 15, 'i:': 15, 'da': 14, 'nb': 14, 'eð': 13, 'mx': 13, 'maː': 13, 'tk': 13, 'niː': 13, 'rb': 13, 'mh': 13, 'dˤdˤ': 13, 'fm': 13, 'nm': 11, 'eːh': 11, 'mtʃ': 11, 'ma': 11, 'ʊːt': 11, 'aːn': 11, 'iːe': 11, 'im': 10, 'eːb': 10, 'np': 10, 'aɪaɪ': 9, 'ʃj': 9, 'eːt': 9, 'jː': 8, 'mv': 8, 'ae': 8, 'ed': 8, 'nn': 8, 'dtʃ': 8, 'ɑh': 8, 'tr': 7, 'sb': 7, 'tn': 7, 'lx': 7, 'eːa': 7, 'il': 7, 'ɑj': 7, 'ɑaː': 7, 'oːs': 7, 'eːq': 7, 'ah': 7, 'bb': 7, 'or': 7, 'ɑm': 7, 'kt': 7, 'as': 7, 'eβ': 6, 'eːd': 6, 'ob': 6, 'eːuː': 6, 'rtʃ': 6, 'ʃd': 6, 'md': 6, 'duː': 6, 'eːaː': 6, 'ɡz': 6, 'hx': 6, 'lk': 6, 'eːf': 6, 'ɑq': 6, 'nk': 6, 'nx': 6, 'nj': 6, 'dɔ': 6, 'is': 6, 'aɪp': 6, 'əm': 6, 'laː': 5, 'tb': 5, 'aa': 5, 'zm': 5, 'ntʃ': 5, 'ep': 5, 'bh': 5, 'lh': 5, 'do': 5, 'eːp': 5, 'miː': 5, 'tuː': 5, 'lm': 5, 'mr': 5, 'sz': 5, 'nv': 4, 'in': 4, 'ɑuː': 4, 'iaː': 4, 'oːb': 4, 'uːm': 4, 'naː': 4, 'eːs': 4, 'itʃ': 4, 'eːv': 4, 'az': 4, 'ha': 4, 'dɡ': 4, 'hb': 4, 'mf': 4, 'ɑn': 4, 'ia': 4, 'lb': 4, 'na': 4, 'ld': 4, 'd̪': 4, 'ndʒ': 3, 'uːk': 3, 'uːb': 3, 'mo': 3, 'ɡh': 3, 'mk': 3, 'dk': 3, 'eːtʃ': 3, 'dp': 3, 'tiː': 3, 'bv': 3, 'ta': 3, 'th': 3, 'ip': 3, 'eːj': 3, 'eːx': 3, 'mz': 3, 'eːz': 3, '(pl)': 2, 'diː': 2, 'eh': 2, 'biː': 2, 'mʃ': 2, 'mn': 2, 'dʒv': 2, 'hʃ': 2, 'liː': 2, 'mɡ': 2, 'jiː': 2, 'ms': 2, 'ʃz': 2, 'ne': 2, 'on': 2, 'raː': 2, 'nh': 2, 'eːʃ': 2, 'rm': 2, 'ʊː': 2, 'laɪ': 1, 'ɑa': 1, 'td': 1, 'eːe': 1, 'mp': 1, 'ɑt': 1, 'nr': 1, 'me': 1, 'ɑo': 1, 'ik': 1, 'iːv': 1, 'dh': 1, 'eːɑ': 1, 'dl': 1, 'ʃdʒ': 1, 'ns': 1}
 
 
+compound_phoneme_mapping = {
+    # R-colored vowels - break into vowel + rhotic
+    # These preserve the distinct vowel quality + the r sound
+    'ɑːɹ': ['a:', 'ɹ'],    # 10,053 occurrences - "car" vowel
+    'ɔːɹ': ['ɔ', 'ɹ'],     # 7,072 occurrences - "or" sound
+    'oːɹ': ['o:', 'ɹ'],    # 5,458 occurrences - "sword" vowel
+    'ɛɹ': ['ɛ', 'ɹ'],      # 5,299 occurrences - "air" sound
+    'ɪɹ': ['ɪ', 'ɹ'],      # 3,101 occurrences - "ear" sound
+    'ʊɹ': ['ʊ', 'ɹ'],      # 2,589 occurrences - "tour" sound
+    'aɪɚ': ['aɪ', 'ɹ'],    # 1,180 occurrences - "fire" diphthong
+    'aɪə': ['aɪ', 'ə'],    # 928 occurrences - alternative "fire"
+
+    # Syllabic consonants - break into schwa + consonant
+    'n̩': ['ə', 'n'],       # 587 occurrences - syllabic n as in "button"
+    'l̩': ['ə', 'l'],       # 536 occurrences - syllabic l as in "bottle"
+    'r̩': ['ɚ'],           # 1,272 occurrences - syllabic r (already r-colored)
+    'm̩': ['ə', 'm'],       # syllabic m as in "rhythm"
+
+    # Other r-variants that should map to ɹ
+    'r̝̊': ['ɹ'],          # 3,099 occurrences - voiceless raised r
+    'r̝': ['ɹ'],           # 1,702 occurrences - raised r
+
+    # Schwa-lateral compound
+    'əl': ['ə', 'l'],      # 13,858 occurrences - schwa + l sequence
+
+    # Vowel sequences with schwa
+    'iə': ['i:', 'ə'],     # 3,654 occurrences
+    'eə': ['e', 'ə'],      # 144 occurrences
+    'ʊə': ['ʊ', 'ə'],      # 34 occurrences
+
+    # Complex diphthongs - map to simpler base phonemes
+    'ɛɪ': ['eɪ'],          # 21,834 occurrences - map to eɪ (in base)
+    'œy': ['ø', 'y'],      # 6,018 occurrences - front rounded diphthong
+    'ɔø': ['ɔ', 'ø'],      # 5,613 occurrences
+    'ɔɪ': ['ɔɪ'],          # 4,603 occurrences - already in base (index 27)
+    'oɪ': ['ɔɪ'],          # 16,897 occurrences - variant of ɔɪ
+    'ʌʊ': ['aʊ'],          # 3,787 occurrences - map to aʊ
+    'eʊ': ['aʊ'],          # 8,931 occurrences - map to aʊ
+    'ɛʊ': ['aʊ'],          # 237 occurrences - map to aʊ
+    'əʊ': ['oʊ'],          # 342 occurrences - map to oʊ
+    'uɪ': ['aɪ'],          # 2,632 occurrences
+    'iʊ': ['i:', 'ʊ'],     # 940 occurrences
+    'ɪu': ['ɪ', 'u'],      # 4,320 occurrences
+    'əɪ': ['ə', 'ɪ'],      # 12,209 occurrences
+    'ʊɪ': ['aɪ'],          # map to aɪ
+
+    # Vowel + consonant sequences
+    'ju': ['j', 'u'],      # 14,500 occurrences - "you" sound
+    'ja': ['j', 'a'],      # 27,523 occurrences
+
+    # Rare compounds with long vowels + central vowels
+    'ɑɨ': ['a', 'ɨ'],      # 24,604 occurrences
+    'uɨ': ['u', 'ɨ'],      # 20,396 occurrences
+    'ɔɨ': ['ɔ', 'ɨ'],      # 16,178 occurrences
+    'aɨ': ['a', 'ɨ'],      # 13,971 occurrences
+    'əɨ': ['ə', 'ɨ'],      # 5,629 occurrences
+    'ɨu': ['ɨ', 'u'],      # 7,653 occurrences
+
+    # Additional r-variants (rare but should preserve rhotic)
+    'rː': ['ɹ', 'ɹ'],      # Long/geminate r
+    'rˠ': ['ɹ'],           # Velarized r
+    'r̟': ['ɹ'],           # Advanced r
+    'r̠': ['ɹ'],           # Retracted r
+    'r̥': ['ɹ'],           # Voiceless r
+    'ɹ̝': ['ɹ'],           # Raised r
+    'ɹ̩': ['ɹ'],           # Syllabic r (non-diacritic)
+    'r̩ː': ['ɚ'],          # Long syllabic r
+
+    # Consonant + rhotic sequences (preserve both)
+    'tʃɹ': ['tʃ', 'ɹ'],    # 26 occurrences - "chr" sound
+
+    # Other syllabic variants
+    'ŋ̩': ['ə', 'ŋ'],      # Syllabic ng
+    'ɫ̩': ['ə', 'l'],      # Syllabic dark l
+}
+
 
 
 base_phonemes = [
@@ -182,8 +258,9 @@ phoneme_mapping = {
     'aʊ': 'aʊ', 'oʊ': 'oʊ',
     
     # Less common diphthongs - map to similar common ones
-    'ʌʊ': 'aʊ', 'eʊ': 'aʊ', 'ɛʊ': 'aʊ', 'əʊ': 'oʊ',
-    'ɛɪ': 'eɪ', 'ʊɪ': 'aɪ', 'ea': 'eɪ',
+    # 'ʌʊ': 'aʊ', 'eʊ': 'aʊ', 'ɛʊ': 'aʊ', 'əʊ': 'oʊ',  # NOW HANDLED BY compound_phoneme_mapping
+    # 'ɛɪ': 'eɪ', 'ʊɪ': 'aɪ',  # NOW HANDLED BY compound_phoneme_mapping
+    'ea': 'eɪ',
     'aʊ̯': 'aʊ', 'aɪ̯': 'aɪ', 'ɔʏ̯': 'ɔɪ',
     
     # Core consonants
@@ -248,22 +325,23 @@ phoneme_mapping = {
     'ɑ̃': 'a', 'ɛ̃': 'ɛ', 'ɔ̃': 'ɔ',
     'ũ': 'u', 'õ': 'oʊ', 'ɐ̃': 'ʌ',
     
-    # R-colored vowels
-    'ɑːɹ': 'ɚ', 'ɔːɹ': 'ɚ',
-    'ʊɹ': 'ɚ', 'ɪɹ': 'ɚ', 'ɛɹ': 'ɚ',
-    'oːɹ': 'ɚ',
+    # R-colored vowels - NOW HANDLED BY compound_phoneme_mapping
+    # 'ɑːɹ': 'ɚ', 'ɔːɹ': 'ɚ',
+    # 'ʊɹ': 'ɚ', 'ɪɹ': 'ɚ', 'ɛɹ': 'ɚ',
+    # 'oːɹ': 'ɚ',
     
     # Vowel sequences
     'ia': 'i:', 'ua': 'u:',
-    'ɔø': 'ɔ', 'iːɛ': 'i:',
-    'ʊə': 'ʊ', 'iə': 'i:',
-    'eə': 'ɛ',
+    # 'ɔø': 'ɔ',  # NOW HANDLED BY compound_phoneme_mapping
+    'iːɛ': 'i:',
+    # 'ʊə': 'ʊ', 'iə': 'i:',  # NOW HANDLED BY compound_phoneme_mapping
+    # 'eə': 'ɛ',  # NOW HANDLED BY compound_phoneme_mapping
     
     # Common sequences
     # 'əl': 'əl',  # Keep this distinct sequence
     #'əl': 'o', # based on empirical confusion. theoretically, this should be merged with 'l' or 'e' but it's most confused with 'o'
-    'əl': 'l',
-    'n̩': 'n',
+    # 'əl': 'l',  # NOW HANDLED BY compound_phoneme_mapping
+    # 'n̩': 'n',  # NOW HANDLED BY compound_phoneme_mapping
     'ʃf': 'ʃ',
     'eð': 'ð',
     'ns': 'n',
@@ -312,12 +390,12 @@ phoneme_mapping = {
     
     # Diphthongs
     'yʊ': 'u',       # Map to similar monophthong
-    'œy': 'ɔɪ',       # Map to similar diphthong
-    'uɪ': 'aɪ',       # Map to existing diphthong
-    'oɪ': 'ɔɪ',       # Map to similar diphthong
-    'iʊ': 'u',       # Map to similar monophthong
-    'aɪə': 'aɪ',      # Map to base diphthong
-    'aɪɚ': 'aɪ',      # Map to base diphthong
+    # 'œy': 'ɔɪ',       # NOW HANDLED BY compound_phoneme_mapping
+    # 'uɪ': 'aɪ',       # NOW HANDLED BY compound_phoneme_mapping
+    # 'oɪ': 'ɔɪ',       # NOW HANDLED BY compound_phoneme_mapping
+    # 'iʊ': 'u',       # NOW HANDLED BY compound_phoneme_mapping
+    # 'aɪə': 'aɪ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'aɪɚ': 'aɪ',      # NOW HANDLED BY compound_phoneme_mapping
     
     # Nasal vowels
     'ɐ̃ʊ̃': 'aʊ',      # Map to oral diphthong
@@ -352,8 +430,8 @@ phoneme_mapping = {
 
     # These are found (with counts) in Google MSWC data, but not in the OpenSLR-MLS data
     # Complex sequences with frequency counts
-    'ja': 'j',      # Common sequence (36,809) -> simplify to first component
-    'ju': 'j',      # Common sequence (19,620) -> simplify to first component  
+    # 'ja': 'j',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'ju': 'j',      # NOW HANDLED BY compound_phoneme_mapping  
     'tʃʲ': 'tʃ',     # Common palatalized affricate (32,707) -> map to fricative
     #'ɭ': 'l',       # Very common retroflex lateral (78,504) -> map to alveolar
     'ɭ': 'ɭ',
@@ -365,22 +443,22 @@ phoneme_mapping = {
     'q': 'q',     # keep it EVEN though it's relively rare (45k)
     #'qː': 'k',      # Rare long uvular (103) -> map to velar
     'qː': 'q',
-    'r̝̊': 'ɹ',      # Rare trilled/fricative r (3,099) -> map to approximant
-    'r̝': 'ɹ',      # Rare variant (1,702) -> map to approximant
-    'r̩': 'ɹ',      # Rare syllabic (1,272) -> map to approximant
-    'l̩': 'l',      # Rare syllabic (536) -> map to standard lateral
+    # 'r̝̊': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'r̝': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'r̩': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'l̩': 'l',      # NOW HANDLED BY compound_phoneme_mapping
     'c': 'k',       # Uncommon palatal stop (4,195) -> map to velar
 
     # Vowel sequences
-    'uɨ': 'ɨ',     # Common sequence (20,396) -> map to monophthong
-    'aɨ': 'aɪ',     # Common sequence (13,971) -> map to similar diphthong
-    'ɨu': 'u:',     # Less common (7,653) -> map to monophthong
-    'ɪu': 'u:',     # Uncommon (4,320) -> map to monophthong
+    # 'uɨ': 'ɨ',     # NOW HANDLED BY compound_phoneme_mapping
+    # 'aɨ': 'aɪ',     # NOW HANDLED BY compound_phoneme_mapping
+    # 'ɨu': 'u:',     # NOW HANDLED BY compound_phoneme_mapping
+    # 'ɪu': 'u:',     # NOW HANDLED BY compound_phoneme_mapping
     'ɨː': 'ɨ',      # Common variant (15,065) -> remove length marker
-    'ɑɨ': 'aɪ',     # Common sequence (24,604) -> map to diphthong
-    'əɪ': 'eɪ',     # Common sequence (12,209) -> map to similar diphthong
-    'əɨ': 'ɨ',      # Less common (5,629) -> simplify to first component
-    'ɔɨ': 'ɔɪ',     # Common sequence (16,178) -> map to similar diphthong
+    # 'ɑɨ': 'aɪ',     # NOW HANDLED BY compound_phoneme_mapping
+    # 'əɪ': 'eɪ',     # NOW HANDLED BY compound_phoneme_mapping
+    # 'əɨ': 'ɨ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'ɔɨ': 'ɔɪ',     # NOW HANDLED BY compound_phoneme_mapping
     'ɪuː': 'u:',    # Rare sequence (37) -> map to monophthong
 
     # Rare sequences: 1-5 occurrences ---------------------------------------
@@ -596,11 +674,11 @@ phoneme_mapping = {
 
     # Syllabic consonants - map to their non-syllabic counterparts
     'h̩': 'h',      # Syllabic h to h (37)
-    'ɹ̩': 'ɹ',      # Syllabic r to r (17)
-    'ŋ̩': 'ŋ',      # Syllabic ng to ng (34)
-    'ɫ̩': 'l',      # Syllabic dark l to l (16)
+    # 'ɹ̩': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'ŋ̩': 'ŋ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'ɫ̩': 'l',      # NOW HANDLED BY compound_phoneme_mapping
     'v̩': 'v',      # Syllabic v to v (15)
-    'm̩': 'm',      # Syllabic m to m (28)
+    # 'm̩': 'm',      # NOW HANDLED BY compound_phoneme_mapping
 
     # Aspirated consonants - map to unaspirated counterparts
     'pʰ': 'p',     # Aspirated p to p (25)
@@ -732,7 +810,7 @@ phoneme_mapping = {
     'm̥': 'm',      # Voiceless m to m (28)
     'n̥': 'n',      # Voiceless n to n (11)
     'l̥': 'l',      # Voiceless l to l (16)
-    'r̥': 'ɹ',      # Voiceless r to r (17)
+    # 'r̥': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
     'ŋ̥': 'ŋ',      # Voiceless ng to ng (34)
     'i̥': 'i',      # Voiceless i to i (41)
     'u̥': 'u:',     # Voiceless u to long u (5)
@@ -835,7 +913,7 @@ phoneme_mapping = {
     # Remaining special cases
     'ɥ': 'j',      # Labial-palatal approximant to j (29)
     'ʀ': 'ɹ',      # Uvular trill to r (17)
-    'ɹ̝': 'ɹ',      # Raised r to r (17)
+    # 'ɹ̝': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
     'ṽ': 'v',      # Nasalized v to v (15)
     'ə̥': 'ə',      # Voiceless schwa to schwa (18)
     'ə̯': 'ə',      # Non-syllabic schwa to schwa (18)
@@ -879,9 +957,9 @@ phoneme_mapping = {
     'd̠': 'd',      # Retracted d to d (9)
     'n̠': 'n',      # Retracted n to n (11)
     't̟': 't',      # Advanced t to t (4)
-    'r̟': 'ɹ',      # Advanced r to r (17)
-    'r̠': 'ɹ',      # Retracted r to r (17)
-    'rˠ': 'ɹ',     # Velarized r to r (17)
+    # 'r̟': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'r̠': 'ɹ',      # NOW HANDLED BY compound_phoneme_mapping
+    # 'rˠ': 'ɹ',     # NOW HANDLED BY compound_phoneme_mapping
     'ɪ̥': 'ɪ',      # Voiceless short i to short i (31)
     'ʔʷ': 'noise', # Labialized glottal stop to noise (50)
     'ɕʼ': 'ɕ',     # Ejective alveolo-palatal to sh (1)
@@ -897,7 +975,7 @@ phoneme_mapping = {
     'æ̈': 'æ',      # Centralized ae to ae (32)
     'ɘ': 'ə',       # Close-mid central unrounded vowel to schwa (18)
     'tsʰ': 'ts',    # Aspirated ts to ts (4)
-    'r̩ː': 'ɚ',     # Long rhotic schwa to schwar (14)
+    # 'r̩ː': 'ɚ',     # NOW HANDLED BY compound_phoneme_mapping
 
 
     'nθ': 'n',      # Dental nasal to n (11)
@@ -927,7 +1005,7 @@ phoneme_mapping = {
     'kd': 'k',      # Dental d to k (27)
     'tθ': 't',      # Dental th to t (4)
     'iːf': 'i:',    # Long i with f to long i (12)
-    'tʃɹ': 'tʃ',    # Dental tsh with r to tsh (1)
+    # 'tʃɹ': 'tʃ',    # NOW HANDLED BY compound_phoneme_mapping
     'kw': 'k',      # Dental w to k (27)
     'nf': 'f',      # Dental f to n (11)
     'iːt': 'i:',    # Long i with t to long i (12)
@@ -938,14 +1016,58 @@ phoneme_mapping = {
 }
 
 
+def create_normalized_mapping(mapping_dict):
+        
+    # Create normalized version of the mapping
+    from unicodedata import normalize
+    """Create a mapping dictionary with normalized Unicode characters."""
+    return {
+        normalize('NFC', key): normalize('NFC', value) if type(value) is str else [normalize('NFC', v) for v in value]
+        for key, value in mapping_dict.items()
+    }
+
+
+phoneme_mapper = create_normalized_mapping(phoneme_mapping) #Both the 'key' and value ar normalized
+compound_mapper = create_normalized_mapping(compound_phoneme_mapping) #Both the 'key' and value ar normalized
+
+#print(phoneme_mapper)
+
+
+
+
 
 def get_compound_phoneme_mapping(phoneme):
-    # First try direct mapping
+    """
+    Map a phoneme to base phoneme(s), with intelligent compound splitting.
+
+    Always returns a list for consistency, even for single phonemes.
+
+    Priority order:
+    1. Direct single phoneme mapping (phoneme_mapping)
+    2. Compound mapper (compound_phoneme_mapping) - returns list
+    3. Intelligent 2-phoneme split based on phonetic categories
+    4. Greedy longest-match decomposition
+    5. Single phoneme collapse (last resort)
+    """
+
+    # 1. First try direct single-phoneme mapping
     if phoneme in phoneme_mapping:
-        return phoneme_mapping[phoneme]
-    
-    # For compound phonemes, map components and combine
-    mapped = ""
+        result = phoneme_mapping[phoneme]
+        # Always return as list for consistency
+        return [result] if isinstance(result, str) else result
+
+    # 2. Check compound_phoneme_mapping for predefined decompositions
+    if phoneme in compound_phoneme_mapping:
+        return compound_phoneme_mapping[phoneme]
+
+    # 3. Intelligent 2-phoneme splitting for unknown compounds
+    if len(phoneme) > 1:
+        best_split = _try_intelligent_split(phoneme)
+        if best_split:
+            return best_split
+
+    # 4. Greedy longest-match decomposition into multiple phonemes
+    mapped = []
     remaining = phoneme
     while remaining:
         found = False
@@ -953,32 +1075,128 @@ def get_compound_phoneme_mapping(phoneme):
         for i in range(len(remaining), 0, -1):
             subset = remaining[:i]
             if subset in phoneme_mapping:
-                mapped += phoneme_mapping[subset]
+                mapped.append(phoneme_mapping[subset])
                 remaining = remaining[i:]
                 found = True
                 break
         if not found:
-            # If no mapping found for current character, treat as noise
+            # Skip unknown character
             remaining = remaining[1:]
-    
-    return mapped if mapped else "noise"
+
+    if len(mapped) > 0:
+        return mapped
+
+    # 5. Last resort: try to collapse to single most similar phoneme
+    single_collapsed = _collapse_to_single_phoneme(phoneme)
+    if single_collapsed:
+        return [single_collapsed]  # Return as list
+
+    return ["noise"]
 
 
+def _try_intelligent_split(phoneme):
+    """
+    Try to intelligently split a compound phoneme into 2 base phonemes.
 
-def create_normalized_mapping(mapping_dict):
-        
-    # Create normalized version of the mapping
-    from unicodedata import normalize
-    """Create a mapping dictionary with normalized Unicode characters."""
-    return {
-        normalize('NFC', key): normalize('NFC', value)
-        for key, value in mapping_dict.items()
-    }
+    Common patterns:
+    - Vowel + rhotic (V + ɹ)
+    - Vowel + schwa (V + ə)
+    - Consonant + vowel (C + V)
+    - Vowel + vowel (V + V for diphthongs)
+    - Schwa + consonant (ə + C for syllabic consonants)
+    """
+
+    # Define phonetic categories for the 66 base phonemes
+    vowels = {'i', 'i:', 'ɨ', 'ɪ', 'e', 'e:', 'ɛ', 'ə', 'ɚ', 'ʌ', 'u', 'u:', 'ʊ', 'ɯ',
+              'o', 'o:', 'ɔ', 'a', 'a:', 'æ', 'y', 'ø'}
+    consonants = {'p', 'b', 't', 'd', 'k', 'g', 'q', 'ts', 's', 'z', 'tʃ', 'dʒ', 'ʃ', 'ʒ',
+                  'ɕ', 'f', 'v', 'θ', 'ð', 'ç', 'x', 'ɣ', 'h', 'ʁ', 'm', 'n', 'ɲ', 'ŋ',
+                  'l', 'ɭ', 'ɾ', 'ɹ', 'j', 'w', 'tʲ', 'nʲ', 'rʲ', 'ɭʲ'}
+    rhotics = {'ɹ', 'ɾ', 'rʲ', 'ɚ'}
+
+    # Try splitting at different positions (prioritize 2-phoneme splits)
+    best_candidates = []
+
+    for split_pos in range(1, len(phoneme)):
+        left = phoneme[:split_pos]
+        right = phoneme[split_pos:]
+
+        # Check if both parts can be mapped
+        left_mapped = phoneme_mapping.get(left) if left in phoneme_mapping else None
+        right_mapped = phoneme_mapping.get(right) if right in phoneme_mapping else None
+
+        if left_mapped and right_mapped:
+            # Score this split based on phonetic plausibility
+            score = _score_phoneme_split(left_mapped, right_mapped, vowels, consonants, rhotics)
+            best_candidates.append((score, [left_mapped, right_mapped]))
+
+    # Return the highest scoring split
+    if best_candidates:
+        best_candidates.sort(key=lambda x: x[0], reverse=True)
+        return best_candidates[0][1]
+
+    return None
 
 
-phoneme_mapper = create_normalized_mapping(phoneme_mapping) #Both the 'key' and value ar normalized
+def _score_phoneme_split(left, right, vowels, consonants, rhotics):
+    """
+    Score a 2-phoneme split based on phonetic plausibility.
+    Higher scores = more likely correct split.
+    """
+    score = 0
 
-#print(phoneme_mapper)
+    # Common patterns (higher scores)
+    if left in vowels and right in rhotics:
+        score += 10  # V + r (very common: oːɹ, ɑːɹ, etc.)
+    elif left in vowels and right == 'ə':
+        score += 8   # V + schwa (common: iə, eə)
+    elif left == 'ə' and right in consonants:
+        score += 8   # schwa + C (syllabic consonants: əl, ən)
+    elif left in vowels and right in vowels:
+        score += 7   # V + V (diphthongs)
+    elif left in consonants and right in vowels:
+        score += 6   # C + V (common sequences: ja, ju)
+    elif left in vowels and right in consonants and right not in rhotics:
+        score += 5   # V + C (less common but possible)
+    elif left in consonants and right in consonants:
+        score += 3   # C + C (less common)
+    else:
+        score += 1   # Any valid split is better than nothing
+
+    return score
+
+
+def _collapse_to_single_phoneme(phoneme):
+    """
+    Last resort: try to collapse compound to single most similar phoneme.
+    Uses heuristics based on phoneme structure.
+    """
+
+    # If it contains 'r' or 'ɹ', try rhotic variants
+    if 'r' in phoneme or 'ɹ' in phoneme or 'ɚ' in phoneme:
+        if phoneme_mapping.get('ɚ'):
+            return phoneme_mapping['ɚ']
+        if phoneme_mapping.get('ɹ'):
+            return phoneme_mapping['ɹ']
+
+    # If it contains long vowel markers (':' or 'ː')
+    if ':' in phoneme or 'ː' in phoneme:
+        # Try the base vowel
+        base = phoneme.replace(':', '').replace('ː', '')
+        if base in phoneme_mapping:
+            return phoneme_mapping[base]
+
+    # If it contains schwa
+    if 'ə' in phoneme:
+        if phoneme_mapping.get('ə'):
+            return phoneme_mapping['ə']
+
+    # Try first character as last resort
+    if phoneme and phoneme[0] in phoneme_mapping:
+        return phoneme_mapping[phoneme[0]]
+
+    return None
+
 
 
 

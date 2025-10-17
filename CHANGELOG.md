@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.7] - 2025-10-17
+- Fixed the rhotics and compound phoneme mappings in [ph66_mapper](bournemouth_aligner/ipamappers/ph66_mapper.py).
+
+
 ## [0.1.6] - 2025-09-30
 - `preser` parameter for automatically selecting language suitable model.
 
@@ -59,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
+[0.1.7]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.7
 [0.1.6]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.6
 [0.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.5
 [0.1.4]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.3
