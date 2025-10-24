@@ -789,8 +789,6 @@ class PhonemeTimestampAligner:
             max_len = max(len(seq) for seq in group_sequences)
             group_sequences = torch.tensor([seq + [-1] * (max_len - len(seq)) for seq in group_sequences], dtype=torch.long)
             #
-            group_sequences = torch.tensor(group_sequences, dtype=torch.long)
-
         # Generate group sequence if not provided
         
         if group_sequences is None:
