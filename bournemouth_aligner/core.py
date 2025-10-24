@@ -583,7 +583,7 @@ class PhonemeTimestampAligner:
             print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
             print(f"Spectral length: {spectral_len}")
         
-        
+        t0 = time.time()
         # Forced alignment with target boosting
         frame_groups = self.alignment_utils_g.decode_alignments(
             log_probs_g, 
