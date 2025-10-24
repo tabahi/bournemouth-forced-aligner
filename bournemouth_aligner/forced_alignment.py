@@ -81,6 +81,231 @@ class ViterbiDecoder:
         
         return modified_log_probs
     
+        
+    def _viterbi_decode_batch(self, log_probs_batch, ctc_paths_batch, ctc_lens_batch):
+        """
+        Vectorized Viterbi decoding for batch processing.
+        
+        Args:
+            log_probs_batch: List of log probability tensors or padded tensor [B, T_max, C]
+            ctc_paths_batch: List of CTC paths or padded tensor [B, S_max]
+            ctc_lens_batch: Tensor of CTC path lengths [B]
+        
+        Returns:
+            List of frame phoneme assignments
+        """
+        if isinstance(log_probs_batch, list):
+            # Pad sequences to same length
+            max_frames = max(lp.shape[0] for lp in log_probs_batch)
+            batch_size = len(log_probs_batch)
+            num_classes = log_probs_batch[0].shape[1]
+            device = log_probs_batch[0].device
+            
+            padded_log_probs = torch.full((batch_size, max_frames, num_classes), 
+                                        self._neg_inf, device=device)
+            frame_lens = torch.zeros(batch_size, dtype=torch.long, device=device)
+            
+            for i, lp in enumerate(log_probs_batch):
+                T = lp.shape[0]
+                padded_log_probs[i, :T] = lp
+                frame_lens[i] = T
+                
+            log_probs_batch = padded_log_probs
+        else:
+            batch_size, max_frames, _ = log_probs_batch.shape
+            device = log_probs_batch.device
+            frame_lens = torch.full((batch_size,), max_frames, device=device)
+        
+        if isinstance(ctc_paths_batch, list):
+            max_ctc_len = max(len(path) for path in ctc_paths_batch)
+            padded_paths = torch.full((batch_size, max_ctc_len), 
+                                    self.blank_id, device=device, dtype=torch.long)
+            
+            for i, path in enumerate(ctc_paths_batch):
+                padded_paths[i, :len(path)] = path
+                
+            ctc_paths_batch = padded_paths
+        
+        max_ctc_len = ctc_paths_batch.shape[1]
+        
+        # Initialize DP table [B, T, S]
+        dp = torch.full((batch_size, max_frames, max_ctc_len), 
+                        self._neg_inf, device=device, dtype=torch.float32)
+        backpointers = torch.zeros((batch_size, max_frames, max_ctc_len), 
+                                dtype=torch.long, device=device)
+        
+        # Initialize first frame for all sequences
+        batch_indices = torch.arange(batch_size, device=device)
+        dp[:, 0, 0] = log_probs_batch[batch_indices, 0, ctc_paths_batch[:, 0]]
+        
+        # Initialize second state where applicable
+        valid_second = ctc_lens_batch > 1
+        if valid_second.any():
+            dp[valid_second, 0, 1] = log_probs_batch[valid_second, 0, ctc_paths_batch[valid_second, 1]]
+        
+        # Precompute transition masks [B, S]
+        can_advance = torch.zeros((batch_size, max_ctc_len), dtype=torch.bool, device=device)
+        can_skip = torch.zeros((batch_size, max_ctc_len), dtype=torch.bool, device=device)
+        
+        can_advance[:, 1:] = True
+        for b in range(batch_size):
+            for s in range(2, ctc_lens_batch[b]):
+                if ctc_paths_batch[b, s] != ctc_paths_batch[b, s-2]:
+                    can_skip[b, s] = True
+        
+        # Forward pass
+        for t in range(1, max_frames):
+            # Get log probs for current frame [B, S]
+            frame_log_probs = log_probs_batch[batch_indices[:, None], 
+                                            t, 
+                                            ctc_paths_batch]
+            
+            prev_dp = dp[:, t-1, :]  # [B, S]
+            
+            # Stay transitions [B, S]
+            stay_scores = prev_dp + frame_log_probs
+            
+            # Advance transitions [B, S]
+            advance_scores = torch.full_like(stay_scores, self._neg_inf)
+            advance_scores[:, 1:] = prev_dp[:, :-1] + frame_log_probs[:, 1:]
+            
+            # Skip transitions [B, S]
+            skip_scores = torch.full_like(stay_scores, self._neg_inf)
+            skip_scores[:, 2:] = torch.where(
+                can_skip[:, 2:],
+                prev_dp[:, :-2] + frame_log_probs[:, 2:],
+                self._neg_inf
+            )
+            
+            # Stack all transitions [B, S, 3]
+            all_scores = torch.stack([stay_scores, advance_scores, skip_scores], dim=-1)
+            
+            # Create previous state indices [B, S, 3]
+            state_indices = torch.arange(max_ctc_len, device=device)[None, :, None]
+            all_prev_states = torch.stack([
+                state_indices.expand(batch_size, -1, -1).squeeze(-1),
+                (state_indices - 1).expand(batch_size, -1, -1).squeeze(-1),
+                (state_indices - 2).expand(batch_size, -1, -1).squeeze(-1)
+            ], dim=-1)
+            
+            # Mask invalid transitions [B, S, 3]
+            transition_mask = torch.stack([
+                torch.ones((batch_size, max_ctc_len), dtype=torch.bool, device=device),
+                can_advance,
+                can_skip
+            ], dim=-1)
+            
+            all_scores = torch.where(transition_mask, all_scores, self._neg_inf)
+            
+            # Find best transitions [B, S]
+            best_transitions = torch.argmax(all_scores, dim=-1)
+            
+            # Update DP table
+            dp[:, t, :] = torch.gather(all_scores, -1, best_transitions.unsqueeze(-1)).squeeze(-1)
+            backpointers[:, t, :] = torch.gather(all_prev_states, -1, best_transitions.unsqueeze(-1)).squeeze(-1)
+        
+        # Backtrack for each sequence
+        results = []
+        for b in range(batch_size):
+            T = frame_lens[b]
+            ctc_len = ctc_lens_batch[b]
+            
+            # Find best final state
+            final_scores = dp[b, T-1, :ctc_len]
+            valid_mask = final_scores > self._neg_inf
+            
+            if valid_mask.any():
+                valid_indices = torch.where(valid_mask)[0]
+                final_state = valid_indices[torch.argmax(final_scores[valid_indices])]
+            else:
+                final_state = torch.argmax(final_scores)
+            
+            # Backtrack
+            path_states = torch.zeros(T, dtype=torch.long, device=device)
+            path_states[T-1] = final_state
+            
+            for t in range(T-2, -1, -1):
+                path_states[t] = backpointers[b, t+1, path_states[t+1]]
+            
+            frame_phonemes = ctc_paths_batch[b, path_states]
+            results.append(frame_phonemes)
+        
+        return results
+
+    def _detect_silence_segments_batch(self, log_probs_batch):
+        """
+        Vectorized silence detection for batch processing.
+        
+        Args:
+            log_probs_batch: Tensor [B, T, C] or list of tensors
+            
+        Returns:
+            List of silence segment lists for each batch item
+        """
+        if isinstance(log_probs_batch, list):
+            return [self._detect_silence_segments(lp) for lp in log_probs_batch]
+        
+        batch_size, num_frames, num_classes = log_probs_batch.shape
+        device = log_probs_batch.device
+        
+        if self.silence_id >= num_classes:
+            return [[] for _ in range(batch_size)]
+        
+        sliding_frames = self.silence_anchors
+        
+        if num_frames < sliding_frames:
+            return [[] for _ in range(batch_size)]
+        
+        # Calculate sliding window averages using convolution [B, T-window+1, C]
+        window_avg = F.avg_pool1d(
+            log_probs_batch.transpose(1, 2),  # [B, C, T]
+            kernel_size=sliding_frames,
+            stride=1
+        ).transpose(1, 2)  # [B, T-window+1, C]
+        
+        # Get top-2 predictions [B, T-window+1, 2]
+        top_values, top_indices = torch.topk(window_avg, k=min(2, num_classes), dim=-1)
+        
+        # Determine predicted class (use second if first is blank)
+        predicted_class = top_indices[:, :, 0]  # [B, T-window+1]
+        is_blank = predicted_class == self.blank_id
+        
+        if top_indices.shape[-1] > 1:
+            predicted_class = torch.where(is_blank, top_indices[:, :, 1], predicted_class)
+        
+        # Find silence windows [B, T-window+1]
+        is_silence = predicted_class == self.silence_id
+        
+        # Extract segments for each batch item
+        all_segments = []
+        for b in range(batch_size):
+            segments = []
+            silence_mask = is_silence[b].cpu().numpy()
+            
+            in_silence = False
+            silence_start = 0
+            
+            for i, is_sil in enumerate(silence_mask):
+                center_frame = i + sliding_frames // 2
+                
+                if is_sil and not in_silence:
+                    in_silence = True
+                    silence_start = i
+                elif not is_sil and in_silence:
+                    in_silence = False
+                    silence_end = center_frame
+                    if silence_end - silence_start >= self.silence_anchors:
+                        segments.append((silence_start, silence_end))
+            
+            if in_silence:
+                silence_end = num_frames
+                if silence_end - silence_start >= self.silence_anchors:
+                    segments.append((silence_start, silence_end))
+            
+            all_segments.append(segments)
+        
+        return all_segments
+        
     def decode_with_forced_alignment(self, log_probs, true_sequence, return_scores=False, 
                                    boost_targets=True, enforce_minimum=True, enforce_all_targets=True, anchor_pauses=True):
         """
@@ -562,6 +787,7 @@ class AlignmentUtils: # 2025-09-10
         self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
         self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise)
     
+
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
                          true_seqs_lens=None, forced_alignment=True, 
                          boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
@@ -588,38 +814,65 @@ class AlignmentUtils: # 2025-09-10
                 raise ValueError("Phoneme sequences and lengths required for forced alignment")
             
             with torch.no_grad():
-                all_frame_phonemes = []
+                # Prepare batch data
+                log_probs_list = []
+                ctc_paths_list = []
+                ctc_lens_list = []
                 
                 for i in range(batch_size):
-                    # Get sequence for this batch item
                     if pred_lens is not None:
                         log_probs_seq = log_probs[i][:pred_lens[i]]
                     else:
                         log_probs_seq = log_probs[i]
-                        
+                    
                     true_seq_len = true_seqs_lens[i]
                     true_seq = true_seqs[i, :true_seq_len]
                     
                     if true_seq_len == 0:
-                        frame_phonemes = torch.tensor([], device=device, dtype=torch.long)
-                    else:
-                        # Use enhanced decoder
-                        frame_phonemes = self.viterbi_decoder.decode_with_forced_alignment(
-                            log_probs_seq, 
-                            true_seq,
-                            boost_targets=boost_targets,
-                            enforce_minimum=enforce_minimum,
-                            enforce_all_targets=enforce_all_targets,
-                            anchor_pauses=(self.silence_anchors>0)
+                        continue
+                    
+                    # Apply probability modifications
+                    if boost_targets:
+                        log_probs_seq = self.viterbi_decoder._boost_target_phonemes(
+                            log_probs_seq, true_seq
                         )
                     
-                    all_frame_phonemes.append(frame_phonemes)
+                    if enforce_minimum:
+                        log_probs_seq = self.viterbi_decoder._enforce_minimum_probabilities(
+                            log_probs_seq, true_seq
+                        )
+                    
+                    # Create CTC path
+                    ctc_path = torch.zeros(2 * true_seq_len + 1, device=device, dtype=torch.long)
+                    ctc_path[::2] = self.blank_id
+                    ctc_path[1::2] = true_seq
+                    
+                    log_probs_list.append(log_probs_seq)
+                    ctc_paths_list.append(ctc_path)
+                    ctc_lens_list.append(len(ctc_path))
                 
-                # Apply assort_frames to get timestamps
-                assorted = []
-                for frame_phonemes in all_frame_phonemes:
-                    assorted.append(self.viterbi_decoder.assort_frames(frame_phonemes))
+                # Batch decode
+                if log_probs_list:
+                    ctc_lens_tensor = torch.tensor(ctc_lens_list, device=device)
+                    all_frame_phonemes = self.viterbi_decoder._viterbi_decode_batch(
+                        log_probs_list, ctc_paths_list, ctc_lens_tensor
+                    )
+                else:
+                    all_frame_phonemes = [torch.tensor([], device=device, dtype=torch.long) 
+                                        for _ in range(batch_size)]
                 
+                # Post-process if needed
+                if enforce_all_targets:
+                    for i in range(len(all_frame_phonemes)):
+                        if true_seqs_lens[i] > 0:
+                            all_frame_phonemes[i] = self.viterbi_decoder._ensure_all_phonemes_aligned(
+                                all_frame_phonemes[i],
+                                true_seqs[i, :true_seqs_lens[i]],
+                                log_probs_list[i] if i < len(log_probs_list) else log_probs[i]
+                            )
+                
+                # Apply assort_frames
+                assorted = [self.viterbi_decoder.assort_frames(fp) for fp in all_frame_phonemes]
                 return assorted
         
         else:
