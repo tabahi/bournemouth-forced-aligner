@@ -404,15 +404,24 @@ class PhonemeTimestampAligner:
 
 
 
-    def load_audio(self, audio_path, backend = "ffmpeg"):
+    def load_audio(self, audio, backend = "ffmpeg", sr=None):
         """Load and preprocess audio file."""
         
-        wav, sr = torchaudio.load(audio_path,  frame_offset=0,  normalize=True, backend=backend)
+        if isinstance(audio, str):
+            audio_path = audio
+            wav, sr = torchaudio.load(audio_path,  frame_offset=0,  normalize=True, backend=backend)
+
+        elif isinstance(audio, torch.Tensor):
+            if sr is None:
+                raise ValueError("Sample rate 'sr' must be provided when passing audio as a tensor.")
+            wav = audio
+        else:
+            raise ValueError("Invalid audio input type.")
+
         
         if sr != self.resampler_sample_rate:
-            print(f"Resampling {audio_path} from {sr}Hz to {self.resampler_sample_rate}Hz")
             # load full
-            wav, sr = torchaudio.load(audio_path, normalize=True)
+            #wav, sr = torchaudio.load(audio_path, normalize=True)
             assert wav.shape[1] > 0, "Audio data is empty"
             # Resample to target sample rate
             
@@ -558,7 +567,8 @@ class PhonemeTimestampAligner:
         
         # Process audio through the model
         logits_class, logits_group, embeddings, spectral_len = self._cupe_prediction(wav, wav_len, extract_embeddings)
-        
+
+
         # Prepare sequences for alignment
         ph_seqs = phoneme_sequence.unsqueeze(0).to(self.device)
         grp_seqs = group_sequence.unsqueeze(0).to(self.device)
@@ -573,7 +583,6 @@ class PhonemeTimestampAligner:
             print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
             print(f"Spectral length: {spectral_len}")
         
-        t0 = time.time()
         
         # Forced alignment with target boosting
         frame_groups = self.alignment_utils_g.decode_alignments(
@@ -586,6 +595,7 @@ class PhonemeTimestampAligner:
             enforce_minimum=self.enforce_minimum,
             enforce_all_targets=self.enforce_all_targets
         )
+
         
         frame_phonemes = self.alignment_utils_p.decode_alignments(
             log_probs_p, 
@@ -597,6 +607,7 @@ class PhonemeTimestampAligner:
             enforce_minimum=self.enforce_minimum,
             enforce_all_targets=self.enforce_all_targets
         )
+
         
         
         if debug:
@@ -632,7 +643,7 @@ class PhonemeTimestampAligner:
             print("start_offset_time", start_offset_time)
             for i, (ph, grp) in enumerate(zip(frame_phonemes[0], frame_groups[0])):
                 print(f"{i+1:2d}: {self.phonemizer.index_to_plabel[ph[0]]:>3s}, {self.phonemizer.index_to_glabel[grp[0]]:>3s}  -> ({grp[4]:.3f} - {grp[5]:.3f}), Confidence: {grp[3]:.3f}")
-        
+         
         
         timestamp_dict = {
             'phoneme_timestamps': frame_phonemes[0],
@@ -647,9 +658,239 @@ class PhonemeTimestampAligner:
                 pooled_embeddings_groups = self.weighted_pool_embeddings(embeddings[0][:spectral_len], log_probs_g[0][:spectral_len], frame_groups[0])
                 return timestamp_dict, pooled_embeddings_phonemes, pooled_embeddings_groups
             else: 
-                return timestamp_dict, pooled_embeddings_phonemes, None
+                return timestamp_dict, pooled_embeddings_phonemes, None 
 
         return timestamp_dict, None, None
+
+    
+    def _cupe_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
+        """
+        Process audio through the CUPE model to get logits.
+        
+        Args:
+            audio_batch: Audio tensor [1, samples]
+            wav_len: Length of audio in samples
+            extract_embeddings: Whether to extract embeddings
+            
+        Returns:
+            Tuple of (logits_class, logits_group, embeddings, spectral_len)
+        """
+        if audio_batch.dim() == 1:
+            audio_batch = audio_batch.unsqueeze(0)
+        
+        
+        # Window the audio
+        windowed_audio = slice_windows(
+            audio_batch.to(self.device), 
+            self.sample_rate, 
+            self.window_size_ms, 
+            self.stride_ms
+        )
+        
+        batch_size, num_windows, window_size = windowed_audio.shape
+        windows_flat = windowed_audio.reshape(-1, window_size)
+        
+        # Get predictions
+        if extract_embeddings:
+            logits_class, logits_group, embeddings = self.extractor.predict(
+                windows_flat, 
+                return_embeddings=True, 
+                groups_only=False
+            )
+        else:
+            logits_class, logits_group = self.extractor.predict(
+                windows_flat, 
+                return_embeddings=False, 
+                groups_only=False
+            )
+            embeddings = None
+        
+        frames_per_window = logits_group.shape[1]
+        
+        # Reshape outputs
+        logits_class = logits_class.reshape(batch_size, num_windows, frames_per_window, -1)
+        logits_group = logits_group.reshape(batch_size, num_windows, frames_per_window, -1)
+        
+        # Get original audio length
+        original_audio_length = audio_batch.size(-1)
+        
+        # Stitch window predictions
+        logits_class = stich_window_predictions(
+            logits_class, 
+            original_audio_length=original_audio_length,
+            cnn_output_size=frames_per_window, 
+            sample_rate=self.sample_rate, 
+            window_size_ms=self.window_size_ms, 
+            stride_ms=self.stride_ms
+        )
+        
+        logits_group = stich_window_predictions(
+            logits_group, 
+            original_audio_length=original_audio_length,
+            cnn_output_size=frames_per_window, 
+            sample_rate=self.sample_rate, 
+            window_size_ms=self.window_size_ms, 
+            stride_ms=self.stride_ms
+        )
+        
+        if extract_embeddings and embeddings is not None:
+            embeddings = embeddings.reshape(batch_size, num_windows, frames_per_window, -1)
+            embeddings = stich_window_predictions(
+                embeddings, 
+                original_audio_length=original_audio_length,
+                cnn_output_size=frames_per_window, 
+                sample_rate=self.sample_rate, 
+                window_size_ms=self.window_size_ms, 
+                stride_ms=self.stride_ms
+            )
+        
+        # Calculate spectral length
+        spectral_lens = calc_spec_len_ext(
+            torch.tensor(wav_lens), 
+            self.window_size_ms, 
+            self.stride_ms, 
+            self.sample_rate, 
+            torch.tensor(frames_per_window, dtype=torch.long)
+        ).tolist()
+
+        return logits_class, logits_group, embeddings, spectral_lens
+
+    def extract_timestamps_from_segment_batch(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0,
+                                      group_sequences=None, extract_embeddings=True, do_groups=True, 
+                                      debug=True, ):
+        """
+        Extract phoneme and group timestamps from a single audio segment.
+
+        Args:
+            wav: Audio tensor for the segment.
+            wav_len: Length of the audio segment in samples.
+            phoneme_sequence: List or tensor of phoneme indices.
+            start_offset_time: Start time offset in seconds for the segment.
+            group_sequence: Optional list or tensor of phoneme group indices.
+            extract_embeddings: Whether to extract pooled embeddings.
+            do_groups: Whether to extract phoneme group timestamps.
+            debug: Enable debug output.
+
+        Returns:
+            timestamp_dict: Dictionary with 'phoneme_timestamps' and 'group_timestamps'.
+            pooled_embeddings_phonemes: Pooled phoneme embeddings or None.
+            pooled_embeddings_groups: Pooled group embeddings or None.
+        """
+    
+
+        # Convert sequences to tensors
+        if not isinstance(phoneme_sequences, torch.Tensor):
+            #padding phoneme sequences to have same length
+            max_len = max(len(seq) for seq in phoneme_sequences)
+            phoneme_sequences = torch.tensor([seq + [-1] * (max_len - len(seq)) for seq in phoneme_sequences], dtype=torch.long)
+
+        if group_sequences is not None and not isinstance(group_sequences, torch.Tensor):
+            #padding
+            max_len = max(len(seq) for seq in group_sequences)
+            group_sequences = torch.tensor([seq + [-1] * (max_len - len(seq)) for seq in group_sequences], dtype=torch.long)
+            #
+            group_sequences = torch.tensor(group_sequences, dtype=torch.long)
+
+        # Generate group sequence if not provided
+        
+        if group_sequences is None:
+            mapped = []
+            # Support both list-of-lists and 2D tensor inputs
+            if isinstance(phoneme_sequences, torch.Tensor) and phoneme_sequences.dim() == 2:
+                seq_iter = [row.tolist() for row in phoneme_sequences]
+            else:
+                seq_iter = list(phoneme_sequences)
+
+            for seq in seq_iter:
+                grp = self._map_phonemes_to_groups(seq)
+                if not isinstance(grp, torch.Tensor):
+                    grp = torch.tensor(grp, dtype=torch.long)
+                mapped.append(grp)
+
+            # Pad sequences to same length and stack
+            if len(mapped) == 0:
+                group_sequences = torch.empty(0, dtype=torch.long)
+            else:
+                max_len = max(m.size(0) for m in mapped)
+                padded = [
+                    m if m.size(0) == max_len else torch.nn.functional.pad(m, (0, max_len - m.size(0)), value=self.blank_group)
+                    for m in mapped
+                ]
+            group_sequences = torch.stack(padded, dim=0)
+
+
+        logits_class, logits_group, embeddings, spectral_lens = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings)
+
+
+        # Prepare sequences for alignment
+        ph_seqs = phoneme_sequences.to(self.device)
+        grp_seqs = group_sequences.to(self.device)
+        ph_seq_lens = torch.tensor([len(phoneme_sequence) for phoneme_sequence in phoneme_sequences], dtype=torch.long).to(self.device)
+        spectral_lens = torch.tensor(spectral_lens, dtype=torch.long).to(self.device)
+        
+        # Get log probabilities
+        log_probs_g = F.log_softmax(logits_group, dim=2)
+        log_probs_p = F.log_softmax(logits_class, dim=2)
+        
+
+        # Forced alignment with target boosting
+        frame_groups = self.alignment_utils_g.decode_alignments(
+            log_probs_g, 
+            true_seqs=grp_seqs, 
+            pred_lens=spectral_lens, 
+            true_seqs_lens=ph_seq_lens, 
+            forced_alignment=True,
+            boost_targets=self.boost_targets,
+            enforce_minimum=self.enforce_minimum,
+            enforce_all_targets=self.enforce_all_targets
+        )
+        
+        frame_phonemes = self.alignment_utils_p.decode_alignments(
+            log_probs_p, 
+            true_seqs=ph_seqs, 
+            pred_lens=spectral_lens, 
+            true_seqs_lens=ph_seq_lens, 
+            forced_alignment=True,
+            boost_targets=self.boost_targets,
+            enforce_minimum=self.enforce_minimum,
+            enforce_all_targets=self.enforce_all_targets
+        )
+        
+        
+        
+        
+        # Calculate confidence scores
+        
+        
+        
+        for i in range(len(frame_phonemes)):
+            frame_phonemes[i] = self._calculate_confidences(log_probs_p[i], frame_phonemes[i])
+            frame_groups[i] = self._calculate_confidences(log_probs_g[i], frame_groups[i])
+            
+            frame_phonemes[i] = self.convert_to_ms(
+                frame_phonemes[i], 
+                spectral_lens[i], 
+                start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
+                wav_lens[i], 
+                self.resampler_sample_rate
+            )
+            frame_groups[i] = self.convert_to_ms(
+                frame_groups[i], 
+                spectral_lens[i], 
+                start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
+                wav_lens[i], 
+                self.resampler_sample_rate
+            )
+    
+        timestamp_dicts = [
+            {
+                'phoneme_timestamps': frame_phonemes[i],
+                'group_timestamps': frame_groups[i],
+            }
+            for i in range(len(frame_phonemes))
+        ]
+        
+        return timestamp_dicts, None, None
 
     
     
@@ -805,6 +1046,7 @@ class PhonemeTimestampAligner:
             group_idx = self.phoneme_id_to_group_id.get(ph_idx.item(), self.blank_group)
             group_sequence.append(group_idx)
         return torch.tensor(group_sequence, dtype=torch.long)
+    
     
     def _align_words(self, phoneme_ts, word_num, words_list):
         '''
@@ -989,7 +1231,7 @@ class PhonemeTimestampAligner:
             print(f"PROCESSING SUMMARY")
             print(f"{'='*60}")
             print(f"Total segments processed: {len(vs2_segments)}")
-        
+         
         # Calculate overall statistics
         total_phonemes = 0
         total_confidence = 0.0
@@ -1011,7 +1253,7 @@ class PhonemeTimestampAligner:
             print(f"Total phonemes aligned: {total_phonemes}")
             print(f"Overall average confidence: {overall_avg_confidence:.3f}")
             print(f"{'='*60}")
-            
+             
         # Create vs2 output
         vs2_data = {"segments": vs2_segments}
         
@@ -1030,6 +1272,104 @@ class PhonemeTimestampAligner:
             if debug:  
                 print(f"Results saved to: {ts_out_path}")
         return vs2_data
+
+    def process_segments_batch(self, srt_data, audio_wavs, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True,  debug=False):
+
+        # Process each segment
+        vs2_segments = [] # timestamps for each phoneme in the segment
+        vspt_g_embds = []
+        vspt_p_embd  = []
+
+
+        start_times = [segment["start"] for segment in srt_data] # segment start time
+        end_times = [segment["end"] for segment in srt_data] # segment end time
+
+        ts_out = [self.phonemize_sentence(segment["text"]) for segment in srt_data]
+        
+
+
+        phoneme_sequences = [ts[self.phonemes_key] for ts in ts_out]
+        group_sequences = [ts[self.phoneme_groups_key] for ts in ts_out] if do_groups else None
+
+        for segment, phoneme_sequence, group_sequence in zip(srt_data, phoneme_sequences, group_sequences if group_sequences is not None else [None]*len(srt_data)):
+            segment[self.phonemes_key] = phoneme_sequence
+            segment[self.phoneme_groups_key] = group_sequence
+
+        filtered = []
+        for i, (segment, phoneme_sequence, group_sequence) in enumerate(
+            zip(srt_data, phoneme_sequences, group_sequences if group_sequences is not None else [None]*len(srt_data))
+        ):
+            if not phoneme_sequence or len(phoneme_sequence) < self.ph_seq_min:
+                print(f"Removing segment {i+1} due to insufficient phoneme sequence length: {len(phoneme_sequence)}")
+                continue
+            filtered.append((segment, phoneme_sequence, group_sequence, i))
+
+        # Unpack filtered lists for further processing
+        srt_data = [seg for seg, _, _, _ in filtered]
+        phoneme_sequences = [ph for _, ph, _, _ in filtered]
+        group_sequences = [grp for _, _, grp, _ in filtered]
+
+        
+        wavs_and_lens = [
+            self.chop_wav(audio_wav, int(start_time * self.resampler_sample_rate), int(end_time * self.resampler_sample_rate))
+            for audio_wav, start_time, end_time in zip(audio_wavs, start_times, end_times)
+        ]
+        wavs, wav_lens = zip(*wavs_and_lens)
+        
+        wavs = torch.stack(wavs, dim=0)
+        
+        results, pooled_embeddings_p, pooled_embeddings_g = self.extract_timestamps_from_segment_batch(wavs, wav_lens, phoneme_sequences, start_offset_times=start_times, group_sequences=group_sequences, extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+
+
+    
+        
+        vs2_segments = []
+
+        for i, (segment, result, ts) in enumerate(zip(srt_data, results, ts_out)):
+            # Create vs2 segment (copy original segment data and add timestamps)
+            vs2_segment = segment.copy()
+            vs2_segment["ipa"] = ts.get("ipa", "")
+            vs2_segment["word_num"] = ts.get("word_num", "")
+            vs2_segment["words"] = ts.get("words", "")
+            
+            # Add phoneme timestamps (convert 6-tuple back to JSON)
+            vs2_segment["phoneme_ts"] = [
+                {
+                    "phoneme_idx": int(ph_idx),
+                    "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
+                    "start_ms": float(start_ms),
+                    "end_ms": float(end_ms),
+                    "confidence": float(conf)
+                }
+                for (ph_idx, start_frame, end_frame, conf, start_ms, end_ms) in result["phoneme_timestamps"]
+            ]
+            
+            # Add group timestamps
+            vs2_segment["group_ts"] = [
+                {
+                    "group_idx": int(grp_idx),
+                    "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
+                    "start_ms": float(start_ms),
+                    "end_ms": float(end_ms),
+                    "confidence": float(conf)
+                }
+                for (grp_idx, start_frame, end_frame, conf, start_ms, end_ms) in result["group_timestamps"]
+            ]
+
+            vs2_segment["words_ts"] = self._align_words(
+                vs2_segment["phoneme_ts"], 
+                ts.get("word_num", []), 
+                ts.get("words", [])
+            )
+            
+            vs2_segments.append(vs2_segment)
+
+        # Create vs2 output
+        vs2_data = {"segments": vs2_segments}
+        
+
+        return vs2_data
+    
     
     def process_srt_file(self, srt_path, audio_path, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True):
         """
@@ -1090,6 +1430,25 @@ class PhonemeTimestampAligner:
         srt_data = {"segments": [{"start": 0.0, "end": duration, "text": text.strip()}]}  # create whisper style SRT data
 
         return self.process_segments(srt_data["segments"], audio_wav, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
+
+    def process_sentence_batch(self, texts, audio_wavs, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+        """
+        Process a batch of transcriptions and audio waveforms, generating vs2 output with timestamps.
+
+        Args:
+            texts: List of texts (str).
+            audio_wavs: List of audio waveform tensors (torch.Tensor).
+            ts_out_path: Path to output vs2 file (optional).
+            extract_embeddings: Whether to extract embeddings (bool, optional).
+            vspt_path: Path to save embeddings (.pt file, optional).
+            do_groups: Whether to extract group timestamps (bool, optional).
+            debug: Whether to print debug information (bool, optional).
+        """
+
+        durations = [audio_wav.shape[1] / self.sample_rate for audio_wav in audio_wavs]
+        srt_data = {"segments": [{"start": 0.0, "end": duration, "text": text.strip()} for text, duration in zip(texts, durations)]}  # create whisper style SRT data
+
+        return self.process_segments_batch(srt_data["segments"], audio_wavs, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
 
     def convert_to_textgrid(self, timestamps_dict, output_file=None, include_confidence=False):
         """
