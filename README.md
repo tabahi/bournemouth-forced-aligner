@@ -107,7 +107,7 @@ extractor = PhonemeTimestampAligner(
 # )
 
 # Load and process
-audio_wav = extractor.load_audio(audio_path)
+audio_wav = extractor.load_audio(audio_path) # use RMS normalization for preloaded wav `audio_wav = extractor._rms_normalize(audio_wav)`
 
 t0 = time.time()
 timestamps = extractor.process_sentence(
@@ -125,6 +125,8 @@ print("🎯 Timestamps:")
 print(json.dumps(timestamps, indent=4, ensure_ascii=False))
 print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
 ```
+
+
 
 ### 🌐 Multi-Language Examples
 
