@@ -2,7 +2,8 @@
 
 ## [0.1.7] - 2025-10-17
 - Fixed the rhotics and compound phoneme mappings in [ph66_mapper](bournemouth_aligner/ipamappers/ph66_mapper.py).
-
+- CPU only mapping during checkpoint load in model2i.py
+- Batch processing by @JulianaFrancis
 
 ## [0.1.6] - 2025-09-30
 - `preser` parameter for automatically selecting language suitable model.

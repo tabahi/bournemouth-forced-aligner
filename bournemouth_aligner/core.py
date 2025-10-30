@@ -50,7 +50,7 @@ class PhonemeTimestampAligner:
                 See README.md for complete preset list.
             model_name (str, optional): Name of the pre-trained model to use.
                 Overrides preset model selection. Available models:
-                - "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" (English)
+                - "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt" (English)
                 - "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt" (8 European languages)
                 - "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt" (Universal)
                 Models downloaded from: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
@@ -77,7 +77,7 @@ class PhonemeTimestampAligner:
             4. Default values
 
         Available Models:
-            - en_libri1000_uj01d_e199_val_GER=0.2307.ckpt: Best for English (1000hrs LibriSpeech)
+            - en_libri1000_ua01c_e4_val_GER=0.2186.ckpt: Best for English (1000hrs LibriSpeech)
             - en_libri1000_uj01d_e62_val_GER=0.2438.ckpt: For accented English speech
             - multi_MLS8_uh02_e36_val_GER=0.2334.ckpt: 8 European languages
               (English, German, French, Dutch, Italian, Spanish, Portuguese, Polish)
@@ -129,7 +129,8 @@ class PhonemeTimestampAligner:
             if preset in ["en-us", "en", "en-gb", "en-029", "en-gb-x-gbclan", "en-gb-x-rp", "en-gb-scotland", "en-gb-x-gbcwmd"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+                #model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # OLDER version
+                model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"  # new after rhotics fix
 
             # MLS8 European languages (trained on 8 European languages)
             elif preset in ["de", "fr", "fr-be", "fr-ch", "es", "es-419", "it", "pt", "pt-br", "pl", "nl"]:
@@ -340,7 +341,7 @@ class PhonemeTimestampAligner:
         self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class, silence_id=self.silence_group, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise)
 
 
-    def download_model(self, model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", model_dir="./models"):
+    def download_model(self, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", model_dir="./models"):
         """Download the specified model from hugging face using huggingface_hub."""
         from huggingface_hub import hf_hub_download
         
@@ -1736,7 +1737,7 @@ class PhonemeTimestampAligner:
         
         return framewise_label
 
-def process_sentence(transcription, audio_path, model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", lang="en-us", duration_max=10, ts_out_path=None, device="cpu"):
+def process_sentence(transcription, audio_path, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", lang="en-us", duration_max=10, ts_out_path=None, device="cpu"):
 
     extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
 
@@ -1787,7 +1788,7 @@ def example_audio_timestamps():
     transcription = "butterfly"
     audio_path = "samples/audio/109867__timkahn__butterfly.wav"
     
-    model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" 
+    model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt" 
     extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
 
     audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
