@@ -100,7 +100,7 @@ extractor = PhonemeTimestampAligner(
 
 # Alternative: explicit model selection
 # extractor = PhonemeTimestampAligner(
-#     model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
+#     model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt",
 #     lang='en-us',
 #     duration_max=10,
 #     device='cpu'
@@ -549,6 +549,7 @@ PhonemeTimestampAligner(
 ---
 
 **Models:**
+- `model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"` (NEW) for best performance on English. This model is trained on 1000 hours LibriSpeech.
 - `model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"` for best performance on English. This model is trained on 1000 hours LibriSpeech.
 - `model_name="en_libri1000_uj01d_e62_val_GER=0.2438.ckpt"` for best performance on heavy accented English speech. This is the same as above, just unsettled weights.
 - `model_name="multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"` for best performance on 8 european languages including English, German, French, Dutch, Italian, Spanish, Italian, Portuguese, Polish. This model's accuracy on English (buckeye corpus) is on par with the above (main) English model. We can only assume that the performance will be the same on the rest of the 7 languages.
@@ -803,7 +804,7 @@ import torch
 from bournemouth_aligner import PhonemeTimestampAligner
 
 # Initialize aligner
-extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", 
+extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", 
                                   lang='en-us', duration_max=10, device='cpu')
 
 # Process audio and get timestamps
@@ -850,7 +851,7 @@ with open("whisper_output.srt.json", "w") as f:
     json.dump(result, f)
 
 # Process with BFA
-extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt")
+extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt")
 timestamps = extractor.process_srt_file("whisper_output.srt.json", "audio.wav", "timestamps.json")
 ```
 
@@ -864,7 +865,7 @@ import torch
 from bournemouth_aligner import PhonemeTimestampAligner
 
 # Initialize and process
-extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt")
+extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt")
 audio_wav = extractor.load_audio("audio.wav")  # Handles resampling and normalization
 timestamps = extractor.process_sentence("your text here", audio_wav)
 
@@ -918,7 +919,7 @@ balign [OPTIONS] AUDIO_PATH SRT_PATH OUTPUT_PATH
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--model TEXT` | `en_libri1000_uj01d_e199_val_GER=0.2307.ckpt` | CUPE model from [HuggingFace](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt) |
+| `--model TEXT` | `en_libri1000_ua01c_e4_val_GER=0.2186.ckpt` | CUPE model from [HuggingFace](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt) |
 | `--lang TEXT` | `en-us` | Language code ([espeak codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)) |
 | `--device TEXT` | `cpu` | Processing device (`cpu` or `cuda`) |
 | `--embeddings PATH` | None | Save phoneme embeddings (.pt file) |
@@ -989,7 +990,7 @@ balign audio.wav transcription.srt.json output.json --debug
 💾 Output: output.json
 🏷️  Language: en-us
 🖥️  Device: cpu
-🎯 Model: en_libri1000_uj01d_e199_val_GER=0.2307.ckpt
+🎯 Model: en_libri1000_ua01c_e4_val_GER=0.2186.ckpt
 --------------------------------------------------
 🔧 Initializing aligner...
 Setting backend for language: en-us
