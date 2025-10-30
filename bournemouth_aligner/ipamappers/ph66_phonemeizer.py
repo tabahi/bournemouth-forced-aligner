@@ -6,8 +6,10 @@ from phonemizer.separator import Separator
 from unicodedata import normalize
 import re
 import json
-from .ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
-
+try:
+    from .ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
+except ImportError:
+    from bournemouth_aligner.ipamappers.ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
 
 SIL_PHN="SIL"
 assert(SIL_PHN in phoneme_mapped_index)
@@ -17,10 +19,53 @@ noise_group = phoneme_groups_mapper[phoneme_mapped_index[noise_PHN]]
 SIL_token = phoneme_mapped_index[SIL_PHN]
 
 
+# Languages with non-Latin scripts that need special word breaking
+# Based on espeak-ng supported languages (see espeak_languages.md)
+specical_unicode_langs = [
+    # CJK languages (no spaces between words)
+    'zh', 'cmn', 'yue', 'hak',  # Chinese variants
+    'ja',  # Japanese
+    'ko',  # Korean
+    # Indic languages (Devanagari and other Indic scripts)
+    'hi',  # Hindi
+    'mr',  # Marathi
+    'ne',  # Nepali
+    'kok', # Konkani
+    'bn',  # Bengali
+    'as',  # Assamese
+    'gu',  # Gujarati
+    'pa',  # Punjabi
+    'or',  # Oriya
+    'sd',  # Sindhi
+    'si',  # Sinhala
+    'bpy', # Bishnupriya Manipuri
+    # Dravidian languages
+    'ta',  # Tamil
+    'te',  # Telugu
+    'kn',  # Kannada
+    'ml',  # Malayalam
+    # Semitic/Arabic script languages
+    'ar',  # Arabic
+    'ur',  # Urdu
+    'fa',  # Persian/Farsi
+    'he',  # Hebrew
+    # Other non-Latin scripts
+    'am',  # Amharic (Ethiopic script)
+    'my',  # Burmese
+    'ka',  # Georgian
+    'hy', 'hyw',  # Armenian (East and West)
+    'el', 'grc',  # Greek (Modern and Ancient)
+    'th',  # Thai
+    'ug',  # Uyghur (Arabic script)
+]
+
+# Languages that typically don't separate words with spaces (treat characters as tokens)
+no_space_langs = ['zh', 'cmn', 'yue', 'hak', 'ja', 'ko', 'th', 'my']
+
 
 class Phonemizer:
 
-    def __init__(self, language=None, remove_noise_phonemes=True):
+    def __init__(self, language=None, remove_noise_phonemes=True, unicode_enable=False):
         '''
         Initialize the phonemizer with a specific language backend and options.
         
@@ -29,8 +74,10 @@ class Phonemizer:
         remove_noise_phonemes (bool): If True, noise phonemes will be removed from the output.
         - if language=None, then set_backend(language='en') must be called before phonemize_sentence
         - remove_noise_phonemes: remove noise phonemes from the phoneme list that includes possibly valid but unknown phonemes
+        - unicode_enable: if True, words won't be seperated by spaces, useful for languages like Chinese, Hindi, etc.
+          `unicode_enable` is automatically set to True for languages like Chinese, Japanese, Korean, Hindi, etc.
         '''
-        
+        self.unicode_enable = unicode_enable
         self.word_counts = 0
         self.phn_counts = 0 
         self.phoneme_vocab_counts = {}
@@ -57,6 +104,7 @@ class Phonemizer:
         self.index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
         self.phoneme_id_to_group_id = phoneme_groups_mapper
         
+        self.language = language
         if (language is not None):
             self.set_backend(language=language)
 
@@ -97,8 +145,15 @@ class Phonemizer:
             language = alt_codes[language]
         print(f"Setting espeak backend for language: {language}")
         self.backend = EspeakBackend(language=language, preserve_punctuation=False, tie=False, with_stress=False)
+        self.language = language
 
-    def break_words(self, single_sentence):
+        # unicode_enable for languages with non-Latin scripts
+        # Check if the language code matches any in specical_unicode_langs
+        if any(lang in language for lang in specical_unicode_langs):
+            self.unicode_enable = True
+            print(f"Unicode enabled for language: {language}")
+
+    def break_words_alpha(self, single_sentence):
         """
         Process a sentence to extract words and insert <SIL> tokens for punctuation.
         
@@ -126,6 +181,152 @@ class Phonemizer:
             # You can add more punctuation rules here as needed
         
         return words
+
+    def break_words(self, single_sentence):
+        # for backward compatibility, only latin based languages
+        return self.break_words_alpha(single_sentence)
+    
+    def break_words_special(self, single_sentence):
+        """
+        Special word breaker for unicode-enabled languages (e.g., Hindi, Arabic, Chinese, Japanese).
+        - For CJK (no-space) languages (zh, cmn, ja, ko) each non-punctuation character is treated as a token.
+        - For space-separated unicode languages (hi, ar, etc.) split on whitespace but handle punctuation
+          similarly to break_words_alpha by inserting <SIL> tokens.
+        """
+        if single_sentence is None:
+            return []
+
+        lang = (self.language or "").lower()
+
+        # Punctuation sets covering multiple scripts
+        # Single SIL punctuation (pauses like commas, semicolons)
+        single_sil_punct = {
+            ',', ';', ':',           # Latin
+            '،', '٬', '؛',           # Arabic comma, thousands separator, semicolon
+            '、',                    # CJK enumeration comma
+            '，',                    # CJK comma
+            '፣', '፤',                # Ethiopic comma, semicolon (Amharic)
+            '·',                     # Georgian comma
+            '၊',                     # Burmese section mark
+            '๚', '๛',                # Thai abbreviation marks
+        }
+
+        # Double SIL punctuation (sentence enders)
+        double_sil_punct = {
+            '.', '!', '?',           # Latin
+            '؟', '!',                # Arabic question mark, exclamation
+            '।', '॥',                # Devanagari danda, double danda (Hindi, etc.)
+            '។', '៕',                # Khmer sign, deprecation mark
+            '。', '！', '？',         # CJK period, exclamation, question
+            '፡', '።', '፨',           # Ethiopic word separator, full stop, paragraph (Amharic)
+            '܀', '܁', '܂',           # Syriac end marks
+            '။',                     # Burmese period
+            ';',                     # Greek question mark (looks like semicolon in Greek)
+        }
+
+        all_punct = single_sil_punct.union(double_sil_punct)
+
+        words = []
+
+        if any(code in lang for code in no_space_langs):
+            # For CJK languages: treat each character as a separate token
+            i = 0
+            while i < len(single_sentence):
+                ch = single_sentence[i]
+
+                # Skip whitespace
+                if ch.isspace():
+                    i += 1
+                    continue
+
+                # Check for explicit <SIL> tokens
+                if single_sentence[i:i+5] == '<SIL>':
+                    words.append("<SIL>")
+                    i += 5
+                    continue
+
+                # Handle punctuation
+                if ch in double_sil_punct:
+                    words.append("<SIL>")
+                    words.append("<SIL>")
+                elif ch in single_sil_punct:
+                    words.append("<SIL>")
+                else:
+                    # Regular character - treat as a word
+                    words.append(ch)
+
+                i += 1
+            return words
+
+        # For space-separated unicode languages (e.g., Hindi, Arabic, Urdu)
+        # First, handle explicit <SIL> tokens by replacing them with a placeholder
+        SIL_PLACEHOLDER = '\x00SIL\x00'
+        sentence_processed = single_sentence.replace('<SIL>', SIL_PLACEHOLDER)
+
+        # Split on whitespace
+        tokens = re.findall(r"\S+", sentence_processed.strip())
+
+        for token in tokens:
+            # Check if entire token is the SIL placeholder
+            if token == SIL_PLACEHOLDER:
+                words.append("<SIL>")
+                continue
+
+            # Handle tokens that may contain the SIL placeholder mixed with other text
+            if SIL_PLACEHOLDER in token:
+                # Split by SIL placeholder and process each part
+                parts = token.split(SIL_PLACEHOLDER)
+                for idx, part in enumerate(parts):
+                    if idx > 0:
+                        words.append("<SIL>")
+                    if part:
+                        # Process this part for punctuation
+                        self._process_token_with_punctuation(part, words, single_sil_punct, double_sil_punct, all_punct)
+                continue
+
+            # Normal token processing
+            self._process_token_with_punctuation(token, words, single_sil_punct, double_sil_punct, all_punct)
+
+        return words
+
+    def _process_token_with_punctuation(self, token, words, single_sil_punct, double_sil_punct, all_punct):
+        """
+        Helper method to process a token and extract words and punctuation.
+        Handles leading and trailing punctuation, converting them to <SIL> tokens.
+        """
+        t = token
+
+        # Handle leading punctuation
+        while t and (t[0] in all_punct):
+            punct = t[0]
+            if punct in double_sil_punct:
+                words.append("<SIL>")
+                words.append("<SIL>")
+            else:
+                words.append("<SIL>")
+            t = t[1:]
+
+        if not t:
+            return
+
+        # Handle trailing punctuation
+        trailing = []
+        while t and (t[-1] in all_punct):
+            trailing.append(t[-1])
+            t = t[:-1]
+
+        # Add the core word (if any remains after stripping punctuation)
+        if t:
+            words.append(t)
+
+        # Convert trailing punctuation to SIL tokens (reverse order to maintain sequence)
+        for punct in reversed(trailing):
+            if punct in double_sil_punct:
+                words.append("<SIL>")
+                words.append("<SIL>")
+            else:
+                words.append("<SIL>")
+    
     
     def phonemize_sentence(self, sentence):
         '''
@@ -143,8 +344,15 @@ class Phonemizer:
             - word_num: list of word indices corresponding to the phonemes
         '''
 
-        words = self.break_words(sentence)
-        
+        if self.language is None:
+            raise ValueError("Phonemizer backend language is not set. Call set_backend(language) before phonemizing sentences.")
+    
+        if self.language in specical_unicode_langs or self.unicode_enable:
+            # For languages like Chinese, Japanese, Korean, Hindi, etc., treat the entire sentence as one word
+            words = self.break_words_special(sentence)
+        else:
+            words = self.break_words_alpha(sentence)
+
         # Phonemize the words in this segment
         phonemized_words = self.backend.phonemize(
             words, 
@@ -263,7 +471,7 @@ class Phonemizer:
         
         return segment_out
 
-def simple_test():
+def simple_test_en():
     
 
     text = "Hello world, auditors. Persephone."
@@ -288,7 +496,138 @@ def simple_test():
     print(json.dumps(segment_out, indent=2, ensure_ascii=False))
 
 
+
+def simple_test_2():
+    """Test word breaking for Hindi, Arabic, and other special languages"""
+
+    print("\n" + "=" * 70)
+    print("Testing Special Languages Word Breaking")
+    print("=" * 70)
+
+    # Test Hindi
+    print("\n" + "-" * 70)
+    print("HINDI TESTS")
+    print("-" * 70)
+
+    phonemizer_hi = Phonemizer(language='hi', remove_noise_phonemes=False)
+    # examples by claude
+    hindi_tests = [
+        ("नमस्ते दुनिया", "Hello world"),
+        ("यह एक परीक्षण है।", "This is a test."),
+        ("क्या हाल है?", "How are you?"),
+        ("मैं ठीक हूं, धन्यवाद।", "I'm fine, thank you."),
+        ("एक, दो, तीन।", "One, two, three."),
+        ("नमस्ते <SIL> दुनिया", "With explicit SIL token"),
+    ]
+
+    for hi_text, description in hindi_tests:
+        print(f"\n{description}:")
+        print(f"  Input: {hi_text}")
+        words = phonemizer_hi.break_words_special(hi_text)
+        print(f"  Words: {words}")
+        print(f"  Count: {len(words)} tokens")
+
+    # Test Arabic
+    print("\n" + "-" * 70)
+    print("ARABIC TESTS")
+    print("-" * 70)
+
+    phonemizer_ar = Phonemizer(language='ar', remove_noise_phonemes=False)
+
+    arabic_tests = [
+        ("مرحبا بالعالم", "Hello world"),
+        ("هذا اختبار.", "This is a test."),
+        ("كيف حالك؟", "How are you?"),
+        ("أنا بخير، شكرا.", "I'm fine, thank you."),
+        ("واحد، اثنان، ثلاثة.", "One, two, three."),
+        ("مرحبا <SIL> بالعالم", "With explicit SIL token"),
+    ]
+
+    for ar_text, description in arabic_tests:
+        print(f"\n{description}:")
+        print(f"  Input: {ar_text}")
+        words = phonemizer_ar.break_words_special(ar_text)
+        print(f"  Words: {words}")
+        print(f"  Count: {len(words)} tokens")
+
+    # Test Chinese (CJK - character-based)
+    print("\n" + "-" * 70)
+    print("CHINESE TESTS (Character-based tokenization)")
+    print("-" * 70)
+
+    phonemizer_zh = Phonemizer(language='cmn', remove_noise_phonemes=False)
+
+    chinese_tests = [
+        ("你好世界", "Hello world"),
+        ("这是测试。", "This is a test."),
+        ("一，二，三。", "One, two, three."),
+        ("你好 <SIL> 世界", "With explicit SIL token"),
+    ]
+
+    for zh_text, description in chinese_tests:
+        print(f"\n{description}:")
+        print(f"  Input: {zh_text}")
+        words = phonemizer_zh.break_words_special(zh_text)
+        print(f"  Words: {words}")
+        print(f"  Count: {len(words)} tokens")
+
+    # Test Thai (no-space language, character-based)
+    print("\n" + "-" * 70)
+    print("THAI TESTS (Character-based tokenization)")
+    print("-" * 70)
+
+    try:
+        phonemizer_th = Phonemizer(language='th', remove_noise_phonemes=False)
+
+        thai_tests = [
+            ("สวัสดี", "Hello"),
+            ("สวัสดีครับ", "Hello (polite)"),
+        ]
+
+        for th_text, description in thai_tests:
+            print(f"\n{description}:")
+            print(f"  Input: {th_text}")
+            words = phonemizer_th.break_words_special(th_text)
+            print(f"  Words: {words}")
+            print(f"  Count: {len(words)} tokens")
+    except Exception as e:
+        print(f"\nThai test skipped (espeak may not support Thai): {e}")
+
+    # Test punctuation handling
+    print("\n" + "-" * 70)
+    print("PUNCTUATION HANDLING TESTS")
+    print("-" * 70)
+
+    print("\nHindi punctuation:")
+    hi_punct_tests = [
+        "शब्द।",  # Word with Devanagari full stop
+        "शब्द, शब्द।",  # With comma and period
+        "शब्द!",  # With exclamation
+        "शब्द?",  # With question mark
+    ]
+
+    for text in hi_punct_tests:
+        words = phonemizer_hi.break_words_special(text)
+        print(f"  {text:20s} -> {words}")
+
+    print("\nArabic punctuation:")
+    ar_punct_tests = [
+        "كلمة.",  # Word with period
+        "كلمة، كلمة.",  # With comma and period
+        "كلمة!",  # With exclamation
+        "كلمة؟",  # With Arabic question mark
+    ]
+
+    for text in ar_punct_tests:
+        words = phonemizer_ar.break_words_special(text)
+        print(f"  {text:20s} -> {words}")
+
+    print("\n" + "=" * 70)
+    print("All tests completed!")
+    print("=" * 70)
 if __name__ == "__main__":
 
-    simple_test()
+    simple_test_en()
+
+    simple_test_2()
     exit()
