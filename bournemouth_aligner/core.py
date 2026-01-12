@@ -52,6 +52,7 @@ class PhonemeTimestampAligner:
                 Overrides preset model selection. Available models:
                 - "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt" (English)
                 - "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt" (8 European languages)
+                - "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt" (Universal)
                 - "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt" (Universal)
                 Models downloaded from: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
             cupe_ckpt_path (str, optional): Direct path to CUPE model checkpoint.
@@ -81,7 +82,9 @@ class PhonemeTimestampAligner:
             - en_libri1000_uj01d_e62_val_GER=0.2438.ckpt: For accented English speech
             - multi_MLS8_uh02_e36_val_GER=0.2334.ckpt: 8 European languages
               (English, German, French, Dutch, Italian, Spanish, Portuguese, Polish)
-            - multi_mswc38_ug20_e59_val_GER=0.5611.ckpt: Universal model for
+            - large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt: Large universal model for
+              Indo-European and closely related languages (80+ languages supported)
+            - multi_mswc38_ug20_e59_val_GER=0.5611.ckpt: Small Universal model for
               Indo-European and closely related languages (80+ languages supported)
 
         Preset Categories:
@@ -104,7 +107,7 @@ class PhonemeTimestampAligner:
             # Explicit model selection
             aligner = PhonemeTimestampAligner(
                 lang="ja",
-                model_name="multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name="large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
             )
 
             # Direct checkpoint path (highest priority)
@@ -166,95 +169,95 @@ class PhonemeTimestampAligner:
             elif preset in ["ru", "ru-lv", "uk", "be"]:  # Slavic
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             elif preset in ["hi", "bn", "ur", "pa", "gu", "mr", "ne", "as", "or", "si", "kok", "bpy", "sd"]:  # Indic
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             elif preset in ["fa", "fa-latn", "ku"]:  # Iranian
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             elif preset in ["el", "grc"]:  # Greek
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             elif preset in ["hy", "hyw"]:  # Armenian
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             elif preset in ["sq"]:  # Albanian
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             elif preset in ["la"]:  # Latin
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             # Turkic languages
             elif preset in ["tr", "az", "kk", "ky", "uz", "tt", "tk", "ug", "ba", "cu", "nog"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             # Uralic languages (note: Finnish is in both MLS8 and here, prioritize MLS8 above)
             elif preset in ["fi", "et", "hu", "smj"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             # Semitic languages
             elif preset in ["ar", "he", "am", "mt"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
 
             # Malayo-Polynesian languages (Indonesian/Malay only - closer to Indo-European contact)
             elif preset in ["id", "ms"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             # Dravidian languages
             elif preset in ["ta", "te", "kn", "ml"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
 
             # South Caucasian languages
             elif preset in ["ka"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
 
             # Language isolates (maintain only Basque and Quechua - European/Indo-European contact)
             elif preset in ["eu", "qu"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
             # Constructed languages
             elif preset in ["eo", "ia", "io", "lfn", "jbo", "py", "qdb", "qya", "piqd", "sjn"]:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
 
 
             # Default fallback for unrecognized presets
             elif preset:
                 if lang == 'en-us':  # Only override if using default lang
                     lang = preset
-                model_name = "multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"  # Universal model as fallback
+                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"  # Universal model as fallback
 
         if cupe_ckpt_path is not None:
             cupe_ckpt_path = cupe_ckpt_path
@@ -1272,12 +1275,12 @@ class PhonemeTimestampAligner:
                 print(f"Results saved to: {ts_out_path}")
         return vs2_data
 
-    def process_segments_batch(self, srt_data, audio_wavs, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True,  debug=False):
+    def process_segments_batch(self, srt_data, audio_wavs, do_groups=True,  debug=False):
 
         # Process each segment
         vs2_segments = [] # timestamps for each phoneme in the segment
-        vspt_g_embds = []
-        vspt_p_embd  = []
+        #vspt_g_embds = []
+        #vspt_p_embd  = []
 
 
         start_times = [segment["start"] for segment in srt_data] # segment start time
@@ -1317,7 +1320,7 @@ class PhonemeTimestampAligner:
         
         wavs = torch.stack(wavs, dim=0)
         
-        results, pooled_embeddings_p, pooled_embeddings_g = self.extract_timestamps_from_segment_batch(wavs, wav_lens, phoneme_sequences, start_offset_times=start_times, group_sequences=group_sequences, extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+        results, pooled_embeddings_p, pooled_embeddings_g = self.extract_timestamps_from_segment_batch(wavs, wav_lens, phoneme_sequences, start_offset_times=start_times, group_sequences=group_sequences, extract_embeddings=False, do_groups=do_groups, debug=debug)
 
 
     
@@ -1430,7 +1433,7 @@ class PhonemeTimestampAligner:
 
         return self.process_segments(srt_data["segments"], audio_wav, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
 
-    def process_sentence_batch(self, texts, audio_wavs, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+    def process_sentence_batch(self, texts, audio_wavs,  do_groups=True, debug=False):
         """
         Process a batch of transcriptions and audio waveforms, generating vs2 output with timestamps.
 
@@ -1447,7 +1450,7 @@ class PhonemeTimestampAligner:
         durations = [audio_wav.shape[1] / self.sample_rate for audio_wav in audio_wavs]
         srt_data = {"segments": [{"start": 0.0, "end": duration, "text": text.strip()} for text, duration in zip(texts, durations)]}  # create whisper style SRT data
 
-        return self.process_segments_batch(srt_data["segments"], audio_wavs, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
+        return self.process_segments_batch(srt_data["segments"], audio_wavs, do_groups=do_groups, debug=debug)
 
     def convert_to_textgrid(self, timestamps_dict, output_file=None, include_confidence=False):
         """

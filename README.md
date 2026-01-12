@@ -553,7 +553,8 @@ PhonemeTimestampAligner(
 - `model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"` for best performance on English. This model is trained on 1000 hours LibriSpeech.
 - `model_name="en_libri1000_uj01d_e62_val_GER=0.2438.ckpt"` for best performance on heavy accented English speech. This is the same as above, just unsettled weights.
 - `model_name="multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"` for best performance on 8 european languages including English, German, French, Dutch, Italian, Spanish, Italian, Portuguese, Polish. This model's accuracy on English (buckeye corpus) is on par with the above (main) English model. We can only assume that the performance will be the same on the rest of the 7 languages.
-- `model_name="multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"` universal model for all non-tonal languages. This model is extremely acoustic, if it hears /i/, it will mark an /i/ regardless of the language.
+- `model_name="large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"` Large universal model for all non-tonal languages.
+- `model_name="multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"` Small universal model for all non-tonal languages.
 - Models for tonal languages (Mandarin, Vietnamese, Thai) will have to wait.
 
 Do not forget to set `lang="en-us"` parameter based on your model and [Language Identifier](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
