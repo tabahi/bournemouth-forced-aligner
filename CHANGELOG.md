@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.8] - UNRELEASED
+- Enabled mps device support for Apple silicon
+
 ## [0.1.7] - 2025-10-17
 - Fixed the rhotics and compound phoneme mappings in [ph66_mapper](bournemouth_aligner/ipamappers/ph66_mapper.py).
 - CPU only mapping during checkpoint load in model2i.py
