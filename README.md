@@ -540,7 +540,7 @@ PhonemeTimestampAligner(
 - `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
 - `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
-- `device`: Inference device (`cpu` or `cuda`).
+- `device`: Inference device (`cpu`, `cuda` or `mps`).
 - `silence_anchors`: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
 - `enforce_minimum`: Enforce minimum probability for target phonemes.
