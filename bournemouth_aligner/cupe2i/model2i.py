@@ -328,9 +328,9 @@ class CUPEEmbeddingsExtractor(nn.Module):
 
         cupe_model = ContextFreePhonemeRecognizer()
 
-        #from argparse import Namespace
         # checkpoint = torch.load(cupe_ckpt_path, weights_only=False) v0.1.7 fix - was causing issues with loading on different devices
-        device = device if torch.cuda.is_available() else 'cpu'
+        if device == 'cuda' and not torch.cuda.is_available():
+            raise ValueError("Attempted to use 'cuda' device but torch has no CUDA available")
         checkpoint = torch.load(cupe_ckpt_path, map_location=torch.device(device), weights_only=True)
         
         if 'model_config' not in checkpoint: raise ValueError("Model config not found in checkpoint")
