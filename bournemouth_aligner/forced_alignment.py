@@ -876,7 +876,7 @@ class AlignmentUtils: # 2025-09-10
                 return assorted
         
         else:
-            # Free decoding (unchanged)
+            # Free decoding
             if pred_lens is not None:
                 max_len = max(pred_lens)
                 mask = torch.arange(max_len, device=device)[None, :] < torch.tensor(pred_lens, device=device)[:, None]

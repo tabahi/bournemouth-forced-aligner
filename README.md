@@ -148,6 +148,7 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
 <summary>📋 Click to see detailed JSON output</summary>
 
 ```json
+# version 0.1.5
 {
     "segments": [
         {
@@ -539,7 +540,7 @@ PhonemeTimestampAligner(
 - `cupe_ckpt_path`: Local path to model checkpoint. Highest priority - overrides both preset and model_name.
 - `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
-- `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `phoneme_label`, `group_idx`, `group_label`).
+- `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `ipa_label`, `phoneme_label`, `group_idx`, `group_label`).
 - `device`: Inference device (`cpu`, `cuda` or `mps`).
 - `silence_anchors`: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
@@ -632,7 +633,7 @@ PhonemeTimestampAligner.phonemizer.set_backend(language='en')
 Phonemizes a sentence and returns a detailed mapping:
 
 - `text`: Original input sentence
-- `ipa`: List of phonemes in IPA format
+- `ipa`: List of phonemes in IPA format, original phonemes from espeak-ng without mapped reductions.
 - `ph66`: List of phoneme class indices (mapped to 66-class set)
 - `pg16`: List of phoneme group indices (16 broad categories)
 - `words`: List of words corresponding to phonemes

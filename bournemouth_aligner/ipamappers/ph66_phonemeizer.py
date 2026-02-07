@@ -1,6 +1,7 @@
 # pip install requests phonemizer
 # apt-get install espeak-ng
 
+import sys
 from phonemizer.backend import EspeakBackend
 from phonemizer.separator import Separator
 from unicodedata import normalize
@@ -9,8 +10,15 @@ import json
 try:
     from .ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
 except ImportError:
-    from bournemouth_aligner.ipamappers.ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
-
+    import sys
+    sys.path.append('.')
+    try:
+        from bournemouth_aligner.ipamappers.ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
+    except ImportError:
+        import sys
+        sys.path.append('.')
+        from bournemouth_aligner.ipamappers.ph66_mapper import phoneme_mapper, compound_mapper, phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper, get_compound_phoneme_mapping # maps IPA phonemesto a smaller set of phonemes#
+    
 SIL_PHN="SIL"
 assert(SIL_PHN in phoneme_mapped_index)
 noise_PHN="noise"
@@ -90,7 +98,7 @@ class Phonemizer:
         self.sil_count = 0
         self.ph_total_count = 0
 
-        self.phonemes_ipa_key = "ipa"
+        self.phonemes_ipa_key = "eipa"
         self.phonemes_key = "ph66"
         self.phoneme_groups_key = "pg16"
         
@@ -331,15 +339,16 @@ class Phonemizer:
     def phonemize_sentence(self, sentence):
         '''
         Phonemize a single sentence and return a segment_out dict with phoneme indices and groups.
-        
+
         Args:
         - sentence (str): The input sentence to phonemize.
         Returns:
         - segment_out dict with keys:
             - text: original sentence
-            - ipa: list of phonemes in IPA format
             - ph66: list of phoneme class indices (mapped to phoneme_mapped_index)
             - pg16: list of phoneme group indices (mapped to phoneme_groups_mapper)
+            - mipa: list of mapped phonemes in IPA format
+            - self.phonemes_ipa_key ("eipa"): list of original espeak phonemes before mapping (one-to-one with mapped phonemes), IPA format, full e-speak dictionary output
             - words: list of words corresponding to the phonemes
             - word_num: list of word indices corresponding to the phonemes
         '''
@@ -366,7 +375,7 @@ class Phonemizer:
         ph_sil_idx = self.phoneme_index[SIL_PHN]
         ph_sil_group = phoneme_groups_mapper[ph_sil_idx]
 
-        segment_out = {self.phonemes_key:[], self.phoneme_groups_key:[], self.phonemes_ipa_key:[], "word_num":[], "words":[], "text": sentence}
+        segment_out = {self.phonemes_key:[], self.phoneme_groups_key:[], self.phonemes_ipa_key:[], "word_num":[], "words":[],  "mipa":[], "text": sentence}
         # Process each word in the segment
         for word_idx, (word, phonemized) in enumerate(zip(words, phonemized_words)):
             
@@ -375,6 +384,7 @@ class Phonemizer:
                 # Special case for <SIL> which is treated as silence
                 segment_out[self.phonemes_key].append(ph_sil_idx)
                 segment_out[self.phoneme_groups_key].append(ph_sil_group)
+                segment_out["mipa"].append(SIL_PHN)
                 segment_out[self.phonemes_ipa_key].append(SIL_PHN)
                 segment_out["word_num"].append(word_idx)
                 segment_out["words"].append("<sil>")  # Placeholder for silence
@@ -382,25 +392,28 @@ class Phonemizer:
                 continue
 
             word_phonemes = phonemized.split('|')
-            
+
             # Filter out empty phonemes
             word_phonemes = [ph for ph in word_phonemes if ph != ""]
-            
+
             #print(f"Word: '{word}' -> Phonemes: {word_phonemes}")
             
             has_valid_phonemes = False
             
             # Process each phoneme
             for eph in word_phonemes:
-                eph = eph.strip()
-                eph = normalize('NFC', eph)
+                # Save the original espeak phoneme before any modifications
+                original_eph = eph.strip()
+                original_eph = normalize('NFC', original_eph)
+
+                eph = original_eph
 
                 # Update phoneme count statistics
                 if eph not in self.phoneme_vocab_counts:
                     self.phoneme_vocab_counts[eph] = 1
                 else:
                     self.phoneme_vocab_counts[eph] += 1
-                
+
                 # Handle unmapped phonemes
                 if eph not in phoneme_mapper and eph not in compound_mapper:
                     if eph not in self.unmapped_phonemes:
@@ -417,25 +430,27 @@ class Phonemizer:
                 for ph in ph_comp:
                     if ph not in self.phoneme_index:
                         ph = noise_PHN
-                    
+
                     # Skip noise phonemes if configured to do so
                     if self.remove_noise_phonemes and ph == noise_PHN:
                         self.noise_count += 1
+                        # Skip both the mapped phoneme AND the original eph
                         continue
-                    
+
                     # At this point, we have a valid phoneme that will be included
                     has_valid_phonemes = True
-                    
+
                     # Get phoneme index and group
                     ph_idx = self.phoneme_index[ph]
                     ph_group = phoneme_groups_mapper.get(ph_idx, noise_group)  # Default to noise_group if not found
-                    
-                    # Add to segment output
+
+                    # Add to segment output (including original espeak phoneme for one-to-one correspondence)
                     segment_out[self.phonemes_key].append(ph_idx)
                     segment_out[self.phoneme_groups_key].append(ph_group)
-                    segment_out[self.phonemes_ipa_key].append(ph)
+                    segment_out["mipa"].append(ph)
+                    segment_out[self.phonemes_ipa_key].append(original_eph)
                     segment_out["word_num"].append(word_idx)
-                    
+
                     self.phn_counts += 1
                     self.ph_total_count += 1
             # end phoneme loop
@@ -463,11 +478,12 @@ class Phonemizer:
             
             
             # Perform final validation
-            assert len(segment_out[self.phonemes_key]) == len(segment_out[self.phoneme_groups_key]) == len(segment_out["word_num"])
+            assert len(segment_out[self.phonemes_key]) == len(segment_out[self.phoneme_groups_key]) == len(segment_out["eipa"]) == len(segment_out["word_num"])
             assert max(segment_out["word_num"]) + 1 == len(segment_out["words"])
             # Check that all words with phonemes are accounted for
             
 
+        print(segment_out)
         
         return segment_out
 

@@ -302,6 +302,7 @@ class PhonemeTimestampAligner:
         self.enforce_minimum = enforce_minimum
         self.enforce_all_targets = enforce_all_targets
         self.ignore_noise = ignore_noise
+        self.break_at_low_confidence = False # under construction, not fully implemented yet
         self._setup_config()
         self._setup_decoders()
 
@@ -613,23 +614,85 @@ class PhonemeTimestampAligner:
         )
 
         
-        
+        # Match target phonemes to aligned phonemes in order (handles duplicates)
+        aligned_phoneme_ids = [p[0] for p in frame_phonemes[0]]
+        target_phoneme_ids = phoneme_sequence.tolist()
+
+        # Greedy matching: for each target phoneme, try to match it with the next available aligned phoneme
+        aligned_idx = 0
+        missing_target_indices = []
+        target_to_aligned_map = {}  # Maps target index -> aligned index (for matched phonemes)
+
+        for target_idx, target_id in enumerate(target_phoneme_ids):
+            # Try to find this target phoneme in remaining aligned phonemes
+            found = False
+            for search_idx in range(aligned_idx, len(aligned_phoneme_ids)):
+                if aligned_phoneme_ids[search_idx] == target_id:
+                    target_to_aligned_map[target_idx] = search_idx
+                    aligned_idx = search_idx + 1
+                    found = True
+                    break
+
+            if not found:
+                missing_target_indices.append(target_idx)
+
         if debug:
             t1 = time.time()
             print(f"Forced alignment took {(t1-t0)*1000:.3f} ms")
             print(f"Aligned phonemes: {len(frame_phonemes[0])}")
             print(f"Target phonemes: {len(phoneme_sequence)}")
-            
-            # Check which phonemes were successfully aligned
-            aligned_phoneme_ids = [p[0] for p in frame_phonemes[0]]
-            target_phoneme_ids = phoneme_sequence.tolist()
-            
-            missing_phonemes = set(target_phoneme_ids) - set(aligned_phoneme_ids)
-            if missing_phonemes:
-                print(f"WARNING: Still missing {len(missing_phonemes)} phonemes: {[self.phonemizer.index_to_plabel.get(p, f'UNK_{p}') for p in missing_phonemes]}")
+
+            if missing_target_indices:
+                missing_labels = [self.phonemizer.index_to_plabel.get(target_phoneme_ids[i], f'UNK_{target_phoneme_ids[i]}') for i in missing_target_indices]
+                print(f"WARNING: Still missing {len(missing_target_indices)} phonemes at positions {missing_target_indices}: {missing_labels}")
             else:
                 print("SUCCESS: All target phonemes were aligned!")
-        
+
+
+        if missing_target_indices:
+            # add any missing phonemes back in with estimated frame positions based on neighboring aligned phonemes
+            for target_idx in missing_target_indices:
+                target_phoneme_id = target_phoneme_ids[target_idx]
+
+                # find nearest aligned phonemes before and after
+                prev_aligned = None
+                next_aligned = None
+
+                for ai in range(target_idx-1, -1, -1):
+                    if ai in target_to_aligned_map:
+                        aligned_idx = target_to_aligned_map[ai]
+                        prev_aligned = frame_phonemes[0][aligned_idx]
+                        break
+
+                for ai in range(target_idx+1, len(target_phoneme_ids)):
+                    if ai in target_to_aligned_map:
+                        aligned_idx = target_to_aligned_map[ai]
+                        next_aligned = frame_phonemes[0][aligned_idx]
+                        break
+
+                # estimate frame position for missing phoneme based on neighbors
+                # At this point, tuples are (phoneme_id, start_frame, end_frame)
+                if prev_aligned and next_aligned:
+                    # Interpolate between end of prev and start of next
+                    est_start_frame = int((prev_aligned[2] + next_aligned[1]) / 2)
+                    est_end_frame = est_start_frame + 1
+                elif prev_aligned:
+                    # Place after previous
+                    est_start_frame = prev_aligned[2]
+                    est_end_frame = est_start_frame + 1
+                elif next_aligned:
+                    # Place before next
+                    est_end_frame = next_aligned[1]
+                    est_start_frame = max(0, est_end_frame - 1)
+                else:
+                    # Fallback to start of audio
+                    est_start_frame = 0
+                    est_end_frame = 1
+
+                frame_phonemes[0].append((target_phoneme_id, est_start_frame, est_end_frame))
+
+                if debug:
+                    print(f"Added missing phoneme {self.phonemizer.index_to_plabel.get(target_phoneme_id, f'UNK_{target_phoneme_id}')} at position {target_idx} with estimated frames {est_start_frame}-{est_end_frame}")
 
         
         # Calculate confidence scores
@@ -639,6 +702,10 @@ class PhonemeTimestampAligner:
         frame_phonemes[0] = self.convert_to_ms(frame_phonemes[0], spectral_lens[0], start_offset_time, wav_len, self.resampler_sample_rate)
         frame_groups[0] = self.convert_to_ms(frame_groups[0], spectral_lens[0], start_offset_time, wav_len, self.resampler_sample_rate)
 
+
+        # resort phonemes and groups by timestamp after adding missing phonemes
+        frame_phonemes[0] = sorted(frame_phonemes[0], key=lambda x: x[4])  # sort by start timestamp
+        frame_groups[0] = sorted(frame_groups[0], key=lambda x: x[4])  # sort by start timestamp
 
         
         if debug:
@@ -834,63 +901,70 @@ class PhonemeTimestampAligner:
         log_probs_g = F.log_softmax(logits_group, dim=2)
         log_probs_p = F.log_softmax(logits_class, dim=2)
         
+        while True:
 
-        # Forced alignment with target boosting
-        frame_groups = self.alignment_utils_g.decode_alignments(
-            log_probs_g, 
-            true_seqs=grp_seqs, 
-            pred_lens=spectral_lens, 
-            true_seqs_lens=ph_seq_lens, 
-            forced_alignment=True,
-            boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum,
-            enforce_all_targets=self.enforce_all_targets
-        )
-        
-        frame_phonemes = self.alignment_utils_p.decode_alignments(
-            log_probs_p, 
-            true_seqs=ph_seqs, 
-            pred_lens=spectral_lens, 
-            true_seqs_lens=ph_seq_lens, 
-            forced_alignment=True,
-            boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum,
-            enforce_all_targets=self.enforce_all_targets
-        )
-        
-        
-        
-        
-        # Calculate confidence scores
-        
-        
-        
-        for i in range(len(frame_phonemes)):
-            frame_phonemes[i] = self._calculate_confidences(log_probs_p[i], frame_phonemes[i])
-            frame_groups[i] = self._calculate_confidences(log_probs_g[i], frame_groups[i])
-            
-            frame_phonemes[i] = self.convert_to_ms(
-                frame_phonemes[i], 
-                spectral_lens[i], 
-                start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
-                wav_lens[i], 
-                self.resampler_sample_rate
+            # Forced alignment with target boosting
+            frame_groups = self.alignment_utils_g.decode_alignments(
+                log_probs_g, 
+                true_seqs=grp_seqs, 
+                pred_lens=spectral_lens, 
+                true_seqs_lens=ph_seq_lens, 
+                forced_alignment=True,
+                boost_targets=self.boost_targets,
+                enforce_minimum=self.enforce_minimum,
+                enforce_all_targets=self.enforce_all_targets
             )
-            frame_groups[i] = self.convert_to_ms(
-                frame_groups[i], 
-                spectral_lens[i], 
-                start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
-                wav_lens[i], 
-                self.resampler_sample_rate
+            
+            frame_phonemes = self.alignment_utils_p.decode_alignments(
+                log_probs_p, 
+                true_seqs=ph_seqs, 
+                pred_lens=spectral_lens, 
+                true_seqs_lens=ph_seq_lens, 
+                forced_alignment=True,
+                boost_targets=self.boost_targets,
+                enforce_minimum=self.enforce_minimum,
+                enforce_all_targets=self.enforce_all_targets
+            )
+            
+            
+            
+            
+            # Calculate confidence scores
+            
+            
+            
+            for i in range(len(frame_phonemes)):
+                frame_phonemes[i] = self._calculate_confidences(log_probs_p[i], frame_phonemes[i])
+                frame_groups[i] = self._calculate_confidences(log_probs_g[i], frame_groups[i])
+                
+                frame_phonemes[i] = self.convert_to_ms(
+                    frame_phonemes[i], 
+                    spectral_lens[i], 
+                    start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
+                    wav_lens[i], 
+                    self.resampler_sample_rate
+                )
+                frame_groups[i] = self.convert_to_ms(
+                    frame_groups[i], 
+                    spectral_lens[i], 
+                    start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
+                    wav_lens[i], 
+                    self.resampler_sample_rate
             )
     
-        timestamp_dicts = [
-            {
-                'phoneme_timestamps': frame_phonemes[i],
-                'group_timestamps': frame_groups[i],
-            }
-            for i in range(len(frame_phonemes))
-        ]
+
+            if self.break_at_low_confidence == False:
+                
+                timestamp_dicts = [
+                    {
+                        'phoneme_timestamps': frame_phonemes[i],
+                        'group_timestamps': frame_groups[i],
+                    }
+                    for i in range(len(frame_phonemes))
+                ]
+                break
+
+
         
         return timestamp_dicts, None, None
 
@@ -1095,7 +1169,7 @@ class PhonemeTimestampAligner:
                     "end_ms": word_end,
                     "confidence": avg_confidence,
                     "ph66": [ph["phoneme_idx"] for ph in current_word_phonemes],
-                    "ipa": [ph["phoneme_label"] for ph in current_word_phonemes]
+                    "ipa": [ph["ipa_label"] for ph in current_word_phonemes]
                 }
                 words_ts.append(word_ts)
                 
@@ -1159,6 +1233,7 @@ class PhonemeTimestampAligner:
             wav, wav_len = self.chop_wav(audio_wav, int(start_time * self.resampler_sample_rate), int(end_time * self.resampler_sample_rate))
 
             result, pooled_embeddings_p, pooled_embeddings_g = self.extract_timestamps_from_segment(wav, wav_len, phoneme_sequence, start_offset_time=start_time, group_sequence=group_sequence, extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+            # exit()  # Removed: This was causing early termination after first segment
 
             coverage_analysis = self.analyze_alignment_coverage(
                 phoneme_sequence, 
@@ -1177,6 +1252,8 @@ class PhonemeTimestampAligner:
                     print(f"  Missing: {coverage_analysis['missing_phonemes']}")
                 if coverage_analysis['extra_phonemes']:
                     print(f"  Extra: {coverage_analysis['extra_phonemes']}")
+
+            assert len(result["phoneme_timestamps"]) == len(phoneme_sequence), f"Number of aligned phonemes {len(result['phoneme_timestamps'])} does not match target sequence length {len(phoneme_sequence)}"
             
             if extract_embeddings:
                 pooled_embeddings_p = pooled_embeddings_p.detach()
@@ -1195,7 +1272,7 @@ class PhonemeTimestampAligner:
             # Create vs2 segment (copy original segment data and add timestamps)
             vs2_segment = segment.copy()
             vs2_segment["coverage_analysis"] = coverage_analysis
-            vs2_segment["ipa"] = ts_out.get("ipa", "")
+            vs2_segment["ipa"] = ts_out.get("eipa", "")
             vs2_segment["word_num"] = ts_out.get("word_num", "")
             vs2_segment["words"] = ts_out.get("words", "")
             
@@ -1205,11 +1282,13 @@ class PhonemeTimestampAligner:
                 {
                     "phoneme_idx": int(ph_idx),
                     "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
+                    "ipa_label": vs2_segment["ipa"][idx] if idx < len(vs2_segment["ipa"]) else "",
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
-                    "confidence": float(conf)
+                    "confidence": float(conf),
+                    "index": idx
                 }
-                for (ph_idx, start_frame, end_frame, conf, start_ms, end_ms) in result["phoneme_timestamps"]
+                for idx, (ph_idx, start_frame, end_frame, conf, start_ms, end_ms) in enumerate(result["phoneme_timestamps"])
             ]
             
             # Add group timestamps
@@ -1219,9 +1298,10 @@ class PhonemeTimestampAligner:
                     "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
-                    "confidence": float(conf)
+                    "confidence": float(conf),
+                    "index": idx
                 }
-                for (grp_idx, start_frame, end_frame, conf, start_ms, end_ms) in  result["group_timestamps"]
+                for idx, (grp_idx, start_frame, end_frame, conf, start_ms, end_ms) in  enumerate(result["group_timestamps"])
             ]
 
             vs2_segment["words_ts"] = self._align_words(vs2_segment["phoneme_ts"], ts_out.get("word_num", []), ts_out.get("words", []))
