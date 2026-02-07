@@ -537,10 +537,11 @@ class PhonemeTimestampAligner:
         return logits_class, logits_group, embeddings, spectral_len
     
     def extract_timestamps_from_segment(self, wav, wav_len, phoneme_sequence, start_offset_time=0,
-                                      group_sequence=None, extract_embeddings=True, do_groups=True, 
+                                      group_sequence=None, extract_embeddings=True, do_groups=True,
                                       debug=True, ):
         """
         Extract phoneme and group timestamps from a single audio segment.
+        This is a wrapper around extract_timestamps_from_segment_batch that handles a single item.
 
         Args:
             wav: Audio tensor for the segment.
@@ -557,181 +558,49 @@ class PhonemeTimestampAligner:
             pooled_embeddings_phonemes: Pooled phoneme embeddings or None.
             pooled_embeddings_groups: Pooled group embeddings or None.
         """
-    
 
-        # Convert sequences to tensors
-        if not isinstance(phoneme_sequence, torch.Tensor):
-            phoneme_sequence = torch.tensor(phoneme_sequence, dtype=torch.long)
-        
-        if group_sequence is not None and not isinstance(group_sequence, torch.Tensor):
-            group_sequence = torch.tensor(group_sequence, dtype=torch.long)
-        
-        # Generate group sequence if not provided
-        if group_sequence is None:
-            group_sequence = self._map_phonemes_to_groups(phoneme_sequence)
-        
-        # Process audio through the model
-        logits_class, logits_group, embeddings, spectral_len = self._cupe_prediction(wav, wav_len, extract_embeddings)
+        # Convert single item to batch format
+        if wav.dim() == 1:
+            wavs = wav.unsqueeze(0)
+        else:
+            wavs = wav
 
+        wav_lens = [wav_len]
+        phoneme_sequences = [phoneme_sequence] if not isinstance(phoneme_sequence, torch.Tensor) else [phoneme_sequence.tolist()]
+        group_sequences = [group_sequence] if group_sequence is not None else None
+        start_offset_times = [start_offset_time]
 
-        # Prepare sequences for alignment
-        ph_seqs = phoneme_sequence.unsqueeze(0).to(self.device)
-        grp_seqs = group_sequence.unsqueeze(0).to(self.device)
-        ph_seq_lens = torch.tensor([len(phoneme_sequence)], dtype=torch.long).to(self.device)
-        spectral_lens = torch.tensor([spectral_len], dtype=torch.long).to(self.device)
-        
-        # Get log probabilities
-        log_probs_g = F.log_softmax(logits_group, dim=2)
-        log_probs_p = F.log_softmax(logits_class, dim=2)
-        
         if debug:
-            print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
-            print(f"Spectral length: {spectral_len}")
-        
+            if isinstance(phoneme_sequence, torch.Tensor):
+                print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
+            else:
+                print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p, f'UNK_{p}') for p in phoneme_sequence]}")
+
         t0 = time.time()
-        # Forced alignment with target boosting
-        frame_groups = self.alignment_utils_g.decode_alignments(
-            log_probs_g, 
-            true_seqs=grp_seqs, 
-            pred_lens=spectral_lens, 
-            true_seqs_lens=ph_seq_lens, 
-            forced_alignment=True,
-            boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum,
-            enforce_all_targets=self.enforce_all_targets
-        )
 
-        
-        frame_phonemes = self.alignment_utils_p.decode_alignments(
-            log_probs_p, 
-            true_seqs=ph_seqs, 
-            pred_lens=spectral_lens, 
-            true_seqs_lens=ph_seq_lens, 
-            forced_alignment=True,
-            boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum,
-            enforce_all_targets=self.enforce_all_targets
-        )
-
-        
-        # Match target phonemes to aligned phonemes in order (handles duplicates)
-        aligned_phoneme_ids = [p[0] for p in frame_phonemes[0]]
-        target_phoneme_ids = phoneme_sequence.tolist()
-
-        # Greedy matching: for each target phoneme, try to match it with the next available aligned phoneme
-        aligned_idx = 0
-        missing_target_indices = []
-        target_to_aligned_map = {}  # Maps target index -> aligned index (for matched phonemes)
-
-        for target_idx, target_id in enumerate(target_phoneme_ids):
-            # Try to find this target phoneme in remaining aligned phonemes
-            found = False
-            for search_idx in range(aligned_idx, len(aligned_phoneme_ids)):
-                if aligned_phoneme_ids[search_idx] == target_id:
-                    target_to_aligned_map[target_idx] = search_idx
-                    aligned_idx = search_idx + 1
-                    found = True
-                    break
-
-            if not found:
-                missing_target_indices.append(target_idx)
+        # Call the batch version
+        timestamp_dicts, pooled_embeddings_phonemes_list, pooled_embeddings_groups_list = \
+            self.extract_timestamps_from_segment_batch(
+                wavs=wavs,
+                wav_lens=wav_lens,
+                phoneme_sequences=phoneme_sequences,
+                start_offset_times=start_offset_times,
+                group_sequences=group_sequences,
+                extract_embeddings=extract_embeddings,
+                do_groups=do_groups,
+                debug=debug
+            )
 
         if debug:
             t1 = time.time()
             print(f"Forced alignment took {(t1-t0)*1000:.3f} ms")
-            print(f"Aligned phonemes: {len(frame_phonemes[0])}")
-            print(f"Target phonemes: {len(phoneme_sequence)}")
 
-            if missing_target_indices:
-                missing_labels = [self.phonemizer.index_to_plabel.get(target_phoneme_ids[i], f'UNK_{target_phoneme_ids[i]}') for i in missing_target_indices]
-                print(f"WARNING: Still missing {len(missing_target_indices)} phonemes at positions {missing_target_indices}: {missing_labels}")
-            else:
-                print("SUCCESS: All target phonemes were aligned!")
+        # Extract single item from batch results
+        timestamp_dict = timestamp_dicts[0]
+        pooled_embeddings_phonemes = pooled_embeddings_phonemes_list[0] if pooled_embeddings_phonemes_list else None
+        pooled_embeddings_groups = pooled_embeddings_groups_list[0] if pooled_embeddings_groups_list else None
 
-
-        if missing_target_indices:
-            # add any missing phonemes back in with estimated frame positions based on neighboring aligned phonemes
-            for target_idx in missing_target_indices:
-                target_phoneme_id = target_phoneme_ids[target_idx]
-
-                # find nearest aligned phonemes before and after
-                prev_aligned = None
-                next_aligned = None
-
-                for ai in range(target_idx-1, -1, -1):
-                    if ai in target_to_aligned_map:
-                        aligned_idx = target_to_aligned_map[ai]
-                        prev_aligned = frame_phonemes[0][aligned_idx]
-                        break
-
-                for ai in range(target_idx+1, len(target_phoneme_ids)):
-                    if ai in target_to_aligned_map:
-                        aligned_idx = target_to_aligned_map[ai]
-                        next_aligned = frame_phonemes[0][aligned_idx]
-                        break
-
-                # estimate frame position for missing phoneme based on neighbors
-                # At this point, tuples are (phoneme_id, start_frame, end_frame)
-                if prev_aligned and next_aligned:
-                    # Interpolate between end of prev and start of next
-                    est_start_frame = int((prev_aligned[2] + next_aligned[1]) / 2)
-                    est_end_frame = est_start_frame + 1
-                elif prev_aligned:
-                    # Place after previous
-                    est_start_frame = prev_aligned[2]
-                    est_end_frame = est_start_frame + 1
-                elif next_aligned:
-                    # Place before next
-                    est_end_frame = next_aligned[1]
-                    est_start_frame = max(0, est_end_frame - 1)
-                else:
-                    # Fallback to start of audio
-                    est_start_frame = 0
-                    est_end_frame = 1
-
-                frame_phonemes[0].append((target_phoneme_id, est_start_frame, est_end_frame))
-
-                if debug:
-                    print(f"Added missing phoneme {self.phonemizer.index_to_plabel.get(target_phoneme_id, f'UNK_{target_phoneme_id}')} at position {target_idx} with estimated frames {est_start_frame}-{est_end_frame}")
-
-        
-        # Calculate confidence scores
-        frame_phonemes[0] = self._calculate_confidences(log_probs_p[0], frame_phonemes[0])
-        frame_groups[0] = self._calculate_confidences(log_probs_g[0], frame_groups[0])
-
-        frame_phonemes[0] = self.convert_to_ms(frame_phonemes[0], spectral_lens[0], start_offset_time, wav_len, self.resampler_sample_rate)
-        frame_groups[0] = self.convert_to_ms(frame_groups[0], spectral_lens[0], start_offset_time, wav_len, self.resampler_sample_rate)
-
-
-        # resort phonemes and groups by timestamp after adding missing phonemes
-        frame_phonemes[0] = sorted(frame_phonemes[0], key=lambda x: x[4])  # sort by start timestamp
-        frame_groups[0] = sorted(frame_groups[0], key=lambda x: x[4])  # sort by start timestamp
-
-        
-        if debug:
-            print("Predicted phonemes", len(frame_phonemes[0]))
-            print("Predicted groups", len(frame_groups[0]))
-            print("start_offset_time", start_offset_time)
-            for i, (ph, grp) in enumerate(zip(frame_phonemes[0], frame_groups[0])):
-                print(f"{i+1:2d}: {self.phonemizer.index_to_plabel[ph[0]]:>3s}, {self.phonemizer.index_to_glabel[grp[0]]:>3s}  -> ({grp[4]:.3f} - {grp[5]:.3f}), Confidence: {grp[3]:.3f}")
-         
-        
-        timestamp_dict = {
-            'phoneme_timestamps': frame_phonemes[0],
-            'group_timestamps': frame_groups[0],
-        }
-        
-        pooled_embeddings_phonemes = None
-        if extract_embeddings and embeddings is not None:
-            pooled_embeddings_phonemes = self.weighted_pool_embeddings(embeddings[0][:spectral_len], log_probs_p[0][:spectral_len], frame_phonemes[0])
-            
-            if do_groups:
-                pooled_embeddings_groups = self.weighted_pool_embeddings(embeddings[0][:spectral_len], log_probs_g[0][:spectral_len], frame_groups[0])
-                return timestamp_dict, pooled_embeddings_phonemes, pooled_embeddings_groups
-            else: 
-                return timestamp_dict, pooled_embeddings_phonemes, None 
-
-        return timestamp_dict, None, None
+        return timestamp_dict, pooled_embeddings_phonemes, pooled_embeddings_groups
 
     
     def _cupe_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
@@ -827,25 +696,25 @@ class PhonemeTimestampAligner:
         return logits_class, logits_group, embeddings, spectral_lens
 
     def extract_timestamps_from_segment_batch(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0,
-                                      group_sequences=None, extract_embeddings=True, do_groups=True, 
+                                      group_sequences=None, extract_embeddings=True, do_groups=True,
                                       debug=True, ):
         """
-        Extract phoneme and group timestamps from a single audio segment.
+        Extract phoneme and group timestamps from multiple audio segments (batch processing).
 
         Args:
-            wav: Audio tensor for the segment.
-            wav_len: Length of the audio segment in samples.
-            phoneme_sequence: List or tensor of phoneme indices.
-            start_offset_time: Start time offset in seconds for the segment.
-            group_sequence: Optional list or tensor of phoneme group indices.
+            wavs: Batch of audio tensors for the segments.
+            wav_lens: List of lengths of the audio segments in samples.
+            phoneme_sequences: List of phoneme sequences (each as list or tensor of phoneme indices).
+            start_offset_times: Start time offsets in seconds for each segment (list or single value).
+            group_sequences: Optional list of phoneme group sequences.
             extract_embeddings: Whether to extract pooled embeddings.
             do_groups: Whether to extract phoneme group timestamps.
             debug: Enable debug output.
 
         Returns:
-            timestamp_dict: Dictionary with 'phoneme_timestamps' and 'group_timestamps'.
-            pooled_embeddings_phonemes: Pooled phoneme embeddings or None.
-            pooled_embeddings_groups: Pooled group embeddings or None.
+            timestamp_dicts: List of dictionaries with 'phoneme_timestamps' and 'group_timestamps'.
+            pooled_embeddings_phonemes_list: List of pooled phoneme embeddings or list of None.
+            pooled_embeddings_groups_list: List of pooled group embeddings or list of None.
         """
     
 
@@ -900,73 +769,183 @@ class PhonemeTimestampAligner:
         # Get log probabilities
         log_probs_g = F.log_softmax(logits_group, dim=2)
         log_probs_p = F.log_softmax(logits_class, dim=2)
-        
-        while True:
 
-            # Forced alignment with target boosting
-            frame_groups = self.alignment_utils_g.decode_alignments(
-                log_probs_g, 
-                true_seqs=grp_seqs, 
-                pred_lens=spectral_lens, 
-                true_seqs_lens=ph_seq_lens, 
-                forced_alignment=True,
-                boost_targets=self.boost_targets,
-                enforce_minimum=self.enforce_minimum,
-                enforce_all_targets=self.enforce_all_targets
+
+        # Forced alignment with target boosting
+        frame_groups = self.alignment_utils_g.decode_alignments(
+            log_probs_g, 
+            true_seqs=grp_seqs, 
+            pred_lens=spectral_lens, 
+            true_seqs_lens=ph_seq_lens, 
+            forced_alignment=True,
+            boost_targets=self.boost_targets,
+            enforce_minimum=self.enforce_minimum,
+            enforce_all_targets=self.enforce_all_targets
+        )
+        
+        frame_phonemes = self.alignment_utils_p.decode_alignments(
+            log_probs_p,
+            true_seqs=ph_seqs,
+            pred_lens=spectral_lens,
+            true_seqs_lens=ph_seq_lens,
+            forced_alignment=True,
+            boost_targets=self.boost_targets,
+            enforce_minimum=self.enforce_minimum,
+            enforce_all_targets=self.enforce_all_targets
+        )
+
+        # Process each item in the batch: match target phonemes to aligned phonemes and recover missing ones
+        for batch_idx in range(len(frame_phonemes)):
+            # Match target phonemes to aligned phonemes in order (handles duplicates)
+            aligned_phoneme_ids = [p[0] for p in frame_phonemes[batch_idx]]
+            target_phoneme_ids = phoneme_sequences[batch_idx].tolist()
+
+            # Remove padding (-1) from target phoneme IDs
+            target_phoneme_ids = [pid for pid in target_phoneme_ids if pid != -1]
+
+            # Greedy matching: for each target phoneme, try to match it with the next available aligned phoneme
+            aligned_idx = 0
+            missing_target_indices = []
+            target_to_aligned_map = {}  # Maps target index -> aligned index (for matched phonemes)
+
+            for target_idx, target_id in enumerate(target_phoneme_ids):
+                # Try to find this target phoneme in remaining aligned phonemes
+                found = False
+                for search_idx in range(aligned_idx, len(aligned_phoneme_ids)):
+                    if aligned_phoneme_ids[search_idx] == target_id:
+                        target_to_aligned_map[target_idx] = search_idx
+                        aligned_idx = search_idx + 1
+                        found = True
+                        break
+
+                if not found:
+                    missing_target_indices.append(target_idx)
+
+            if debug and batch_idx == 0:  # Only debug first item to avoid clutter
+                print(f"Aligned phonemes: {len(frame_phonemes[batch_idx])}")
+                print(f"Target phonemes: {len(target_phoneme_ids)}")
+
+                if missing_target_indices:
+                    missing_labels = [self.phonemizer.index_to_plabel.get(target_phoneme_ids[i], f'UNK_{target_phoneme_ids[i]}') for i in missing_target_indices]
+                    print(f"WARNING: Still missing {len(missing_target_indices)} phonemes at positions {missing_target_indices}: {missing_labels}")
+                else:
+                    print("SUCCESS: All target phonemes were aligned!")
+
+            # Add any missing phonemes back in with estimated frame positions
+            if missing_target_indices:
+                for target_idx in missing_target_indices:
+                    target_phoneme_id = target_phoneme_ids[target_idx]
+
+                    # Find nearest aligned phonemes before and after
+                    prev_aligned = None
+                    next_aligned = None
+
+                    for ai in range(target_idx-1, -1, -1):
+                        if ai in target_to_aligned_map:
+                            aligned_idx_val = target_to_aligned_map[ai]
+                            prev_aligned = frame_phonemes[batch_idx][aligned_idx_val]
+                            break
+
+                    for ai in range(target_idx+1, len(target_phoneme_ids)):
+                        if ai in target_to_aligned_map:
+                            aligned_idx_val = target_to_aligned_map[ai]
+                            next_aligned = frame_phonemes[batch_idx][aligned_idx_val]
+                            break
+
+                    # Estimate frame position for missing phoneme based on neighbors
+                    # At this point, tuples are (phoneme_id, start_frame, end_frame)
+                    if prev_aligned and next_aligned:
+                        # Interpolate between end of prev and start of next
+                        est_start_frame = int((prev_aligned[2] + next_aligned[1]) / 2)
+                        est_end_frame = est_start_frame + 1
+                    elif prev_aligned:
+                        # Place after previous
+                        est_start_frame = prev_aligned[2]
+                        est_end_frame = est_start_frame + 1
+                    elif next_aligned:
+                        # Place before next
+                        est_end_frame = next_aligned[1]
+                        est_start_frame = max(0, est_end_frame - 1)
+                    else:
+                        # Fallback to start of audio
+                        est_start_frame = 0
+                        est_end_frame = 1
+
+                    frame_phonemes[batch_idx].append((target_phoneme_id, est_start_frame, est_end_frame))
+
+                    if debug and batch_idx == 0:
+                        print(f"Added missing phoneme {self.phonemizer.index_to_plabel.get(target_phoneme_id, f'UNK_{target_phoneme_id}')} at position {target_idx} with estimated frames {est_start_frame}-{est_end_frame}")
+
+        # Calculate confidence scores
+        
+        
+        
+        for i in range(len(frame_phonemes)):
+            frame_phonemes[i] = self._calculate_confidences(log_probs_p[i], frame_phonemes[i])
+            frame_groups[i] = self._calculate_confidences(log_probs_g[i], frame_groups[i])
+
+            frame_phonemes[i] = self.convert_to_ms(
+                frame_phonemes[i],
+                spectral_lens[i],
+                start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times,
+                wav_lens[i],
+                self.resampler_sample_rate
             )
-            
-            frame_phonemes = self.alignment_utils_p.decode_alignments(
-                log_probs_p, 
-                true_seqs=ph_seqs, 
-                pred_lens=spectral_lens, 
-                true_seqs_lens=ph_seq_lens, 
-                forced_alignment=True,
-                boost_targets=self.boost_targets,
-                enforce_minimum=self.enforce_minimum,
-                enforce_all_targets=self.enforce_all_targets
+            frame_groups[i] = self.convert_to_ms(
+                frame_groups[i],
+                spectral_lens[i],
+                start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times,
+                wav_lens[i],
+                self.resampler_sample_rate
             )
-            
-            
-            
-            
-            # Calculate confidence scores
-            
-            
-            
+
+            # Resort phonemes and groups by timestamp after adding missing phonemes
+            frame_phonemes[i] = sorted(frame_phonemes[i], key=lambda x: x[4])  # sort by start timestamp (ms)
+            frame_groups[i] = sorted(frame_groups[i], key=lambda x: x[4])  # sort by start timestamp (ms)
+
+            if debug and i == 0:  # Only debug first item
+                print("Predicted phonemes", len(frame_phonemes[i]))
+                print("Predicted groups", len(frame_groups[i]))
+                print("start_offset_time", start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times)
+                for j, (ph, grp) in enumerate(zip(frame_phonemes[i], frame_groups[i])):
+                    print(f"{j+1:2d}: {self.phonemizer.index_to_plabel[ph[0]]:>3s}, {self.phonemizer.index_to_glabel[grp[0]]:>3s}  -> ({grp[4]:.3f} - {grp[5]:.3f}), Confidence: {grp[3]:.3f}")
+
+
+        timestamp_dicts = [
+            {
+                'phoneme_timestamps': frame_phonemes[i],
+                'group_timestamps': frame_groups[i],
+            }
+            for i in range(len(frame_phonemes))
+        ]
+
+        # Extract pooled embeddings if requested
+        pooled_embeddings_phonemes_list = []
+        pooled_embeddings_groups_list = []
+
+        if extract_embeddings and embeddings is not None:
             for i in range(len(frame_phonemes)):
-                frame_phonemes[i] = self._calculate_confidences(log_probs_p[i], frame_phonemes[i])
-                frame_groups[i] = self._calculate_confidences(log_probs_g[i], frame_groups[i])
-                
-                frame_phonemes[i] = self.convert_to_ms(
-                    frame_phonemes[i], 
-                    spectral_lens[i], 
-                    start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
-                    wav_lens[i], 
-                    self.resampler_sample_rate
+                pooled_emb_ph = self.weighted_pool_embeddings(
+                    embeddings[i][:spectral_lens[i]],
+                    log_probs_p[i][:spectral_lens[i]],
+                    frame_phonemes[i]
                 )
-                frame_groups[i] = self.convert_to_ms(
-                    frame_groups[i], 
-                    spectral_lens[i], 
-                    start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times, 
-                    wav_lens[i], 
-                    self.resampler_sample_rate
-            )
-    
+                pooled_embeddings_phonemes_list.append(pooled_emb_ph)
 
-            if self.break_at_low_confidence == False:
-                
-                timestamp_dicts = [
-                    {
-                        'phoneme_timestamps': frame_phonemes[i],
-                        'group_timestamps': frame_groups[i],
-                    }
-                    for i in range(len(frame_phonemes))
-                ]
-                break
+                if do_groups:
+                    pooled_emb_gr = self.weighted_pool_embeddings(
+                        embeddings[i][:spectral_lens[i]],
+                        log_probs_g[i][:spectral_lens[i]],
+                        frame_groups[i]
+                    )
+                    pooled_embeddings_groups_list.append(pooled_emb_gr)
 
+            if do_groups:
+                return timestamp_dicts, pooled_embeddings_phonemes_list, pooled_embeddings_groups_list
+            else:
+                return timestamp_dicts, pooled_embeddings_phonemes_list, [None] * len(frame_phonemes)
 
-        
-        return timestamp_dicts, None, None
+        return timestamp_dicts, [None] * len(frame_phonemes), [None] * len(frame_phonemes)
 
     
     
@@ -1119,7 +1098,12 @@ class PhonemeTimestampAligner:
         """Map phoneme indices to phoneme group indices."""
         group_sequence = []
         for ph_idx in phoneme_sequence:
-            group_idx = self.phoneme_id_to_group_id.get(ph_idx.item(), self.blank_group)
+            # Handle both tensor and int inputs
+            if isinstance(ph_idx, torch.Tensor):
+                ph_idx_val = ph_idx.item()
+            else:
+                ph_idx_val = int(ph_idx)
+            group_idx = self.phoneme_id_to_group_id.get(ph_idx_val, self.blank_group)
             group_sequence.append(group_idx)
         return torch.tensor(group_sequence, dtype=torch.long)
     
