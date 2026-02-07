@@ -787,7 +787,7 @@ class AlignmentUtils: # 2025-09-10
         self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
         self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise)
     
-
+    
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
                          true_seqs_lens=None, forced_alignment=True, 
                          boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
@@ -814,63 +814,31 @@ class AlignmentUtils: # 2025-09-10
                 raise ValueError("Phoneme sequences and lengths required for forced alignment")
             
             with torch.no_grad():
-                # Prepare batch data
-                log_probs_list = []
-                ctc_paths_list = []
-                ctc_lens_list = []
-                
+                # Using silence anchoring for forced alignment - 2026-02-07
+                all_frame_phonemes = []
+
                 for i in range(batch_size):
                     if pred_lens is not None:
                         log_probs_seq = log_probs[i][:pred_lens[i]]
                     else:
                         log_probs_seq = log_probs[i]
-                    
+
                     true_seq_len = true_seqs_lens[i]
                     true_seq = true_seqs[i, :true_seq_len]
-                    
+
                     if true_seq_len == 0:
+                        # Empty sequence - fill with blanks
+                        all_frame_phonemes.append(torch.tensor([], device=device, dtype=torch.long))
                         continue
-                    
-                    # Apply probability modifications
-                    if boost_targets:
-                        log_probs_seq = self.viterbi_decoder._boost_target_phonemes(
-                            log_probs_seq, true_seq
-                        )
-                    
-                    if enforce_minimum:
-                        log_probs_seq = self.viterbi_decoder._enforce_minimum_probabilities(
-                            log_probs_seq, true_seq
-                        )
-                    
-                    # Create CTC path
-                    ctc_path = torch.zeros(2 * true_seq_len + 1, device=device, dtype=torch.long)
-                    ctc_path[::2] = self.blank_id
-                    ctc_path[1::2] = true_seq
-                    
-                    log_probs_list.append(log_probs_seq)
-                    ctc_paths_list.append(ctc_path)
-                    ctc_lens_list.append(len(ctc_path))
-                
-                # Batch decode
-                if log_probs_list:
-                    ctc_lens_tensor = torch.tensor(ctc_lens_list, device=device)
-                    all_frame_phonemes = self.viterbi_decoder._viterbi_decode_batch(
-                        log_probs_list, ctc_paths_list, ctc_lens_tensor
+
+                    # Decode with forced alignment and silence anchoring
+                    frame_phonemes = self.viterbi_decoder.decode_with_forced_alignment(
+                        log_probs_seq, true_seq, return_scores=False,
+                        boost_targets=boost_targets, enforce_minimum=enforce_minimum,
+                        enforce_all_targets=enforce_all_targets, anchor_pauses=self.silence_anchors > 0
                     )
-                else:
-                    all_frame_phonemes = [torch.tensor([], device=device, dtype=torch.long) 
-                                        for _ in range(batch_size)]
-                
-                # Post-process if needed
-                if enforce_all_targets:
-                    for i in range(len(all_frame_phonemes)):
-                        if true_seqs_lens[i] > 0:
-                            all_frame_phonemes[i] = self.viterbi_decoder._ensure_all_phonemes_aligned(
-                                all_frame_phonemes[i],
-                                true_seqs[i, :true_seqs_lens[i]],
-                                log_probs_list[i] if i < len(log_probs_list) else log_probs[i]
-                            )
-                
+                    all_frame_phonemes.append(frame_phonemes)
+
                 # Apply assort_frames
                 assorted = [self.viterbi_decoder.assort_frames(fp) for fp in all_frame_phonemes]
                 return assorted

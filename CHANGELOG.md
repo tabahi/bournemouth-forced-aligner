@@ -1,6 +1,7 @@
 # Changelog
 
 ## [0.1.8] - UNRELEASED
+- `silence_anchors` now actually works to break longer segments into chunks for better  viterbi decoding.
 - `"ipa_label"` key in `["segments"]["phoneme_ts"]` and in `["segments"]["words_ts"]`in the output dictionary denotes the original IPA phonemes from espeak-ng, instead of the reduced mapped IPA dictionary. It's helpful if you want to use the full epeak IPA dictionary after alignment.
 - Enabled mps device support for Apple silicon
 

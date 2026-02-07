@@ -12,7 +12,7 @@ src/p3vs2contrastive/datamodule_vs2.py
 *.pyc
 *.pt
 *.sh
-
+*.wav
 *.py[codz]
 *$py.class
 

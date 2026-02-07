@@ -1237,7 +1237,10 @@ class PhonemeTimestampAligner:
                 if coverage_analysis['extra_phonemes']:
                     print(f"  Extra: {coverage_analysis['extra_phonemes']}")
 
-            assert len(result["phoneme_timestamps"]) == len(phoneme_sequence), f"Number of aligned phonemes {len(result['phoneme_timestamps'])} does not match target sequence length {len(phoneme_sequence)}"
+            if self.enforce_all_targets:
+                if self.silence_anchors > 0:
+                    print ("WARNING: enforce_all_targets is enabled, but silence_anchors is > 0. This may lead to unexpected results since silence anchors will be added to the target sequence but not present in the aligned sequence.")
+                else: assert len(result["phoneme_timestamps"]) == len(phoneme_sequence), f"Number of aligned phonemes {len(result['phoneme_timestamps'])} does not match target sequence length {len(phoneme_sequence)}"
             
             if extract_embeddings:
                 pooled_embeddings_p = pooled_embeddings_p.detach()
