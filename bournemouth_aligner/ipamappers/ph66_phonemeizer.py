@@ -483,7 +483,7 @@ class Phonemizer:
             # Check that all words with phonemes are accounted for
             
 
-        print(segment_out)
+        #print(segment_out)
         
         return segment_out
 

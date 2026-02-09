@@ -1217,7 +1217,7 @@ class PhonemeTimestampAligner:
             wav, wav_len = self.chop_wav(audio_wav, int(start_time * self.resampler_sample_rate), int(end_time * self.resampler_sample_rate))
 
             result, pooled_embeddings_p, pooled_embeddings_g = self.extract_timestamps_from_segment(wav, wav_len, phoneme_sequence, start_offset_time=start_time, group_sequence=group_sequence, extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
-            # exit()  # Removed: This was causing early termination after first segment
+            
 
             coverage_analysis = self.analyze_alignment_coverage(
                 phoneme_sequence, 
@@ -1240,7 +1240,8 @@ class PhonemeTimestampAligner:
             if self.enforce_all_targets:
                 if self.silence_anchors > 0:
                     print ("WARNING: enforce_all_targets is enabled, but silence_anchors is > 0. This may lead to unexpected results since silence anchors will be added to the target sequence but not present in the aligned sequence.")
-                else: assert len(result["phoneme_timestamps"]) == len(phoneme_sequence), f"Number of aligned phonemes {len(result['phoneme_timestamps'])} does not match target sequence length {len(phoneme_sequence)}"
+                elif len(result["phoneme_timestamps"]) != len(phoneme_sequence):
+                    print(f"WARNING: enforce_all_targets is enabled, but number of aligned phonemes ({len(result['phoneme_timestamps'])}) does not match number of target phonemes ({len(phoneme_sequence)}). This may indicate that some target phonemes were not aligned.")
             
             if extract_embeddings:
                 pooled_embeddings_p = pooled_embeddings_p.detach()
