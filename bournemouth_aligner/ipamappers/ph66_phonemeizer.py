@@ -427,7 +427,8 @@ class Phonemizer:
                 ph_comp = get_compound_phoneme_mapping(eph)
                 assert isinstance(ph_comp, list), f"Compound mapping should return a list, got {type(ph_comp)} for phoneme {eph}"
 
-                for ph in ph_comp:
+                for phi in range(len(ph_comp)):
+                    ph = ph_comp[phi]
                     if ph not in self.phoneme_index:
                         ph = noise_PHN
 
@@ -448,7 +449,11 @@ class Phonemizer:
                     segment_out[self.phonemes_key].append(ph_idx)
                     segment_out[self.phoneme_groups_key].append(ph_group)
                     segment_out["mipa"].append(ph)
-                    segment_out[self.phonemes_ipa_key].append(original_eph)
+                    if phi == 0:
+                        # For the first phoneme in the compound, use the original espeak phoneme for IPA output
+                        segment_out[self.phonemes_ipa_key].append(original_eph)
+                    else:
+                        segment_out[self.phonemes_ipa_key].append("-")
                     segment_out["word_num"].append(word_idx)
 
                     self.phn_counts += 1
@@ -462,7 +467,11 @@ class Phonemizer:
                 segment_out["words"].append("")  # Placeholder for words without valid phonemes
         # end words loop
 
-
+        assert len(segment_out[self.phonemes_key]) == len(segment_out[self.phoneme_groups_key]) == len(segment_out[self.phonemes_ipa_key]) == len(segment_out["word_num"]), "Phoneme lists and word_num list must be the same length"
+        #for kh in range(len(segment_out[self.phonemes_key])):
+        #    print(f"Phoneme {kh}: {segment_out[self.phonemes_key][kh]} (group {segment_out[self.phoneme_groups_key][kh]}, IPA '{segment_out[self.phonemes_ipa_key][kh]}'), word index: {segment_out['word_num'][kh]}, word: '{segment_out['words'][segment_out['word_num'][kh]]}'") 
+        
+        
         # After processing all words, create indexed word list and remap word_num
         if segment_out[self.phonemes_key]:  # Only process if there are phonemes
             # Find indices of words with valid phonemes

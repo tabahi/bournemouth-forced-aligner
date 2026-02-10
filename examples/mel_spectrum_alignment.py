@@ -105,7 +105,7 @@ def example_audio_timestamps():
     
     total_frames = mel_spec.shape[0]
     frames_per_second = total_frames / segment_duration
-    frames_assorted = extractor.framewise_assortment(aligned_ts=timestamps['segments'][0]['phoneme_ts'], total_frames=total_frames, frames_per_second=frames_per_second, gap_contraction=5, select_key="phoneme_idx")
+    frames_assorted = extractor.framewise_assortment(aligned_ts=timestamps['segments'][0]['phoneme_ts'], total_frames=total_frames, frames_per_second=frames_per_second, gap_contraction=5, select_key="phoneme_id")
     # convert phoneme IDs to labels
     frames_assorted = [extractor.phoneme_id_to_label[phoneme_id] for phoneme_id in frames_assorted]
 

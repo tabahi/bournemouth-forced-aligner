@@ -24,7 +24,8 @@ from .cupe2i.windowing import slice_windows, stich_window_predictions, calc_spec
 from .forced_alignment import AlignmentUtils 
 #from .ipamappers.ph66_mapper import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
 from .ipamappers import ph66_phonemeizer
-from .utils import dict_to_textgrid
+from .presets import get_preset
+from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences, convert_to_ms
 # Create reverse mappings for interpretability
 #index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
 #index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
@@ -38,7 +39,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_idx", device="cpu", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="cpu", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
         """
         Initialize the phoneme timestamp extractor.
 
@@ -62,8 +63,8 @@ class PhonemeTimestampAligner:
                 See: https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
             mapper (str): Phoneme mapper to use (default: "ph66").
             duration_max (float): Maximum segment duration in seconds for padding (10-60 recommended).
-            output_frames_key (str): Frame output format. Options: "phoneme_idx", "phoneme_label",
-                "group_idx", "group_label".
+            output_frames_key (str): Frame output format. Options: "phoneme_id", "phoneme_label",
+                "group_id", "group_label".
             device (str): Processing device ("cpu" or "cuda").
             silence_anchors (int): Silent frames threshold for segment splitting (0 to disable).
             boost_targets (bool): Enhance target phoneme probabilities for better alignment.
@@ -127,138 +128,7 @@ class PhonemeTimestampAligner:
         # Only apply preset logic if no explicit checkpoint path or model name provided
         if cupe_ckpt_path is None and model_name is None:
             # Language preset mappings based on available models
-
-            # English - Use dedicated English model for best performance
-            if preset in ["en-us", "en", "en-gb", "en-029", "en-gb-x-gbclan", "en-gb-x-rp", "en-gb-scotland", "en-gb-x-gbcwmd"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                #model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt" # OLDER version
-                model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"  # new after rhotics fix
-
-            # MLS8 European languages (trained on 8 European languages)
-            elif preset in ["de", "fr", "fr-be", "fr-ch", "es", "es-419", "it", "pt", "pt-br", "pl", "nl"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
-
-            # Other European languages (similar to MLS8 training data)
-            elif preset in ["da", "sv", "nb", "is", "cs", "sk", "sl", "hr", "bs", "sr", "mk", "bg", "ro", "hu", "et", "lv", "lt"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
-
-            # Romance languages (similar to trained Romance languages)
-            elif preset in ["ca", "an", "pap", "ht"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
-
-            # Germanic languages (similar to trained Germanic languages)
-            elif preset in ["af", "lb"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
-
-            # Celtic languages
-            elif preset in ["ga", "gd", "cy"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"
-
-            # Indo-European languages - Use MSWC38 universal model
-            elif preset in ["ru", "ru-lv", "uk", "be"]:  # Slavic
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            elif preset in ["hi", "bn", "ur", "pa", "gu", "mr", "ne", "as", "or", "si", "kok", "bpy", "sd"]:  # Indic
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            elif preset in ["fa", "fa-latn", "ku"]:  # Iranian
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            elif preset in ["el", "grc"]:  # Greek
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            elif preset in ["hy", "hyw"]:  # Armenian
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            elif preset in ["sq"]:  # Albanian
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            elif preset in ["la"]:  # Latin
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            # Turkic languages
-            elif preset in ["tr", "az", "kk", "ky", "uz", "tt", "tk", "ug", "ba", "cu", "nog"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            # Uralic languages (note: Finnish is in both MLS8 and here, prioritize MLS8 above)
-            elif preset in ["fi", "et", "hu", "smj"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            # Semitic languages
-            elif preset in ["ar", "he", "am", "mt"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-
-            # Malayo-Polynesian languages (Indonesian/Malay only - closer to Indo-European contact)
-            elif preset in ["id", "ms"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            # Dravidian languages
-            elif preset in ["ta", "te", "kn", "ml"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-
-            # South Caucasian languages
-            elif preset in ["ka"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-
-            # Language isolates (maintain only Basque and Quechua - European/Indo-European contact)
-            elif preset in ["eu", "qu"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-            # Constructed languages
-            elif preset in ["eo", "ia", "io", "lfn", "jbo", "py", "qdb", "qya", "piqd", "sjn"]:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"
-
-
-            # Default fallback for unrecognized presets
-            elif preset:
-                if lang == 'en-us':  # Only override if using default lang
-                    lang = preset
-                model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"  # Universal model as fallback
-
+            model_name, lang = get_preset(preset=preset, lang=lang)
         if cupe_ckpt_path is not None:
             cupe_ckpt_path = cupe_ckpt_path
         elif model_name is not None:
@@ -723,7 +593,7 @@ class PhonemeTimestampAligner:
             #padding phoneme sequences to have same length
             max_len = max(len(seq) for seq in phoneme_sequences)
             phoneme_sequences = torch.tensor([seq + [-1] * (max_len - len(seq)) for seq in phoneme_sequences], dtype=torch.long)
-
+        
         if group_sequences is not None and not isinstance(group_sequences, torch.Tensor):
             #padding
             max_len = max(len(seq) for seq in group_sequences)
@@ -780,7 +650,6 @@ class PhonemeTimestampAligner:
             forced_alignment=True,
             boost_targets=self.boost_targets,
             enforce_minimum=self.enforce_minimum,
-            enforce_all_targets=self.enforce_all_targets
         )
         
         frame_phonemes = self.alignment_utils_p.decode_alignments(
@@ -791,8 +660,9 @@ class PhonemeTimestampAligner:
             forced_alignment=True,
             boost_targets=self.boost_targets,
             enforce_minimum=self.enforce_minimum,
-            enforce_all_targets=self.enforce_all_targets
         )
+        #print(frame_phonemes[:10])
+        
 
         # Process each item in the batch: match target phonemes to aligned phonemes and recover missing ones
         for batch_idx in range(len(frame_phonemes)):
@@ -853,7 +723,7 @@ class PhonemeTimestampAligner:
                             break
 
                     # Estimate frame position for missing phoneme based on neighbors
-                    # At this point, tuples are (phoneme_id, start_frame, end_frame)
+                    # At this point, tuples are (phoneme_id, start_frame, end_frame, target_seq_idx)
                     if prev_aligned and next_aligned:
                         # Interpolate between end of prev and start of next
                         est_start_frame = int((prev_aligned[2] + next_aligned[1]) / 2)
@@ -871,11 +741,11 @@ class PhonemeTimestampAligner:
                         est_start_frame = 0
                         est_end_frame = 1
 
-                    frame_phonemes[batch_idx].append((target_phoneme_id, est_start_frame, est_end_frame))
+                    frame_phonemes[batch_idx].append((target_phoneme_id, est_start_frame, est_end_frame, target_idx))
 
                     if debug and batch_idx == 0:
                         print(f"Added missing phoneme {self.phonemizer.index_to_plabel.get(target_phoneme_id, f'UNK_{target_phoneme_id}')} at position {target_idx} with estimated frames {est_start_frame}-{est_end_frame}")
-
+            
             # Remove extra aligned phonemes that weren't matched to any target
             if self.enforce_all_targets and len(frame_phonemes[batch_idx]) > len(target_phoneme_ids):
                 matched_aligned_indices = set(target_to_aligned_map.values())
@@ -892,24 +762,24 @@ class PhonemeTimestampAligner:
                     print(f"Removed {removed_count} extra aligned phonemes: {removed_labels}, kept {len(new_phonemes)} phonemes")
 
                 frame_phonemes[batch_idx] = new_phonemes
-
+            
 
         # Calculate confidence scores
         
         
         
         for i in range(len(frame_phonemes)):
-            frame_phonemes[i] = self._calculate_confidences(log_probs_p[i], frame_phonemes[i])
-            frame_groups[i] = self._calculate_confidences(log_probs_g[i], frame_groups[i])
+            frame_phonemes[i] = _calculate_confidences(log_probs_p[i], frame_phonemes[i])
+            frame_groups[i] = _calculate_confidences(log_probs_g[i], frame_groups[i])
 
-            frame_phonemes[i] = self.convert_to_ms(
+            frame_phonemes[i] = convert_to_ms(
                 frame_phonemes[i],
                 spectral_lens[i],
                 start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times,
                 wav_lens[i],
                 self.resampler_sample_rate
             )
-            frame_groups[i] = self.convert_to_ms(
+            frame_groups[i] = convert_to_ms(
                 frame_groups[i],
                 spectral_lens[i],
                 start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times,
@@ -918,15 +788,15 @@ class PhonemeTimestampAligner:
             )
 
             # Resort phonemes and groups by timestamp after adding missing phonemes
-            frame_phonemes[i] = sorted(frame_phonemes[i], key=lambda x: x[4])  # sort by start timestamp (ms)
-            frame_groups[i] = sorted(frame_groups[i], key=lambda x: x[4])  # sort by start timestamp (ms)
+            frame_phonemes[i] = sorted(frame_phonemes[i], key=lambda x: x[5])  # sort by start timestamp (ms)
+            frame_groups[i] = sorted(frame_groups[i], key=lambda x: x[5])  # sort by start timestamp (ms)
 
             if debug and i == 0:  # Only debug first item
                 print("Predicted phonemes", len(frame_phonemes[i]))
                 print("Predicted groups", len(frame_groups[i]))
                 print("start_offset_time", start_offset_times[i] if isinstance(start_offset_times, (list, tuple)) else start_offset_times)
                 for j, (ph, grp) in enumerate(zip(frame_phonemes[i], frame_groups[i])):
-                    print(f"{j+1:2d}: {self.phonemizer.index_to_plabel[ph[0]]:>3s}, {self.phonemizer.index_to_glabel[grp[0]]:>3s}  -> ({grp[4]:.3f} - {grp[5]:.3f}), Confidence: {grp[3]:.3f}")
+                    print(f"{j+1:2d}: {self.phonemizer.index_to_plabel[ph[0]]:>3s}, {self.phonemizer.index_to_glabel[grp[0]]:>3s}  -> ({grp[5]:.3f} - {grp[6]:.3f}), Confidence: {grp[4]:.3f}")
 
 
         timestamp_dicts = [
@@ -943,7 +813,7 @@ class PhonemeTimestampAligner:
 
         if extract_embeddings and embeddings is not None:
             for i in range(len(frame_phonemes)):
-                pooled_emb_ph = self.weighted_pool_embeddings(
+                pooled_emb_ph = weighted_pool_embeddings(
                     embeddings[i][:spectral_lens[i]],
                     log_probs_p[i][:spectral_lens[i]],
                     frame_phonemes[i]
@@ -951,7 +821,7 @@ class PhonemeTimestampAligner:
                 pooled_embeddings_phonemes_list.append(pooled_emb_ph)
 
                 if do_groups:
-                    pooled_emb_gr = self.weighted_pool_embeddings(
+                    pooled_emb_gr = weighted_pool_embeddings(
                         embeddings[i][:spectral_lens[i]],
                         log_probs_g[i][:spectral_lens[i]],
                         frame_groups[i]
@@ -967,148 +837,6 @@ class PhonemeTimestampAligner:
 
     
     
-    def weighted_pool_embeddings(self, embeddings, log_probs, framestamps):
-        """
-        Average Weighted by confidence embeddings over frame ranges for each phoneme timestamp.
-        
-        Args:
-            embeddings: Tensor of shape [T, D] where T is number of frames and D is embedding dimension
-            log_probs:  log_probs: Log probabilities [T, C], can pass either phoneme or group log_probs
-            timestamps: List of tuples (phoneme_idx, start_frame, end_frame, start_ms, end_ms)
-        
-        Returns:
-            pooled_embeddings: Tensor of shape [N, D] where N is length of timestamps
-        """
-        if len(framestamps) == 0:
-            return torch.empty(0, embeddings.shape[1], device=embeddings.device)
-        
-        assert embeddings.dim() == 2, "Embeddings should be of shape [T, D] remove the batch dim"
-        assert log_probs.shape[0] == embeddings.shape[0], "Log probabilities and embeddings must have the same number of frames"
-
-        probs = torch.exp(log_probs.to(embeddings.device))
-        pooled_embeddings = []
-        
-        for phoneme_idx, start_frame, end_frame, avg_confidence, start_ms, end_ms in framestamps:
-            # Clamp frame indices to valid range
-            start_frame = max(0, int(start_frame))
-            end_frame = min(embeddings.shape[0], int(end_frame))
-            
-            if start_frame < end_frame:
-                # Get segment embeddings and confidence weights
-                segment_embeddings = embeddings[start_frame:end_frame]  # Shape: [num_frames, D]
-                confidence_weights = probs[start_frame:end_frame, phoneme_idx]  # Shape: [num_frames]
-                
-                # Compute weighted average
-                # Expand weights to match embedding dimensions: [num_frames, 1] 
-                weights_expanded = confidence_weights.unsqueeze(1)  # Shape: [num_frames, 1]
-                
-                # Weighted sum: multiply each embedding by its confidence weight
-                weighted_embeddings = segment_embeddings * weights_expanded  # Shape: [num_frames, D]
-                
-                # Sum along frame dimension and normalize by total weight
-                sum_weights = confidence_weights.sum()  # Scalar
-                if sum_weights > 0:
-                    pooled_embedding = weighted_embeddings.sum(dim=0) / sum_weights  # Shape: [D]
-                else:
-                    # Fallback to uniform average if all weights are zero
-                    pooled_embedding = segment_embeddings.mean(dim=0)  # Shape: [D]
-                    
-                pooled_embeddings.append(pooled_embedding)
-            else:
-                # Handle edge case where start_frame >= end_frame
-                # Use a zero embedding or the closest frame
-                if start_frame < embeddings.shape[0]:
-                    pooled_embeddings.append(embeddings[start_frame])
-                else:
-                    # If completely out of bounds, use zero embedding
-                    pooled_embeddings.append(torch.zeros(embeddings.shape[1], device=embeddings.device))
-        
-        # Stack all pooled embeddings
-        pooled_embeddings = torch.stack(pooled_embeddings, dim=0)  # Shape: [N, D]
-        
-        return pooled_embeddings
-
-    def _calculate_confidences(self, log_probs, framestamps):
-        """
-        Calculate confidence scores for each timestamped phoneme/group.
-        
-        Args:
-            log_probs: Log probabilities [T, C]
-            framestamps: List of (phoneme_idx, start_frame, end_frame, ) tuples
-            
-        Returns:
-            List of confidence scores
-        """
-        probs = torch.exp(log_probs)
-        updated_tuples = []
-        
-        for phoneme_idx, start_frame, end_frame in framestamps:
-            # Clamp to valid range
-            start_frame = max(0, int(start_frame))
-            end_frame = min(log_probs.shape[0], int(end_frame))
-            avg_confidence = probs[start_frame, phoneme_idx]
-            
-            if start_frame < end_frame and phoneme_idx < log_probs.shape[1]:
-
-                half_confidence = avg_confidence/2
-                #if (half_confidence < 0.01): half_confidence = avg_confidence*2
-                last_good_frame = start_frame
-                total_good_frames = 1
-
-                # since there can be blanks after the first one, we only take probablities if at least prob > 0.5 compared to the first frame to avoid for-sure blanks
-                for f in range(start_frame+1, end_frame):
-                    frame_prob = probs[f, phoneme_idx]
-                    if (frame_prob > half_confidence) or (frame_prob > 0.1):
-                        avg_confidence += frame_prob
-                        last_good_frame = f
-                        total_good_frames += 1
-                if total_good_frames > 1:
-                    avg_confidence /= total_good_frames
-                    end_frame = min(log_probs.shape[0], int(last_good_frame + 1 )) # end_frame is exclusive, so we add 1
-
-                    max_confidence = probs[start_frame:end_frame, phoneme_idx].max()
-                    if avg_confidence < max_confidence/2:
-                        #print(avg_confidence, max_confidence)
-                        avg_confidence = max_confidence
-                
-            updated_tuples.append((phoneme_idx, start_frame, end_frame, avg_confidence.item()))
-        
-        return updated_tuples
-
-    def convert_to_ms(self, framestamps, spectral_length, start_offset_time, wav_len, sample_rate):
-        '''
-        Args:
-            framestamps: List of tuples (phoneme_idx, start_frame, end_frame, avg_confidence)
-            spectral_length: Number of spectral frames (int)
-            start_time: Start time of the segment in seconds, used to offset the timestamps
-            wav_len: Length of the audio segment in samples, used to estimate the duration per spectral-frame
-            sample_rate: Sample rate of the audio, used to convert frames to milliseconds
-        Returns:7
-            updated_tuples: List of tuples (phoneme_idx, start_frame, end_frame, avg_confidence, start_ms, end_ms)
-        '''
-        duration_in_seconds = wav_len / sample_rate
-        duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
-
-        updated_tuples = []
-        for tup in framestamps:
-            if len(tup) == 4:
-                phoneme_idx, start_frame, end_frame, avg_confidence = tup
-            else:
-                # fallback for tuples with different length
-                phoneme_idx, start_frame, end_frame = tup[:3]
-                avg_confidence = tup[3] if len(tup) > 3 else 0.0
-
-            # Calculate start and end times in seconds
-            start_sec = start_offset_time + (start_frame * duration_per_frame)
-            end_sec = start_offset_time + (end_frame * duration_per_frame)
-            # Convert to milliseconds
-            start_ms = start_sec * 1000
-            end_ms = end_sec * 1000
-
-            updated_tuples.append((phoneme_idx, start_frame, end_frame, avg_confidence, start_ms, end_ms))
-
-        return updated_tuples
-        
 
 
 
@@ -1130,7 +858,7 @@ class PhonemeTimestampAligner:
         '''
         phoneme_ts: List of phoneme timestamps [
                 {
-                    "phoneme_idx": int(ph_idx),
+                    "phoneme_id": int(ph_idx),
                     "phoneme_label": index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
@@ -1170,7 +898,7 @@ class PhonemeTimestampAligner:
                     "start_ms": current_word_start,
                     "end_ms": word_end,
                     "confidence": avg_confidence,
-                    "ph66": [ph["phoneme_idx"] for ph in current_word_phonemes],
+                    "ph66": [ph["phoneme_id"] for ph in current_word_phonemes],
                     "ipa": [ph["ipa_label"] for ph in current_word_phonemes]
                 }
                 words_ts.append(word_ts)
@@ -1286,28 +1014,30 @@ class PhonemeTimestampAligner:
             # Add phoneme timestamps (convert 5-tuple back to simple format for JSON)
             vs2_segment["phoneme_ts"] = [
                 {
-                    "phoneme_idx": int(ph_idx),
+                    "phoneme_id": int(ph_idx),
                     "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
-                    "ipa_label": vs2_segment["ipa"][idx] if idx < len(vs2_segment["ipa"]) else "",
+                    "ipa_label": vs2_segment["ipa"][idx] if idx < len(vs2_segment["ipa"]) else f"UNK_IPA_{ph_idx}",
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
                     "confidence": float(conf),
+                    "target_seq_idx": int(target_seq_idx),
                     "index": idx
                 }
-                for idx, (ph_idx, start_frame, end_frame, conf, start_ms, end_ms) in enumerate(result["phoneme_timestamps"])
+                for idx, (ph_idx, start_frame, end_frame, target_seq_idx, conf, start_ms, end_ms) in enumerate(result["phoneme_timestamps"])
             ]
             
             # Add group timestamps
             vs2_segment["group_ts"] = [
                 {
-                    "group_idx": int(grp_idx),
+                    "group_id": int(grp_idx),
                     "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
                     "confidence": float(conf),
+                    "target_seq_idx": int(target_seq_idx),
                     "index": idx
                 }
-                for idx, (grp_idx, start_frame, end_frame, conf, start_ms, end_ms) in  enumerate(result["group_timestamps"])
+                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, conf, start_ms, end_ms) in  enumerate(result["group_timestamps"])
             ]
 
             vs2_segment["words_ts"] = self._align_words(vs2_segment["phoneme_ts"], ts_out.get("word_num", []), ts_out.get("words", []))
@@ -1331,7 +1061,7 @@ class PhonemeTimestampAligner:
                 total_confidence += sum(ts["confidence"] for ts in segment["phoneme_ts"])
                 
                 # Check if sequence matches perfectly
-                predicted_sequence = [ts["phoneme_idx"] for ts in segment["phoneme_ts"]]
+                predicted_sequence = [ts["phoneme_id"] for ts in segment["phoneme_ts"]]
                 if predicted_sequence == segment[self.phonemes_key]:
                     perfect_matches += 1
         
@@ -1420,28 +1150,33 @@ class PhonemeTimestampAligner:
             vs2_segment["word_num"] = ts.get("word_num", "")
             vs2_segment["words"] = ts.get("words", "")
             
-            # Add phoneme timestamps (convert 6-tuple back to JSON)
+            # Add phoneme timestamps (convert 7-tuple back to JSON)
             vs2_segment["phoneme_ts"] = [
                 {
-                    "phoneme_idx": int(ph_idx),
+                    "phoneme_id": int(ph_idx),
                     "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
+                    "ipa_label": '',
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
-                    "confidence": float(conf)
+                    "confidence": float(conf),
+                    "target_seq_idx": int(target_seq_idx),
+                    "index": idx
                 }
-                for (ph_idx, start_frame, end_frame, conf, start_ms, end_ms) in result["phoneme_timestamps"]
+                for idx, (ph_idx, start_frame, end_frame, target_seq_idx, conf, start_ms, end_ms) in enumerate(result["phoneme_timestamps"])
             ]
-            
+
             # Add group timestamps
             vs2_segment["group_ts"] = [
                 {
-                    "group_idx": int(grp_idx),
+                    "group_id": int(grp_idx),
                     "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
-                    "confidence": float(conf)
+                    "confidence": float(conf),
+                    "target_seq_idx": int(target_seq_idx),
+                    "index": idx
                 }
-                for (grp_idx, start_frame, end_frame, conf, start_ms, end_ms) in result["group_timestamps"]
+                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, conf, start_ms, end_ms) in  enumerate(result["group_timestamps"])
             ]
 
             vs2_segment["words_ts"] = self._align_words(
@@ -1663,7 +1398,7 @@ class PhonemeTimestampAligner:
             decompressed.extend([phn_id] * count)
         return decompressed
 
-    def framewise_assortment(self, aligned_ts, total_frames, frames_per_second, gap_contraction=5, select_key="phoneme_idx", offset_ms=0):
+    def framewise_assortment(self, aligned_ts, total_frames, frames_per_second, gap_contraction=5, select_key="phoneme_id", offset_ms=0):
         """
         Perform frame-wise assortment of aligned timestamps.
         Args:
@@ -1671,14 +1406,14 @@ class PhonemeTimestampAligner:
             total_frames: Total number of frames in the mel spectrogram.
             frames_per_second: Frame rate of the mel spectrogram.
             gap_contraction: extra gaps (in frames) to fill during the assortment process. Compensate for silence overwhelment on either side of unvoiced segments.
-            select_key: Key to select timestamps from the aligned_ts dictionary. Default is "phoneme_idx".
+            select_key: Key to select timestamps from the aligned_ts dictionary. Default is "phoneme_id".
             offset_ms: Offset in milliseconds to adjust the start and end times of each timestamp. Pass `timestamps["segments"][segment_id]["start"]*1000` to align with the original audio.
         """
         '''
         
         where <aligned_ts> is expected to be in the following format:
-        "phoneme_ts": [{"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9967153072357178}, {"phoneme_idx": 53, "phoneme_label": "n", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7659286260604858}, {"phoneme_idx": 29, "phoneme_label": "b", "start_ms": 181.69129943847656, "end_ms": 198.2086944580078, "confidence": 0.978035569190979}, {"phoneme_idx": 2, "phoneme_label": "i:", "start_ms": 198.2086944580078, "end_ms": 214.72608947753906, "confidence": 0.8755438327789307}, {"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.31954720616340637}, {"phoneme_idx": 55, "phoneme_label": "ŋ", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.6084036231040955}, {"phoneme_idx": 32, "phoneme_label": "k", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5099813342094421}, {"phoneme_idx": 8, "phoneme_label": "ə", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.8283558487892151}, {"phoneme_idx": 52, "phoneme_label": "m", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.9580954909324646}, {"phoneme_idx": 28, "phoneme_label": "p", "start_ms": 594.6260986328125, "end_ms": 627.660888671875, "confidence": 0.6376017928123474}, {"phoneme_idx": 20, "phoneme_label": "æ", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8247546553611755}, {"phoneme_idx": 59, "phoneme_label": "ɹ", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5612516403198242}, {"phoneme_idx": 8, "phoneme_label": "ə", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.2321549355983734}, {"phoneme_idx": 30, "phoneme_label": "t", "start_ms": 941.4913330078125, "end_ms": 991.0435180664062, "confidence": 0.8491405844688416}, {"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.793982744216919}, {"phoneme_idx": 44, "phoneme_label": "v", "start_ms": 1040.595703125, "end_ms": 1123.1826171875, "confidence": 0.9437225461006165}, {"phoneme_idx": 56, "phoneme_label": "l", "start_ms": 1172.7347412109375, "end_ms": 1222.2869873046875, "confidence": 0.5690894722938538}, {"phoneme_idx": 1, "phoneme_label": "i", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.3983164429664612}, {"phoneme_idx": 52, "phoneme_label": "m", "start_ms": 1354.4261474609375, "end_ms": 1387.4608154296875, "confidence": 0.864766538143158}, {"phoneme_idx": 19, "phoneme_label": "a:", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.056571315973997116}, {"phoneme_idx": 31, "phoneme_label": "d", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.48222440481185913}, {"phoneme_idx": 9, "phoneme_label": "ɚ", "start_ms": 1668.2564697265625, "end_ms": 1684.77392578125, "confidence": 0.9793221354484558}, {"phoneme_idx": 53, "phoneme_label": "n", "start_ms": 1767.3609619140625, "end_ms": 1783.8782958984375, "confidence": 0.11690044403076172}, {"phoneme_idx": 0, "phoneme_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07832614332437515}], 
-        "group_ts": [{"group_idx": 1, "group_label": "front_vowels", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9991531372070312}, {"group_idx": 12, "group_label": "nasals", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7814053893089294}, {"group_idx": 7, "group_label": "voiced_stops", "start_ms": 165.17391967773438, "end_ms": 198.2086944580078, "confidence": 0.4964541494846344}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 198.2086944580078, "end_ms": 231.24346923828125, "confidence": 0.993299126625061}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.21188485622406006}, {"group_idx": 12, "group_label": "nasals", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.5997515320777893}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5166441202163696}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.9326215386390686}, {"group_idx": 12, "group_label": "nasals", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.748111367225647}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 561.59130859375, "end_ms": 627.660888671875, "confidence": 0.995503842830658}, {"group_idx": 4, "group_label": "low_vowels", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8065245151519775}, {"group_idx": 14, "group_label": "rhotics", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5473693013191223}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.15379419922828674}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 924.973876953125, "end_ms": 991.0435180664062, "confidence": 0.9740506410598755}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.7481966018676758}, {"group_idx": 9, "group_label": "voiced_fricatives", "start_ms": 1040.595703125, "end_ms": 1139.7000732421875, "confidence": 0.9575645327568054}, {"group_idx": 13, "group_label": "laterals", "start_ms": 1172.7347412109375, "end_ms": 1205.76953125, "confidence": 0.8053812384605408}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.9730117917060852}, {"group_idx": 12, "group_label": "nasals", "start_ms": 1271.839111328125, "end_ms": 1387.4608154296875, "confidence": 0.540493369102478}, {"group_idx": 4, "group_label": "low_vowels", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.1977187544107437}, {"group_idx": 7, "group_label": "voiced_stops", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.460404634475708}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 1618.704345703125, "end_ms": 1684.77392578125, "confidence": 0.5910724997520447}, {"group_idx": 12, "group_label": "nasals", "start_ms": 1750.843505859375, "end_ms": 1800.3956298828125, "confidence": 0.1525062620639801}, {"group_idx": 0, "group_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07381139695644379}], 
+        "phoneme_ts": [{"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9967153072357178}, {"phoneme_id": 53, "phoneme_label": "n", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7659286260604858}, {"phoneme_id": 29, "phoneme_label": "b", "start_ms": 181.69129943847656, "end_ms": 198.2086944580078, "confidence": 0.978035569190979}, {"phoneme_id": 2, "phoneme_label": "i:", "start_ms": 198.2086944580078, "end_ms": 214.72608947753906, "confidence": 0.8755438327789307}, {"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.31954720616340637}, {"phoneme_id": 55, "phoneme_label": "ŋ", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.6084036231040955}, {"phoneme_id": 32, "phoneme_label": "k", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5099813342094421}, {"phoneme_id": 8, "phoneme_label": "ə", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.8283558487892151}, {"phoneme_id": 52, "phoneme_label": "m", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.9580954909324646}, {"phoneme_id": 28, "phoneme_label": "p", "start_ms": 594.6260986328125, "end_ms": 627.660888671875, "confidence": 0.6376017928123474}, {"phoneme_id": 20, "phoneme_label": "æ", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8247546553611755}, {"phoneme_id": 59, "phoneme_label": "ɹ", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5612516403198242}, {"phoneme_id": 8, "phoneme_label": "ə", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.2321549355983734}, {"phoneme_id": 30, "phoneme_label": "t", "start_ms": 941.4913330078125, "end_ms": 991.0435180664062, "confidence": 0.8491405844688416}, {"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.793982744216919}, {"phoneme_id": 44, "phoneme_label": "v", "start_ms": 1040.595703125, "end_ms": 1123.1826171875, "confidence": 0.9437225461006165}, {"phoneme_id": 56, "phoneme_label": "l", "start_ms": 1172.7347412109375, "end_ms": 1222.2869873046875, "confidence": 0.5690894722938538}, {"phoneme_id": 1, "phoneme_label": "i", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.3983164429664612}, {"phoneme_id": 52, "phoneme_label": "m", "start_ms": 1354.4261474609375, "end_ms": 1387.4608154296875, "confidence": 0.864766538143158}, {"phoneme_id": 19, "phoneme_label": "a:", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.056571315973997116}, {"phoneme_id": 31, "phoneme_label": "d", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.48222440481185913}, {"phoneme_id": 9, "phoneme_label": "ɚ", "start_ms": 1668.2564697265625, "end_ms": 1684.77392578125, "confidence": 0.9793221354484558}, {"phoneme_id": 53, "phoneme_label": "n", "start_ms": 1767.3609619140625, "end_ms": 1783.8782958984375, "confidence": 0.11690044403076172}, {"phoneme_id": 0, "phoneme_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07832614332437515}], 
+        "group_ts": [{"group_id": 1, "group_label": "front_vowels", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9991531372070312}, {"group_id": 12, "group_label": "nasals", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7814053893089294}, {"group_id": 7, "group_label": "voiced_stops", "start_ms": 165.17391967773438, "end_ms": 198.2086944580078, "confidence": 0.4964541494846344}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 198.2086944580078, "end_ms": 231.24346923828125, "confidence": 0.993299126625061}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.21188485622406006}, {"group_id": 12, "group_label": "nasals", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.5997515320777893}, {"group_id": 6, "group_label": "voiceless_stops", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5166441202163696}, {"group_id": 2, "group_label": "central_vowels", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.9326215386390686}, {"group_id": 12, "group_label": "nasals", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.748111367225647}, {"group_id": 6, "group_label": "voiceless_stops", "start_ms": 561.59130859375, "end_ms": 627.660888671875, "confidence": 0.995503842830658}, {"group_id": 4, "group_label": "low_vowels", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8065245151519775}, {"group_id": 14, "group_label": "rhotics", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5473693013191223}, {"group_id": 2, "group_label": "central_vowels", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.15379419922828674}, {"group_id": 6, "group_label": "voiceless_stops", "start_ms": 924.973876953125, "end_ms": 991.0435180664062, "confidence": 0.9740506410598755}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.7481966018676758}, {"group_id": 9, "group_label": "voiced_fricatives", "start_ms": 1040.595703125, "end_ms": 1139.7000732421875, "confidence": 0.9575645327568054}, {"group_id": 13, "group_label": "laterals", "start_ms": 1172.7347412109375, "end_ms": 1205.76953125, "confidence": 0.8053812384605408}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.9730117917060852}, {"group_id": 12, "group_label": "nasals", "start_ms": 1271.839111328125, "end_ms": 1387.4608154296875, "confidence": 0.540493369102478}, {"group_id": 4, "group_label": "low_vowels", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.1977187544107437}, {"group_id": 7, "group_label": "voiced_stops", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.460404634475708}, {"group_id": 2, "group_label": "central_vowels", "start_ms": 1618.704345703125, "end_ms": 1684.77392578125, "confidence": 0.5910724997520447}, {"group_id": 12, "group_label": "nasals", "start_ms": 1750.843505859375, "end_ms": 1800.3956298828125, "confidence": 0.1525062620639801}, {"group_id": 0, "group_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07381139695644379}], 
         "words_ts": [{"word": "in", "start_ms": 33.03478240966797, "end_ms": 82.58695983886719, "confidence": 0.8813219666481018, "ph66": [4, 53], "ipa": ["ɪ", "n"]}, {"word": "being", "start_ms": 181.69129943847656, "end_ms": 396.4173889160156, "confidence": 0.6953825578093529, "ph66": [29, 2, 4, 55], "ipa": ["b", "i:", "ɪ", "ŋ"]}, {"word": "comparatively", "start_ms": 429.4521789550781, "end_ms": 1271.839111328125, "confidence": 0.6755372906724612, "ph66": [32, 8, 52, 28, 20, 59, 8, 30, 4, 44, 56, 1], "ipa": ["k", "ə", "m", "p", "æ", "ɹ", "ə", "t", "ɪ", "v", "l", "i"]}, {"word": "modern", "start_ms": 1354.4261474609375, "end_ms": 1783.8782958984375, "confidence": 0.4999569676816463, "ph66": [52, 19, 31, 9, 53], "ipa": ["m", "a:", "d", "ɚ", "n"]}`
         
         and `select_ts` and `select_key` are used to specify which timestamps to align.
@@ -1774,57 +1509,6 @@ class PhonemeTimestampAligner:
 
         return framewise_label
 
-    def framewise_assortment__old(self, segment_ts_dict, ms_per_frame=10.0, select_ts="phoneme_ts", select_key="phoneme_idx", gap_fill_frame_value=0, gap_intolerance=1, total_frames=None):
-        """
-        Perform frame-wise assortment of aligned timestamps.
-        Args:
-            segment_ts_dict: Dictionary containing segment-level timestamp information.
-            ms_per_frame: Milliseconds per frame for the frame-wise assortment.
-            gap_fill_frame_value: Value to fill in for gaps in the frame-wise assortment. Default `0` maps to silence for phoneme_ts and group_ts.
-            gap_intolerance: extra gaps (in frames) to fill during the assortment process.
-            total_frames: Expected total number of frames for the segment. If not provided, it will be calculated based on the (segment_duration_ms / ms_per_frame).
-
-        """
-        '''
-        
-        where <segment_ts_dict> is expected to be in the following format:
-        `{"start": 0.0, "end": 1.899546485260771, 
-        "phoneme_ts": [{"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9967153072357178}, {"phoneme_idx": 53, "phoneme_label": "n", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7659286260604858}, {"phoneme_idx": 29, "phoneme_label": "b", "start_ms": 181.69129943847656, "end_ms": 198.2086944580078, "confidence": 0.978035569190979}, {"phoneme_idx": 2, "phoneme_label": "i:", "start_ms": 198.2086944580078, "end_ms": 214.72608947753906, "confidence": 0.8755438327789307}, {"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.31954720616340637}, {"phoneme_idx": 55, "phoneme_label": "ŋ", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.6084036231040955}, {"phoneme_idx": 32, "phoneme_label": "k", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5099813342094421}, {"phoneme_idx": 8, "phoneme_label": "ə", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.8283558487892151}, {"phoneme_idx": 52, "phoneme_label": "m", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.9580954909324646}, {"phoneme_idx": 28, "phoneme_label": "p", "start_ms": 594.6260986328125, "end_ms": 627.660888671875, "confidence": 0.6376017928123474}, {"phoneme_idx": 20, "phoneme_label": "æ", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8247546553611755}, {"phoneme_idx": 59, "phoneme_label": "ɹ", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5612516403198242}, {"phoneme_idx": 8, "phoneme_label": "ə", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.2321549355983734}, {"phoneme_idx": 30, "phoneme_label": "t", "start_ms": 941.4913330078125, "end_ms": 991.0435180664062, "confidence": 0.8491405844688416}, {"phoneme_idx": 4, "phoneme_label": "ɪ", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.793982744216919}, {"phoneme_idx": 44, "phoneme_label": "v", "start_ms": 1040.595703125, "end_ms": 1123.1826171875, "confidence": 0.9437225461006165}, {"phoneme_idx": 56, "phoneme_label": "l", "start_ms": 1172.7347412109375, "end_ms": 1222.2869873046875, "confidence": 0.5690894722938538}, {"phoneme_idx": 1, "phoneme_label": "i", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.3983164429664612}, {"phoneme_idx": 52, "phoneme_label": "m", "start_ms": 1354.4261474609375, "end_ms": 1387.4608154296875, "confidence": 0.864766538143158}, {"phoneme_idx": 19, "phoneme_label": "a:", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.056571315973997116}, {"phoneme_idx": 31, "phoneme_label": "d", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.48222440481185913}, {"phoneme_idx": 9, "phoneme_label": "ɚ", "start_ms": 1668.2564697265625, "end_ms": 1684.77392578125, "confidence": 0.9793221354484558}, {"phoneme_idx": 53, "phoneme_label": "n", "start_ms": 1767.3609619140625, "end_ms": 1783.8782958984375, "confidence": 0.11690044403076172}, {"phoneme_idx": 0, "phoneme_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07832614332437515}], 
-        "group_ts": [{"group_idx": 1, "group_label": "front_vowels", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9991531372070312}, {"group_idx": 12, "group_label": "nasals", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7814053893089294}, {"group_idx": 7, "group_label": "voiced_stops", "start_ms": 165.17391967773438, "end_ms": 198.2086944580078, "confidence": 0.4964541494846344}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 198.2086944580078, "end_ms": 231.24346923828125, "confidence": 0.993299126625061}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.21188485622406006}, {"group_idx": 12, "group_label": "nasals", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.5997515320777893}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5166441202163696}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.9326215386390686}, {"group_idx": 12, "group_label": "nasals", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.748111367225647}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 561.59130859375, "end_ms": 627.660888671875, "confidence": 0.995503842830658}, {"group_idx": 4, "group_label": "low_vowels", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8065245151519775}, {"group_idx": 14, "group_label": "rhotics", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5473693013191223}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.15379419922828674}, {"group_idx": 6, "group_label": "voiceless_stops", "start_ms": 924.973876953125, "end_ms": 991.0435180664062, "confidence": 0.9740506410598755}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.7481966018676758}, {"group_idx": 9, "group_label": "voiced_fricatives", "start_ms": 1040.595703125, "end_ms": 1139.7000732421875, "confidence": 0.9575645327568054}, {"group_idx": 13, "group_label": "laterals", "start_ms": 1172.7347412109375, "end_ms": 1205.76953125, "confidence": 0.8053812384605408}, {"group_idx": 1, "group_label": "front_vowels", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.9730117917060852}, {"group_idx": 12, "group_label": "nasals", "start_ms": 1271.839111328125, "end_ms": 1387.4608154296875, "confidence": 0.540493369102478}, {"group_idx": 4, "group_label": "low_vowels", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.1977187544107437}, {"group_idx": 7, "group_label": "voiced_stops", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.460404634475708}, {"group_idx": 2, "group_label": "central_vowels", "start_ms": 1618.704345703125, "end_ms": 1684.77392578125, "confidence": 0.5910724997520447}, {"group_idx": 12, "group_label": "nasals", "start_ms": 1750.843505859375, "end_ms": 1800.3956298828125, "confidence": 0.1525062620639801}, {"group_idx": 0, "group_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07381139695644379}], 
-        "words_ts": [{"word": "in", "start_ms": 33.03478240966797, "end_ms": 82.58695983886719, "confidence": 0.8813219666481018, "ph66": [4, 53], "ipa": ["ɪ", "n"]}, {"word": "being", "start_ms": 181.69129943847656, "end_ms": 396.4173889160156, "confidence": 0.6953825578093529, "ph66": [29, 2, 4, 55], "ipa": ["b", "i:", "ɪ", "ŋ"]}, {"word": "comparatively", "start_ms": 429.4521789550781, "end_ms": 1271.839111328125, "confidence": 0.6755372906724612, "ph66": [32, 8, 52, 28, 20, 59, 8, 30, 4, 44, 56, 1], "ipa": ["k", "ə", "m", "p", "æ", "ɹ", "ə", "t", "ɪ", "v", "l", "i"]}, {"word": "modern", "start_ms": 1354.4261474609375, "end_ms": 1783.8782958984375, "confidence": 0.4999569676816463, "ph66": [52, 19, 31, 9, 53], "ipa": ["m", "a:", "d", "ɚ", "n"]}`
-        
-
-        and `select_ts` and `select_key` are used to specify which timestamps to align.
-        '''
-        aligned_ts = segment_ts_dict[select_ts]
-        # first sort by start_ms
-        aligned_ts.sort(key=lambda x: x["start_ms"])
-
-        
-        if total_frames is None:
-            total_frames = self.ceil((segment_ts_dict["end"] - segment_ts_dict["start"]) * 1000 / ms_per_frame)
-
-        framewise_label = []
-
-        # fill with gap frames
-        if total_frames is not None:
-            framewise_label = [gap_fill_frame_value] * total_frames
-
-        
-        for ts_item in aligned_ts:
-            #print("Processing timestamp item:", ts_item)
-            framewise_start_index = max(int(max(0.0, ts_item["start_ms"]-(ms_per_frame / 2)) / ms_per_frame)-gap_intolerance, 0)
-            framewise_end_index = min(self.ceil(ts_item["end_ms"] / ms_per_frame)+gap_intolerance, total_frames)
-            #print(f"Filling frames {framewise_start_index} to {framewise_end_index} for timestamp item", ts_item)
-            for frame_i in range(framewise_start_index, framewise_end_index):
-                if framewise_label[frame_i]==gap_fill_frame_value or (frame_i > framewise_start_index+gap_intolerance):
-                    
-                    if select_key not in ts_item:
-                        raise ValueError(f"select_key '{select_key}' not found in timestamp item", ts_item)
-                    framewise_label[frame_i] = ts_item[select_key]
-
-        
-        return framewise_label
 
 def process_sentence(transcription, audio_path, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", lang="en-us", duration_max=10, ts_out_path=None, device="cpu"):
 

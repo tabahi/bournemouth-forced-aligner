@@ -81,233 +81,10 @@ class ViterbiDecoder:
         
         return modified_log_probs
     
-        
-    def _viterbi_decode_batch(self, log_probs_batch, ctc_paths_batch, ctc_lens_batch):
-        """
-        Vectorized Viterbi decoding for batch processing.
-        
-        Args:
-            log_probs_batch: List of log probability tensors or padded tensor [B, T_max, C]
-            ctc_paths_batch: List of CTC paths or padded tensor [B, S_max]
-            ctc_lens_batch: Tensor of CTC path lengths [B]
-        
-        Returns:
-            List of frame phoneme assignments
-        """
-        if isinstance(log_probs_batch, list):
-            # Pad sequences to same length
-            max_frames = max(lp.shape[0] for lp in log_probs_batch)
-            batch_size = len(log_probs_batch)
-            num_classes = log_probs_batch[0].shape[1]
-            device = log_probs_batch[0].device
-            
-            padded_log_probs = torch.full((batch_size, max_frames, num_classes), 
-                                        self._neg_inf, device=device)
-            frame_lens = torch.zeros(batch_size, dtype=torch.long, device=device)
-            
-            for i, lp in enumerate(log_probs_batch):
-                T = lp.shape[0]
-                padded_log_probs[i, :T] = lp
-                frame_lens[i] = T
-                
-            log_probs_batch = padded_log_probs
-        else:
-            batch_size, max_frames, _ = log_probs_batch.shape
-            device = log_probs_batch.device
-            frame_lens = torch.full((batch_size,), max_frames, device=device)
-        
-        if isinstance(ctc_paths_batch, list):
-            max_ctc_len = max(len(path) for path in ctc_paths_batch)
-            padded_paths = torch.full((batch_size, max_ctc_len), 
-                                    self.blank_id, device=device, dtype=torch.long)
-            
-            for i, path in enumerate(ctc_paths_batch):
-                padded_paths[i, :len(path)] = path
-                
-            ctc_paths_batch = padded_paths
-        
-        max_ctc_len = ctc_paths_batch.shape[1]
-        
-        # Initialize DP table [B, T, S]
-        dp = torch.full((batch_size, max_frames, max_ctc_len), 
-                        self._neg_inf, device=device, dtype=torch.float32)
-        backpointers = torch.zeros((batch_size, max_frames, max_ctc_len), 
-                                dtype=torch.long, device=device)
-        
-        # Initialize first frame for all sequences
-        batch_indices = torch.arange(batch_size, device=device)
-        dp[:, 0, 0] = log_probs_batch[batch_indices, 0, ctc_paths_batch[:, 0]]
-        
-        # Initialize second state where applicable
-        valid_second = ctc_lens_batch > 1
-        if valid_second.any():
-            dp[valid_second, 0, 1] = log_probs_batch[valid_second, 0, ctc_paths_batch[valid_second, 1]]
-        
-        # Precompute transition masks [B, S]
-        can_advance = torch.zeros((batch_size, max_ctc_len), dtype=torch.bool, device=device)
-        can_skip = torch.zeros((batch_size, max_ctc_len), dtype=torch.bool, device=device)
-        
-        can_advance[:, 1:] = True
-        for b in range(batch_size):
-            for s in range(2, ctc_lens_batch[b]):
-                if ctc_paths_batch[b, s] != ctc_paths_batch[b, s-2]:
-                    can_skip[b, s] = True
-        
-        # Forward pass
-        for t in range(1, max_frames):
-            # Get log probs for current frame [B, S]
-            frame_log_probs = log_probs_batch[batch_indices[:, None], 
-                                            t, 
-                                            ctc_paths_batch]
-            
-            prev_dp = dp[:, t-1, :]  # [B, S]
-            
-            # Stay transitions [B, S]
-            stay_scores = prev_dp + frame_log_probs
-            
-            # Advance transitions [B, S]
-            advance_scores = torch.full_like(stay_scores, self._neg_inf)
-            advance_scores[:, 1:] = prev_dp[:, :-1] + frame_log_probs[:, 1:]
-            
-            # Skip transitions [B, S]
-            skip_scores = torch.full_like(stay_scores, self._neg_inf)
-            skip_scores[:, 2:] = torch.where(
-                can_skip[:, 2:],
-                prev_dp[:, :-2] + frame_log_probs[:, 2:],
-                self._neg_inf
-            )
-            
-            # Stack all transitions [B, S, 3]
-            all_scores = torch.stack([stay_scores, advance_scores, skip_scores], dim=-1)
-            
-            # Create previous state indices [B, S, 3]
-            state_indices = torch.arange(max_ctc_len, device=device)[None, :, None]
-            all_prev_states = torch.stack([
-                state_indices.expand(batch_size, -1, -1).squeeze(-1),
-                (state_indices - 1).expand(batch_size, -1, -1).squeeze(-1),
-                (state_indices - 2).expand(batch_size, -1, -1).squeeze(-1)
-            ], dim=-1)
-            
-            # Mask invalid transitions [B, S, 3]
-            transition_mask = torch.stack([
-                torch.ones((batch_size, max_ctc_len), dtype=torch.bool, device=device),
-                can_advance,
-                can_skip
-            ], dim=-1)
-            
-            all_scores = torch.where(transition_mask, all_scores, self._neg_inf)
-            
-            # Find best transitions [B, S]
-            best_transitions = torch.argmax(all_scores, dim=-1)
-            
-            # Update DP table
-            dp[:, t, :] = torch.gather(all_scores, -1, best_transitions.unsqueeze(-1)).squeeze(-1)
-            backpointers[:, t, :] = torch.gather(all_prev_states, -1, best_transitions.unsqueeze(-1)).squeeze(-1)
-        
-        # Backtrack for each sequence
-        results = []
-        for b in range(batch_size):
-            T = frame_lens[b]
-            ctc_len = ctc_lens_batch[b]
-            
-            # Find best final state
-            final_scores = dp[b, T-1, :ctc_len]
-            valid_mask = final_scores > self._neg_inf
-            
-            if valid_mask.any():
-                valid_indices = torch.where(valid_mask)[0]
-                final_state = valid_indices[torch.argmax(final_scores[valid_indices])]
-            else:
-                final_state = torch.argmax(final_scores)
-            
-            # Backtrack
-            path_states = torch.zeros(T, dtype=torch.long, device=device)
-            path_states[T-1] = final_state
-            
-            for t in range(T-2, -1, -1):
-                path_states[t] = backpointers[b, t+1, path_states[t+1]]
-            
-            frame_phonemes = ctc_paths_batch[b, path_states]
-            results.append(frame_phonemes)
-        
-        return results
 
-    def _detect_silence_segments_batch(self, log_probs_batch):
-        """
-        Vectorized silence detection for batch processing.
-        
-        Args:
-            log_probs_batch: Tensor [B, T, C] or list of tensors
-            
-        Returns:
-            List of silence segment lists for each batch item
-        """
-        if isinstance(log_probs_batch, list):
-            return [self._detect_silence_segments(lp) for lp in log_probs_batch]
-        
-        batch_size, num_frames, num_classes = log_probs_batch.shape
-        device = log_probs_batch.device
-        
-        if self.silence_id >= num_classes:
-            return [[] for _ in range(batch_size)]
-        
-        sliding_frames = self.silence_anchors
-        
-        if num_frames < sliding_frames:
-            return [[] for _ in range(batch_size)]
-        
-        # Calculate sliding window averages using convolution [B, T-window+1, C]
-        window_avg = F.avg_pool1d(
-            log_probs_batch.transpose(1, 2),  # [B, C, T]
-            kernel_size=sliding_frames,
-            stride=1
-        ).transpose(1, 2)  # [B, T-window+1, C]
-        
-        # Get top-2 predictions [B, T-window+1, 2]
-        top_values, top_indices = torch.topk(window_avg, k=min(2, num_classes), dim=-1)
-        
-        # Determine predicted class (use second if first is blank)
-        predicted_class = top_indices[:, :, 0]  # [B, T-window+1]
-        is_blank = predicted_class == self.blank_id
-        
-        if top_indices.shape[-1] > 1:
-            predicted_class = torch.where(is_blank, top_indices[:, :, 1], predicted_class)
-        
-        # Find silence windows [B, T-window+1]
-        is_silence = predicted_class == self.silence_id
-        
-        # Extract segments for each batch item
-        all_segments = []
-        for b in range(batch_size):
-            segments = []
-            silence_mask = is_silence[b].cpu().numpy()
-            
-            in_silence = False
-            silence_start = 0
-            
-            for i, is_sil in enumerate(silence_mask):
-                center_frame = i + sliding_frames // 2
-                
-                if is_sil and not in_silence:
-                    in_silence = True
-                    silence_start = i
-                elif not is_sil and in_silence:
-                    in_silence = False
-                    silence_end = center_frame
-                    if silence_end - silence_start >= self.silence_anchors:
-                        segments.append((silence_start, silence_end))
-            
-            if in_silence:
-                silence_end = num_frames
-                if silence_end - silence_start >= self.silence_anchors:
-                    segments.append((silence_start, silence_end))
-            
-            all_segments.append(segments)
-        
-        return all_segments
-        
+
     def decode_with_forced_alignment(self, log_probs, true_sequence, return_scores=False, 
-                                   boost_targets=True, enforce_minimum=True, enforce_all_targets=True, anchor_pauses=True):
+                                   boost_targets=True, enforce_minimum=True, anchor_pauses=True):
         """
         Decode that ensures all target phonemes are aligned.
         
@@ -317,7 +94,7 @@ class ViterbiDecoder:
             return_scores: Whether to return alignment scores
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
-            enforce_all_targets: Whether to enforce all target phonemes to be present
+            
             anchor_pauses: Whether anchor the search paths at silences, to segment the search.
         Returns:
             frame_phonemes: Frame-level phoneme assignments
@@ -327,15 +104,18 @@ class ViterbiDecoder:
             raise ValueError("Blank ID not set. Call set_blank_id first.")
         
         seq_len = true_sequence.shape[0]
+        
         num_frames = log_probs.shape[0]
         device = log_probs.device
+        true_sequence_idx = torch.arange(seq_len, device=device)
         
         if seq_len == 0:
             frame_phonemes = torch.full((num_frames,), self.blank_id, dtype=torch.long, device=device)
+            frame_phonemes_idx = torch.full((num_frames,), -1, dtype=torch.long, device=device)
             if return_scores:
                 alignment_score = log_probs[:, self.blank_id].sum()
-                return frame_phonemes, alignment_score
-            return frame_phonemes
+                return frame_phonemes, frame_phonemes_idx, alignment_score
+            return frame_phonemes, frame_phonemes_idx, None
         
         # Apply probability modifications if requested
         modified_log_probs = log_probs.clone()
@@ -346,99 +126,48 @@ class ViterbiDecoder:
         if enforce_minimum:
             modified_log_probs = self._enforce_minimum_probabilities(modified_log_probs, true_sequence)
         
-        # Use segmented Viterbi if anchor_pauses is enabled and we have silence_id
+        # Anchor pauses by boosting blank probability at detected silence frames
         if anchor_pauses and self.silence_id is not None:
-            frame_phonemes = self._segmented_viterbi_decode(modified_log_probs, true_sequence)
+            silence_segments = self._detect_silence_segments(modified_log_probs)
+            if silence_segments:
+                modified_log_probs = self._anchor_silence_in_log_probs(modified_log_probs, silence_segments)
+
+        # Create CTC path: blank + phoneme + blank + phoneme + ... + blank
+        ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
+
+        ctc_path_true_idx = ctc_path.clone()
+        ctc_path_true_idx[::2] = -1  # Initialize blanks with -1 (no target index)
+
+        ctc_path[::2] = self.blank_id  # Even indices are blanks
+        ctc_path[1::2] = true_sequence  # Odd indices are phonemes
+        ctc_path_true_idx[1::2] = true_sequence_idx  # Keep track of which phoneme index corresponds to each position in the CTC path
+        ctc_len = len(ctc_path)
+
+        # Use diagonal band constraint for long sequences to prevent alignment
+        # from rushing ahead or lagging behind. Band width is proportional to
+        # the CTC path length — generous enough for natural variation but tight
+        # enough to enforce pacing.
+        if anchor_pauses and ctc_len > 60:
+            band_width = max(ctc_len // 3, 30)
         else:
-            # Create CTC path: blank + phoneme + blank + phoneme + ... + blank
-            ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
-            ctc_path[::2] = self.blank_id  # Even indices are blanks
-            ctc_path[1::2] = true_sequence  # Odd indices are phonemes
-            ctc_len = len(ctc_path)
-            
-            # Run standard Viterbi with modified probabilities
-            frame_phonemes = self._viterbi_decode(modified_log_probs, ctc_path, ctc_len)
+            band_width = 0
+
+        # Run standard Viterbi with modified probabilities
+        frame_phonemes, frame_phonemes_idx = self._viterbi_decode(modified_log_probs, ctc_path, ctc_len, ctc_path_true_idx, band_width=band_width)
         
+        ''' removed due to bad logic
         # Post-process to ensure all target phonemes appear
         if enforce_all_targets:
-            frame_phonemes = self._ensure_all_phonemes_aligned(
-                frame_phonemes, true_sequence, modified_log_probs
+            frame_phonemes, frame_phonemes_idx = self._ensure_all_phonemes_aligned(
+                frame_phonemes, frame_phonemes_idx, true_sequence, modified_log_probs
             )
+        '''
 
         if return_scores:
             alignment_score = self._calculate_alignment_score(log_probs, frame_phonemes)
-            return frame_phonemes, alignment_score
+            return frame_phonemes, frame_phonemes_idx, alignment_score
         
-        return frame_phonemes
-    
-    def _segmented_viterbi_decode(self, log_probs, true_sequence):
-        """
-        Segmented Viterbi decoding that breaks the search at long pauses.
-        
-        Args:
-            log_probs: Log probabilities tensor [T, C]
-            true_sequence: Target phoneme sequence [S]
-            
-        Returns:
-            frame_phonemes: Frame-level phoneme assignments
-        """
-        device = log_probs.device
-        num_frames = log_probs.shape[0]
-        
-        # Detect long silence segments
-        silence_segments = self._detect_silence_segments(log_probs)
-        
-        if not silence_segments:
-            # No long silences found, use standard Viterbi
-            seq_len = true_sequence.shape[0]
-            ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
-            ctc_path[::2] = self.blank_id
-            ctc_path[1::2] = true_sequence
-            return self._viterbi_decode(log_probs, ctc_path, len(ctc_path))
-        
-        # Split audio and target sequence at silence segments
-        audio_segments, target_segments = self._split_at_silences(
-            log_probs, true_sequence, silence_segments
-        )
-        
-        # Process each segment independently
-        all_frame_phonemes = []
-        
-        for i, (audio_seg, target_seg) in enumerate(zip(audio_segments, target_segments)):
-            start_frame, end_frame, seg_log_probs = audio_seg
-            target_start, target_end, seg_target = target_seg
-            
-            if seg_target.shape[0] == 0:
-                # Empty target sequence - fill with blanks
-                seg_frames = torch.full((end_frame - start_frame,), self.blank_id, 
-                                      dtype=torch.long, device=device)
-            else:
-                # Create CTC path for this segment
-                seq_len = seg_target.shape[0]
-                ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
-                ctc_path[::2] = self.blank_id
-                ctc_path[1::2] = seg_target
-                
-                # Run Viterbi on this segment
-                seg_frames = self._viterbi_decode(seg_log_probs, ctc_path, len(ctc_path))
-            
-            all_frame_phonemes.append(seg_frames)
-            
-            # Add silence frames between segments (except after last segment)
-            if i < len(silence_segments):
-                silence_start, silence_end = silence_segments[i]
-                silence_frames = torch.full((silence_end - silence_start,), self.silence_id,
-                                          dtype=torch.long, device=device)
-                all_frame_phonemes.append(silence_frames)
-        
-        # Concatenate all segments
-        if all_frame_phonemes:
-            frame_phonemes = torch.cat(all_frame_phonemes, dim=0)
-        else:
-            # No segments found - return all blanks
-            frame_phonemes = torch.full((num_frames,), self.blank_id, dtype=torch.long, device=device)
-        
-        return frame_phonemes
+        return frame_phonemes, frame_phonemes_idx, None
     
     def _detect_silence_segments(self, log_probs):
         """
@@ -506,101 +235,82 @@ class ViterbiDecoder:
         
         #print(f"Detected {len(silence_segments)} silence segments for anchoring.")
         return silence_segments
-    
-    def _split_at_silences(self, log_probs, true_sequence, silence_segments):
+
+    def _anchor_silence_in_log_probs(self, log_probs, silence_segments, boost=10.0):
         """
-        Split audio and target sequence at silence segments.
-        
+        Boost blank probability at detected silence frames so the Viterbi
+        naturally stays on blank states during pauses, without splitting
+        the target sequence.
+
         Args:
             log_probs: Log probabilities tensor [T, C]
-            true_sequence: Target phoneme sequence [S]
             silence_segments: List of (start_frame, end_frame) tuples
-            
+            boost: How much to boost blank probability (in log space before re-normalization)
+
         Returns:
-            audio_segments: List of (start_frame, end_frame, log_probs_segment) tuples
-            target_segments: List of (target_start, target_end, target_segment) tuples
+            Modified log probabilities
         """
-        device = log_probs.device
-        num_frames = log_probs.shape[0]
-        
-        # Calculate non-silence segments
-        audio_segments = []
-        current_start = 0
-        
-        for silence_start, silence_end in silence_segments:
-            if current_start < silence_start:
-                # Add segment before this silence
-                seg_log_probs = log_probs[current_start:silence_start]
-                audio_segments.append((current_start, silence_start, seg_log_probs))
-            current_start = silence_end
-        
-        # Add final segment after last silence
-        if current_start < num_frames:
-            seg_log_probs = log_probs[current_start:num_frames]
-            audio_segments.append((current_start, num_frames, seg_log_probs))
-        
-        # Split target sequence proportionally
-        target_segments = []
-        total_non_silence_frames = sum(end - start for start, end, _ in audio_segments)
-        
-        if total_non_silence_frames == 0:
-            # All frames are silence
-            for _ in audio_segments:
-                empty_target = torch.tensor([], dtype=torch.long, device=device)
-                target_segments.append((0, 0, empty_target))
-        else:
-            target_pos = 0
-            target_len = true_sequence.shape[0]
-            
-            for start_frame, end_frame, seg_log_probs in audio_segments:
-                segment_frames = end_frame - start_frame
-                # Proportional allocation of target phonemes
-                target_proportion = segment_frames / total_non_silence_frames
-                target_count = max(0, min(target_len - target_pos, 
-                                        round(target_proportion * target_len)))
-                
-                target_end = min(target_pos + target_count, target_len)
-                seg_target = true_sequence[target_pos:target_end]
-                target_segments.append((target_pos, target_end, seg_target))
-                target_pos = target_end
-        
-        return audio_segments, target_segments
-    
-    def _viterbi_decode(self, log_probs, ctc_path, ctc_len):
-        """Standard Viterbi decoding implementation."""
+        modified = log_probs.clone()
+        for start, end in silence_segments:
+            modified[start:end, self.blank_id] += boost
+            modified[start:end] = F.log_softmax(modified[start:end], dim=-1)
+        return modified
+
+    def _viterbi_decode(self, log_probs, ctc_path, ctc_len, ctc_path_true_idx=None, band_width=0):
+        """
+        Standard Viterbi decoding implementation.
+
+        Args:
+            log_probs: Log probabilities tensor [T, C]
+            ctc_path: CTC path tensor [ctc_len]
+            ctc_len: Length of CTC path
+            ctc_path_true_idx: Optional mapping from CTC states to target phoneme indices
+            band_width: Sakoe-Chiba band width for diagonal constraint (0 = disabled).
+                When > 0, restricts valid CTC states at each frame to a band around the
+                expected diagonal position, preventing the alignment from rushing ahead
+                or lagging behind. Useful for long sequences.
+        """
         num_frames = log_probs.shape[0]
         device = log_probs.device
-        
+
         # Initialize DP table
         dp = torch.full((num_frames, ctc_len), self._neg_inf, device=device, dtype=torch.float32)
         backpointers = torch.zeros((num_frames, ctc_len), dtype=torch.long, device=device)
-        
+
+        # Precompute diagonal band limits (Sakoe-Chiba band)
+        if band_width > 0 and num_frames > 1 and ctc_len > 1:
+            pace = (ctc_len - 1) / (num_frames - 1)
+            state_indices = torch.arange(ctc_len, device=device, dtype=torch.float32)
+            use_band = True
+        else:
+            use_band = False
+
         # Initialize first frame
         dp[0, 0] = log_probs[0, self.blank_id]
         if ctc_len > 1:
             dp[0, 1] = log_probs[0, ctc_path[1]]
-        
+
         # Precompute transition masks
         can_advance = torch.zeros(ctc_len, dtype=torch.bool, device=device)
         can_skip = torch.zeros(ctc_len, dtype=torch.bool, device=device)
-        
+
         can_advance[1:] = True
         for s in range(2, ctc_len):
             if ctc_path[s] != ctc_path[s-2]:
                 can_skip[s] = True
-        
+
         # Forward pass
         for t in range(1, num_frames):
             frame_log_probs = log_probs[t, ctc_path]
             prev_dp = dp[t-1]
-            
+
             # Stay transitions
             stay_scores = prev_dp + frame_log_probs
-            
+
             # Advance transitions
             advance_scores = torch.full_like(stay_scores, self._neg_inf)
             advance_scores[1:] = prev_dp[:-1] + frame_log_probs[1:]
-            
+
             # Skip transitions
             skip_scores = torch.full_like(stay_scores, self._neg_inf)
             skip_scores[2:] = torch.where(
@@ -608,7 +318,7 @@ class ViterbiDecoder:
                 prev_dp[:-2] + frame_log_probs[2:],
                 self._neg_inf
             )
-            
+
             # Find best transitions
             all_scores = torch.stack([stay_scores, advance_scores, skip_scores], dim=1)
             all_prev_states = torch.stack([
@@ -616,20 +326,26 @@ class ViterbiDecoder:
                 torch.arange(ctc_len, device=device) - 1,
                 torch.arange(ctc_len, device=device) - 2
             ], dim=1)
-            
+
             # Mask invalid transitions
             transition_mask = torch.stack([
                 torch.ones(ctc_len, dtype=torch.bool, device=device),  # Can always stay
-                can_advance, 
+                can_advance,
                 can_skip
             ], dim=1)
-            
+
             all_scores = torch.where(transition_mask, all_scores, self._neg_inf)
-            
+
             # Update DP table
             best_transitions = torch.argmax(all_scores, dim=1)
             dp[t] = all_scores[torch.arange(ctc_len), best_transitions]
             backpointers[t] = all_prev_states[torch.arange(ctc_len), best_transitions]
+
+            # Apply diagonal band constraint: mask out states outside the band
+            if use_band:
+                center = t * pace
+                outside_band = (state_indices < center - band_width) | (state_indices > center + band_width)
+                dp[t, outside_band] = self._neg_inf
         
         # Find best final state
         final_scores = dp[num_frames-1]
@@ -648,9 +364,13 @@ class ViterbiDecoder:
             path_states[t] = backpointers[t+1, path_states[t+1]]
         
         frame_phonemes = ctc_path[path_states]
-        return frame_phonemes
+        if ctc_path_true_idx is not None:
+            # Map back to true phoneme indices if provided
+            frame_phonemes_idx = ctc_path_true_idx[path_states]
+            return frame_phonemes, frame_phonemes_idx
+        else: return frame_phonemes, None
     
-    def _ensure_all_phonemes_aligned(self, frame_phonemes, target_sequence, log_probs):
+    def _ensure_all_phonemes_aligned___deprecated(self, frame_phonemes, frame_phonemes_idx, target_sequence, log_probs):
         """
         Post-processing step to ensure all target phonemes appear in the alignment.
         If any phonemes are missing, assign them to the frames where they have highest probability.
@@ -670,13 +390,14 @@ class ViterbiDecoder:
         missing_phonemes = target_set - aligned_phonemes
         
         if not missing_phonemes:
-            return frame_phonemes  # All phonemes already aligned
+            return frame_phonemes, frame_phonemes_idx  # All phonemes already aligned
         
         #print(f"Warning: {len(missing_phonemes)} phonemes missing from alignment. Force-aligning them.")
         
         # For each missing phoneme, find the best frame(s) to assign it
         modified_alignment = frame_phonemes.clone()
-        
+        modified_alignment_idx = frame_phonemes_idx.clone()
+
         for missing_ph in missing_phonemes:
             if missing_ph >= log_probs.shape[1]:
                 continue
@@ -691,6 +412,7 @@ class ViterbiDecoder:
             # Strategy 1: Replace a blank frame if possible
             if modified_alignment[best_frame] == self.blank_id:
                 modified_alignment[best_frame] = missing_ph
+                modified_alignment_idx[best_frame] = target_sequence.tolist().index(missing_ph)
             else:
                 # Strategy 2: Find nearby blank frames
                 search_radius = min(5, num_frames // 10)  # Search within small radius
@@ -719,8 +441,8 @@ class ViterbiDecoder:
         return total_score
 
     
-    # Modified assort_frames method for the ViterbiDecoder - 2025-08-07
-    def assort_frames(self, frame_phonemes, max_blanks=10):
+    # Modified assort_frames method for the ViterbiDecoder - 2026-02-10
+    def assort_frames(self, frame_phonemes, frame_phonemes_idx, max_blanks=10):
         """
         Assort_frames that handles forced phoneme alignments better.
         """
@@ -731,6 +453,9 @@ class ViterbiDecoder:
         
         if not isinstance(frame_phonemes, torch.Tensor):
             frame_phonemes = torch.tensor(frame_phonemes, device=device)
+        
+        if not isinstance(frame_phonemes_idx, torch.Tensor):
+            frame_phonemes_idx = torch.tensor(frame_phonemes_idx, device=device)
         
         # Find all non-blank segments
         #is_blank = frame_phonemes == self.blank_id
@@ -749,7 +474,12 @@ class ViterbiDecoder:
             end_idx = transition_indices[i + 1].item() if i + 1 < len(transition_indices) else len(frame_phonemes)
             
             segment_phoneme = frame_phonemes[start_idx].item()
-            
+            segment_phoneme_idx = frame_phonemes_idx[start_idx].item()
+            if segment_phoneme_idx == -1:
+                for idx in range(start_idx, end_idx):
+                    if frame_phonemes_idx[idx].item() != -1:
+                        segment_phoneme_idx = frame_phonemes_idx[idx].item()
+                        break
         
             # Skip overly long blank segments
             if segment_phoneme == self.blank_id:
@@ -760,11 +490,11 @@ class ViterbiDecoder:
                 else:
                     # If ignore_noise is False, include long blank segments as noise
                     if segment_length > max_blanks:
-                        framestamps.append((segment_phoneme, start_idx, end_idx))
+                        framestamps.append((segment_phoneme, start_idx, end_idx, segment_phoneme_idx))  # -1 for target_seq_idx, to be filled later if needed
             
             # For non-blank segments, always include them (even if very short)
             if segment_phoneme != self.blank_id:
-                framestamps.append((segment_phoneme, start_idx, end_idx))
+                framestamps.append((segment_phoneme, start_idx, end_idx, segment_phoneme_idx))  # -1 for target_seq_idx, to be filled later if needed
                 
         
         return framestamps
@@ -780,7 +510,7 @@ class AlignmentUtils: # 2025-09-10
         Args:
             blank_id: ID of the blank token
             silence_id: ID of the silence token
-            silence_anchors: Number of silence frames to anchor pauses (slice at silences for easy alignment). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
+            silence_anchors: Number of silence frames to anchor pauses (slice at silences for easy alignment). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences.
         '''
         self.blank_id = blank_id
         self.silence_id = silence_id
@@ -790,7 +520,7 @@ class AlignmentUtils: # 2025-09-10
     
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
                          true_seqs_lens=None, forced_alignment=True, 
-                         boost_targets=True, enforce_minimum=True, enforce_all_targets=True):
+                         boost_targets=True, enforce_minimum=True, ):
         """
         Decode alignments with better forced alignment.
         
@@ -802,9 +532,9 @@ class AlignmentUtils: # 2025-09-10
             forced_alignment: Whether to use forced alignment
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
-            enforce_all_targets: Whether to enforce all target phonemes to be present
         Returns:
-            List of frame-level alignments
+            List of frame-level alignments, tuples of (phoneme_idx, start_frame, end_frame, target_seq_idx)
+            where target_seq_idx is the index of the phoneme in the true_seqs (-1 for blanks or unmatched)
         """
         batch_size = log_probs.shape[0]
         device = log_probs.device
@@ -828,19 +558,19 @@ class AlignmentUtils: # 2025-09-10
 
                     if true_seq_len == 0:
                         # Empty sequence - fill with blanks
-                        all_frame_phonemes.append(torch.tensor([], device=device, dtype=torch.long))
+                        all_frame_phonemes.append((torch.tensor([], device=device, dtype=torch.long), torch.tensor([], device=device, dtype=torch.long)))
                         continue
 
                     # Decode with forced alignment and silence anchoring
-                    frame_phonemes = self.viterbi_decoder.decode_with_forced_alignment(
+                    frame_phonemes, frame_phonemes_idx, _ = self.viterbi_decoder.decode_with_forced_alignment(
                         log_probs_seq, true_seq, return_scores=False,
-                        boost_targets=boost_targets, enforce_minimum=enforce_minimum,
-                        enforce_all_targets=enforce_all_targets, anchor_pauses=self.silence_anchors > 0
+                        boost_targets=boost_targets, enforce_minimum=enforce_minimum, anchor_pauses=self.silence_anchors > 0
                     )
-                    all_frame_phonemes.append(frame_phonemes)
+                    all_frame_phonemes.append((frame_phonemes, frame_phonemes_idx))
 
-                # Apply assort_frames
-                assorted = [self.viterbi_decoder.assort_frames(fp) for fp in all_frame_phonemes]
+                # Apply assort_frames and add target sequence indices
+                assorted = [self.viterbi_decoder.assort_frames(fp, fpi) for fp, fpi in all_frame_phonemes]
+                
                 return assorted
         
         else:
@@ -856,6 +586,8 @@ class AlignmentUtils: # 2025-09-10
             
             assorted = []
             for frame_phonemes_seq in frame_phonemes:
-                assorted.append(self.viterbi_decoder.assort_frames(frame_phonemes_seq))
+
+                frames = self.viterbi_decoder.assort_frames(frame_phonemes_seq, torch.full_like(frame_phonemes_seq, -1))
+                assorted.extend(frames)
             return assorted
 

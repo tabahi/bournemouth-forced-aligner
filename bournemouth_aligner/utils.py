@@ -2,6 +2,153 @@
 Convert ts output dict to textgrid that can be imported into Praat
 '''
 
+
+import torch
+
+def weighted_pool_embeddings(embeddings, log_probs, framestamps):
+    """
+    Average Weighted by confidence embeddings over frame ranges for each phoneme timestamp.
+    
+    Args:
+        embeddings: Tensor of shape [T, D] where T is number of frames and D is embedding dimension
+        log_probs:  log_probs: Log probabilities [T, C], can pass either phoneme or group log_probs
+        timestamps: List of tuples (phoneme_idx, start_frame, end_frame, start_ms, end_ms)
+    
+    Returns:
+        pooled_embeddings: Tensor of shape [N, D] where N is length of timestamps
+    """
+    if len(framestamps) == 0:
+        return torch.empty(0, embeddings.shape[1], device=embeddings.device)
+    
+    assert embeddings.dim() == 2, "Embeddings should be of shape [T, D] remove the batch dim"
+    assert log_probs.shape[0] == embeddings.shape[0], "Log probabilities and embeddings must have the same number of frames"
+
+    probs = torch.exp(log_probs.to(embeddings.device))
+    pooled_embeddings = []
+    
+    for phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence, start_ms, end_ms in framestamps:
+        # Clamp frame indices to valid range
+        start_frame = max(0, int(start_frame))
+        end_frame = min(embeddings.shape[0], int(end_frame))
+        
+        if start_frame < end_frame:
+            # Get segment embeddings and confidence weights
+            segment_embeddings = embeddings[start_frame:end_frame]  # Shape: [num_frames, D]
+            confidence_weights = probs[start_frame:end_frame, phoneme_idx]  # Shape: [num_frames]
+            
+            # Compute weighted average
+            # Expand weights to match embedding dimensions: [num_frames, 1] 
+            weights_expanded = confidence_weights.unsqueeze(1)  # Shape: [num_frames, 1]
+            
+            # Weighted sum: multiply each embedding by its confidence weight
+            weighted_embeddings = segment_embeddings * weights_expanded  # Shape: [num_frames, D]
+            
+            # Sum along frame dimension and normalize by total weight
+            sum_weights = confidence_weights.sum()  # Scalar
+            if sum_weights > 0:
+                pooled_embedding = weighted_embeddings.sum(dim=0) / sum_weights  # Shape: [D]
+            else:
+                # Fallback to uniform average if all weights are zero
+                pooled_embedding = segment_embeddings.mean(dim=0)  # Shape: [D]
+                
+            pooled_embeddings.append(pooled_embedding)
+        else:
+            # Handle edge case where start_frame >= end_frame
+            # Use a zero embedding or the closest frame
+            if start_frame < embeddings.shape[0]:
+                pooled_embeddings.append(embeddings[start_frame])
+            else:
+                # If completely out of bounds, use zero embedding
+                pooled_embeddings.append(torch.zeros(embeddings.shape[1], device=embeddings.device))
+    
+    # Stack all pooled embeddings
+    pooled_embeddings = torch.stack(pooled_embeddings, dim=0)  # Shape: [N, D]
+    
+    return pooled_embeddings
+
+def _calculate_confidences(log_probs, framestamps):
+    """
+    Calculate confidence scores for each timestamped phoneme/group.
+
+    Args:
+        log_probs: Log probabilities [T, C]
+        framestamps: List of (phoneme_idx, start_frame, end_frame, target_seq_idx) tuples
+
+    Returns:
+        List of (phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence) tuples
+    """
+    probs = torch.exp(log_probs)
+    updated_tuples = []
+
+    for phoneme_idx, start_frame, end_frame, target_seq_idx in framestamps:
+        # Clamp to valid range
+        start_frame = max(0, int(start_frame))
+        end_frame = min(log_probs.shape[0], int(end_frame))
+        avg_confidence = probs[start_frame, phoneme_idx]
+        
+        if start_frame < end_frame and phoneme_idx < log_probs.shape[1]:
+
+            half_confidence = avg_confidence/2
+            #if (half_confidence < 0.01): half_confidence = avg_confidence*2
+            last_good_frame = start_frame
+            total_good_frames = 1
+
+            # since there can be blanks after the first one, we only take probablities if at least prob > 0.5 compared to the first frame to avoid for-sure blanks
+            for f in range(start_frame+1, end_frame):
+                frame_prob = probs[f, phoneme_idx]
+                if (frame_prob > half_confidence) or (frame_prob > 0.1):
+                    avg_confidence += frame_prob
+                    last_good_frame = f
+                    total_good_frames += 1
+            if total_good_frames > 1:
+                avg_confidence /= total_good_frames
+                end_frame = min(log_probs.shape[0], int(last_good_frame + 1 )) # end_frame is exclusive, so we add 1
+
+                max_confidence = probs[start_frame:end_frame, phoneme_idx].max()
+                if avg_confidence < max_confidence/2:
+                    #print(avg_confidence, max_confidence)
+                    avg_confidence = max_confidence
+            
+        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence.item()))
+
+    return updated_tuples
+
+def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate):
+    '''
+    Args:
+        framestamps: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence)
+        spectral_length: Number of spectral frames (int)
+        start_time: Start time of the segment in seconds, used to offset the timestamps
+        wav_len: Length of the audio segment in samples, used to estimate the duration per spectral-frame
+        sample_rate: Sample rate of the audio, used to convert frames to milliseconds
+    Returns:
+        updated_tuples: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence, start_ms, end_ms)
+    '''
+    duration_in_seconds = wav_len / sample_rate
+    duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
+
+    updated_tuples = []
+    for tup in framestamps:
+        if len(tup) == 5:
+            phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence = tup
+        else:
+            # fallback for tuples with different length
+            phoneme_idx, start_frame, end_frame = tup[:3]
+            target_seq_idx = tup[3] if len(tup) > 3 else -1
+            avg_confidence = tup[4] if len(tup) > 4 else 0.0
+
+        # Calculate start and end times in seconds
+        start_sec = start_offset_time + (start_frame * duration_per_frame)
+        end_sec = start_offset_time + (end_frame * duration_per_frame)
+        # Convert to milliseconds
+        start_ms = start_sec * 1000
+        end_ms = end_sec * 1000
+
+        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence, start_ms, end_ms))
+
+    return updated_tuples
+    
+    
 def dict_to_textgrid(data, output_file=None, include_confidence=False):
     """
     Convert a dictionary with phoneme and group timing data to TextGrid format.
