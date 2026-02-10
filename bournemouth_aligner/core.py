@@ -832,7 +832,7 @@ class PhonemeTimestampAligner:
                     print("SUCCESS: All target phonemes were aligned!")
 
             # Add any missing phonemes back in with estimated frame positions
-            if missing_target_indices:
+            if missing_target_indices and self.enforce_all_targets:
                 for target_idx in missing_target_indices:
                     target_phoneme_id = target_phoneme_ids[target_idx]
 
@@ -875,6 +875,24 @@ class PhonemeTimestampAligner:
 
                     if debug and batch_idx == 0:
                         print(f"Added missing phoneme {self.phonemizer.index_to_plabel.get(target_phoneme_id, f'UNK_{target_phoneme_id}')} at position {target_idx} with estimated frames {est_start_frame}-{est_end_frame}")
+
+            # Remove extra aligned phonemes that weren't matched to any target
+            if self.enforce_all_targets and len(frame_phonemes[batch_idx]) > len(target_phoneme_ids):
+                matched_aligned_indices = set(target_to_aligned_map.values())
+                original_len = len(frame_phonemes[batch_idx]) - len(missing_target_indices)
+
+                # Keep only matched original phonemes + appended missing phonemes
+                new_phonemes = [frame_phonemes[batch_idx][idx] for idx in range(original_len) if idx in matched_aligned_indices]
+                new_phonemes.extend(frame_phonemes[batch_idx][original_len:])
+
+                if debug and batch_idx == 0:
+                    removed_count = original_len - len(matched_aligned_indices)
+                    removed_indices = [idx for idx in range(original_len) if idx not in matched_aligned_indices]
+                    removed_labels = [self.phonemizer.index_to_plabel.get(frame_phonemes[batch_idx][idx][0], f'UNK') for idx in removed_indices]
+                    print(f"Removed {removed_count} extra aligned phonemes: {removed_labels}, kept {len(new_phonemes)} phonemes")
+
+                frame_phonemes[batch_idx] = new_phonemes
+
 
         # Calculate confidence scores
         
