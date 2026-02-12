@@ -80,7 +80,7 @@ def _calculate_confidences(log_probs, framestamps):
     probs = torch.exp(log_probs)
     updated_tuples = []
 
-    for phoneme_idx, start_frame, end_frame, target_seq_idx in framestamps:
+    for phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated in framestamps:
         # Clamp to valid range
         start_frame = max(0, int(start_frame))
         end_frame = min(log_probs.shape[0], int(end_frame))
@@ -109,33 +109,34 @@ def _calculate_confidences(log_probs, framestamps):
                     #print(avg_confidence, max_confidence)
                     avg_confidence = max_confidence
             
-        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence.item()))
+        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence.item()))
 
     return updated_tuples
 
 def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate):
     '''
     Args:
-        framestamps: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence)
+        framestamps: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence)
         spectral_length: Number of spectral frames (int)
         start_time: Start time of the segment in seconds, used to offset the timestamps
         wav_len: Length of the audio segment in samples, used to estimate the duration per spectral-frame
         sample_rate: Sample rate of the audio, used to convert frames to milliseconds
     Returns:
-        updated_tuples: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence, start_ms, end_ms)
+        updated_tuples: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
     '''
     duration_in_seconds = wav_len / sample_rate
     duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
 
     updated_tuples = []
     for tup in framestamps:
-        if len(tup) == 5:
-            phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence = tup
+        if len(tup) == 6:
+            phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence = tup
         else:
             # fallback for tuples with different length
             phoneme_idx, start_frame, end_frame = tup[:3]
             target_seq_idx = tup[3] if len(tup) > 3 else -1
-            avg_confidence = tup[4] if len(tup) > 4 else 0.0
+            is_estimated = tup[4] if len(tup) > 4 else False
+            avg_confidence = tup[5] if len(tup) > 5 else 0.0
 
         # Calculate start and end times in seconds
         start_sec = start_offset_time + (start_frame * duration_per_frame)
@@ -144,7 +145,7 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
         start_ms = start_sec * 1000
         end_ms = end_sec * 1000
 
-        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence, start_ms, end_ms))
+        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms))
 
     return updated_tuples
     
@@ -217,7 +218,7 @@ def dict_to_textgrid(data, output_file=None, include_confidence=False):
         for i, phoneme in enumerate(phoneme_data, 1):
             start_time = phoneme['start_ms'] / 1000.0
             end_time = phoneme['end_ms'] / 1000.0
-            label = phoneme['phoneme_label']
+            label = phoneme['ipa_label']
             
             textgrid_content.append(f'        intervals [{i}]:')
             textgrid_content.append(f'            xmin = {start_time}')
@@ -367,7 +368,7 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
         for i, phoneme in enumerate(phoneme_data, 1):
             start_time = phoneme['start_ms'] / 1000.0
             end_time = phoneme['end_ms'] / 1000.0
-            label = phoneme['phoneme_label']
+            label = phoneme['ipa_label']
             if include_confidence:
                 confidence = phoneme.get('confidence', 0)
                 label += f" ({confidence:.2f})"

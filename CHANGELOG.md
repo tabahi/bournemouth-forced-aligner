@@ -1,9 +1,24 @@
 # Changelog
 
 ## [0.1.8] - UNRELEASED
-- `silence_anchors` now actually works to break longer segments into chunks for better  viterbi decoding.
-- `"ipa_label"` key in `["segments"]["phoneme_ts"]` and in `["segments"]["words_ts"]`in the output dictionary denotes the original IPA phonemes from espeak-ng, instead of the reduced mapped IPA dictionary. It's helpful if you want to use the full epeak IPA dictionary after alignment.
-- Enabled mps device support for Apple silicon
+
+### Changed
+- `silence_anchors` now works correctly. It detects silence regions in the audio and matches them to SIL tokens (from punctuation) in the target sequence, splitting long segments into smaller chunks for more accurate Viterbi decoding. Set `silence_anchors` to control the sliding window size for silence detection (default: 10). Set to 0 to disable.
+- Output JSON key `phoneme_idx` renamed to `phoneme_id` in `phoneme_ts` entries.
+- Output JSON key `group_idx` renamed to `group_id` in `group_ts` entries.
+- `output_frames_key` parameter options updated: `phoneme_idx` → `phoneme_id`, `group_idx` → `group_id`.
+
+### Added
+- `ipa_label` field in `phoneme_ts` and `group_ts` output entries — contains the original espeak-ng IPA phoneme, before mapping to the reduced 66-class set. Useful when you need the full espeak IPA dictionary after alignment.
+- `is_estimated` field in `phoneme_ts` and `group_ts` entries — indicates whether a phoneme was directly aligned by Viterbi (`false`) or inserted by the coverage enforcement post-processing (`true`). Downstream tasks can use this to filter out forced insertions.
+- `coverage_analysis` per-segment output with `target_count`, `aligned_count`, `missing_count`, `extra_count`, `coverage_ratio`, `missing_phonemes`, and `extra_phonemes`.
+- `process_sentence_batch()` for batch processing multiple text-audio pairs.
+- `process_segments_batch()` for batch processing pre-segmented SRT-style segments.
+- Enabled MPS device support for Apple Silicon.
+
+### Fixed
+- Batch processing: sequence lengths are now computed before padding, preventing the decoder from aligning padding tokens as real phonemes.
+- Batch processing: coverage enforcement (`ensure_target_coverage`) is now padding-aware, ignoring padded positions.
 
 ## [0.1.7] - 2025-10-17
 - Fixed the rhotics and compound phoneme mappings in [ph66_mapper](bournemouth_aligner/ipamappers/ph66_mapper.py).
@@ -69,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
+[0.1.8]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.8
 [0.1.7]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.7
 [0.1.6]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.6
 [0.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.5

@@ -185,7 +185,7 @@ class Phonemizer:
                 words.append("<SIL>")
             elif token in ['.', '!', '?']:  # Full stop, exclamation, question - insert 2 SIL tokens
                 words.append("<SIL>")
-                words.append("<SIL>")
+                #words.append("<SIL>")
             # You can add more punctuation rules here as needed
         
         return words

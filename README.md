@@ -148,7 +148,8 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
 <summary>📋 Click to see detailed JSON output</summary>
 
 ```json
-# version 0.1.5
+# version 0.1.8
+Timestamps:
 {
     "segments": [
         {
@@ -207,51 +208,79 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
                 {
                     "phoneme_id": 29,
                     "phoneme_label": "b",
+                    "ipa_label": "b",
                     "start_ms": 33.56833267211914,
                     "end_ms": 50.35249710083008,
-                    "confidence": 0.9849503040313721
+                    "confidence": 0.9970603585243225,
+                    "is_estimated": false,
+                    "target_seq_idx": 0,
+                    "index": 0
                 },
                 {
                     "phoneme_id": 10,
                     "phoneme_label": "ʌ",
+                    "ipa_label": "ʌ",
                     "start_ms": 100.70499420166016,
                     "end_ms": 117.48916625976562,
-                    "confidence": 0.8435571193695068
+                    "confidence": 0.8809734582901001,
+                    "is_estimated": false,
+                    "target_seq_idx": 1,
+                    "index": 1
                 },
                 {
                     "phoneme_id": 58,
                     "phoneme_label": "ɾ",
+                    "ipa_label": "ɾ",
                     "start_ms": 134.27333068847656,
                     "end_ms": 151.0574951171875,
-                    "confidence": 0.3894280791282654
+                    "confidence": 0.07298105955123901,
+                    "is_estimated": false,
+                    "target_seq_idx": 2,
+                    "index": 2
                 },
                 {
                     "phoneme_id": 9,
                     "phoneme_label": "ɚ",
+                    "ipa_label": "ɚ",
                     "start_ms": 285.3308410644531,
                     "end_ms": 302.114990234375,
-                    "confidence": 0.3299962282180786
+                    "confidence": 0.18375618755817413,
+                    "is_estimated": false,
+                    "target_seq_idx": 3,
+                    "index": 3
                 },
                 {
                     "phoneme_id": 43,
                     "phoneme_label": "f",
+                    "ipa_label": "f",
                     "start_ms": 369.2516784667969,
-                    "end_ms": 386.03582763671875,
-                    "confidence": 0.9150863289833069
+                    "end_ms": 402.8199768066406,
+                    "confidence": 0.952548086643219,
+                    "is_estimated": false,
+                    "target_seq_idx": 4,
+                    "index": 4
                 },
                 {
                     "phoneme_id": 56,
                     "phoneme_label": "l",
+                    "ipa_label": "l",
                     "start_ms": 520.3091430664062,
                     "end_ms": 553.8775024414062,
-                    "confidence": 0.9060741662979126
+                    "confidence": 0.9023684859275818,
+                    "is_estimated": false,
+                    "target_seq_idx": 5,
+                    "index": 5
                 },
                 {
                     "phoneme_id": 23,
                     "phoneme_label": "aɪ",
+                    "ipa_label": "aɪ",
                     "start_ms": 604.22998046875,
                     "end_ms": 621.01416015625,
-                    "confidence": 0.21650740504264832
+                    "confidence": 0.11104730516672134,
+                    "is_estimated": false,
+                    "target_seq_idx": 6,
+                    "index": 6
                 }
             ],
             "group_ts": [
@@ -260,49 +289,70 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
                     "group_label": "voiced_stops",
                     "start_ms": 33.56833267211914,
                     "end_ms": 50.35249710083008,
-                    "confidence": 0.9911064505577087
+                    "confidence": 0.9979244470596313,
+                    "is_estimated": false,
+                    "target_seq_idx": 0,
+                    "index": 0
                 },
                 {
                     "group_id": 2,
                     "group_label": "central_vowels",
                     "start_ms": 100.70499420166016,
                     "end_ms": 117.48916625976562,
-                    "confidence": 0.8446590304374695
+                    "confidence": 0.9000658392906189,
+                    "is_estimated": false,
+                    "target_seq_idx": 1,
+                    "index": 1
                 },
                 {
                     "group_id": 14,
                     "group_label": "rhotics",
-                    "start_ms": 134.27333068847656,
+                    "start_ms": 117.48916625976562,
                     "end_ms": 151.0574951171875,
-                    "confidence": 0.28526052832603455
+                    "confidence": 0.0318431481719017,
+                    "is_estimated": false,
+                    "target_seq_idx": 2,
+                    "index": 2
                 },
                 {
                     "group_id": 2,
                     "group_label": "central_vowels",
                     "start_ms": 285.3308410644531,
                     "end_ms": 302.114990234375,
-                    "confidence": 0.7377423048019409
+                    "confidence": 0.5893039703369141,
+                    "is_estimated": false,
+                    "target_seq_idx": 3,
+                    "index": 3
                 },
                 {
                     "group_id": 8,
                     "group_label": "voiceless_fricatives",
                     "start_ms": 352.4674987792969,
                     "end_ms": 402.8199768066406,
-                    "confidence": 0.9877637028694153
+                    "confidence": 0.9883034229278564,
+                    "is_estimated": false,
+                    "target_seq_idx": 4,
+                    "index": 4
                 },
                 {
                     "group_id": 13,
                     "group_label": "laterals",
                     "start_ms": 520.3091430664062,
                     "end_ms": 553.8775024414062,
-                    "confidence": 0.9163824915885925
+                    "confidence": 0.8932946920394897,
+                    "is_estimated": false,
+                    "target_seq_idx": 5,
+                    "index": 5
                 },
                 {
                     "group_id": 5,
                     "group_label": "diphthongs",
                     "start_ms": 604.22998046875,
                     "end_ms": 621.01416015625,
-                    "confidence": 0.4117060899734497
+                    "confidence": 0.42801225185394287,
+                    "is_estimated": false,
+                    "target_seq_idx": 6,
+                    "index": 6
                 }
             ],
             "words_ts": [
@@ -310,7 +360,7 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
                     "word": "butterfly",
                     "start_ms": 33.56833267211914,
                     "end_ms": 621.01416015625,
-                    "confidence": 0.6550856615815844,
+                    "confidence": 0.585819277380194,
                     "ph66": [
                         29,
                         10,
@@ -330,7 +380,7 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
                         "aɪ"
                     ]
                 }
-            ],
+            ]
         }
     ]
 }
@@ -346,11 +396,11 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
 | `pg16` | 16 phoneme category groups (lateral, vowels, rhotics, etc.) | Grouped classifications |
 | `ipa` | IPA sequences from espeak | Unicode IPA symbols |
 | `words` | Word segmentation | Regex-based: `\b\w+\b` |
-| `phoneme_ts` | Aligned phoneme timestamps | Millisecond precision |
-| `group_ts` | Phoneme group timestamps | Often more accurate |
+| `phoneme_ts` | Aligned phoneme timestamps (`phoneme_id`, `ipa_label`, `is_estimated`, `confidence`) | Millisecond precision |
+| `group_ts` | Phoneme group timestamps (`group_id`, `is_estimated`, `confidence`) | Often more accurate |
 | `word_num` | Word index for each phoneme | Maps phonemes to words |
 | `words_ts` | Word-level timestamps | Derived from phonemes |
-| `coverage_analysis` | Alignment quality metrics | Insertions/deletions |
+| `coverage_analysis` | Alignment quality metrics | Target/aligned/missing counts |
 
 ---
 
@@ -540,7 +590,7 @@ PhonemeTimestampAligner(
 - `cupe_ckpt_path`: Local path to model checkpoint. Highest priority - overrides both preset and model_name.
 - `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
 - `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
-- `output_frames_key`: Output key for frame assortment (`phoneme_idx`, `ipa_label`, `phoneme_label`, `group_idx`, `group_label`).
+- `output_frames_key`: Output key for frame assortment (`phoneme_id`, `ipa_label`, `phoneme_label`, `group_id`, `group_label`).
 - `device`: Inference device (`cpu`, `cuda` or `mps`).
 - `silence_anchors`: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
@@ -613,6 +663,33 @@ PhonemeTimestampAligner.process_sentence(
 - `debug`: Enable debug output (optional).
 
 Returns: `timestamps_dict`
+
+---
+
+### Batch Processing
+
+For processing multiple audio-text pairs efficiently, use the batch methods:
+
+```python
+# Batch sentence processing — multiple text+audio pairs
+vs2_data = aligner.process_sentence_batch(
+    texts=["sentence one", "sentence two"],
+    audio_wavs=[audio_wav1, audio_wav2],
+    do_groups=True,
+    debug=True
+)
+
+# Batch SRT segment processing — pre-segmented whisper-style segments
+vs2_data = aligner.process_segments_batch(
+    segments=[{"start": 0.0, "end": 3.5, "text": "hello world"}, ...],
+    audio_wavs=[audio_wav1, ...],  # one per segment
+    ts_out_path="output.vs.json",
+    do_groups=True,
+    debug=True
+)
+```
+
+See [batch_aligment.py](examples/batch_aligment.py) for complete examples.
 
 ---
 ### 🗣️ Convert Text to Phonemes

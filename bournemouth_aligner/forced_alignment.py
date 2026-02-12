@@ -83,32 +83,31 @@ class ViterbiDecoder:
     
 
 
-    def decode_with_forced_alignment(self, log_probs, true_sequence, return_scores=False, 
-                                   boost_targets=True, enforce_minimum=True, anchor_pauses=True):
+    def decode_with_forced_alignment(self, log_probs, true_sequence, return_scores=False,
+                                   boost_targets=True, enforce_minimum=True, anchor_pauses=True, debug=False):
         """
         Decode that ensures all target phonemes are aligned.
-        
+
         Args:
             log_probs: Log probabilities tensor [T, C]
             true_sequence: Target phoneme sequence [S]
             return_scores: Whether to return alignment scores
             boost_targets: Whether to boost target phoneme probabilities
             enforce_minimum: Whether to enforce minimum probabilities
-            
-            anchor_pauses: Whether anchor the search paths at silences, to segment the search.
+            anchor_pauses: Whether to use silence-anchored segmented alignment.
         Returns:
             frame_phonemes: Frame-level phoneme assignments
+            frame_phonemes_idx: Frame-level target sequence indices
             alignment_score: Optional alignment score
         """
         if self.blank_id is None:
             raise ValueError("Blank ID not set. Call set_blank_id first.")
-        
+
         seq_len = true_sequence.shape[0]
-        
         num_frames = log_probs.shape[0]
         device = log_probs.device
         true_sequence_idx = torch.arange(seq_len, device=device)
-        
+
         if seq_len == 0:
             frame_phonemes = torch.full((num_frames,), self.blank_id, dtype=torch.long, device=device)
             frame_phonemes_idx = torch.full((num_frames,), -1, dtype=torch.long, device=device)
@@ -116,124 +115,380 @@ class ViterbiDecoder:
                 alignment_score = log_probs[:, self.blank_id].sum()
                 return frame_phonemes, frame_phonemes_idx, alignment_score
             return frame_phonemes, frame_phonemes_idx, None
-        
+
         # Apply probability modifications if requested
         modified_log_probs = log_probs.clone()
-        
+
         if boost_targets:
             modified_log_probs = self._boost_target_phonemes(modified_log_probs, true_sequence)
-        
+            if debug: print("Applied target phoneme boosting.")
+
         if enforce_minimum:
             modified_log_probs = self._enforce_minimum_probabilities(modified_log_probs, true_sequence)
-        
-        # Anchor pauses by boosting blank probability at detected silence frames
+            if debug: print("Applied minimum probability enforcement.")
+
+        # Try segmented alignment: match target SIL groups with audio silences,
+        # split at matched points, run Viterbi on each correctly-assigned segment.
         if anchor_pauses and self.silence_id is not None:
-            silence_segments = self._detect_silence_segments(modified_log_probs)
-            if silence_segments:
-                modified_log_probs = self._anchor_silence_in_log_probs(modified_log_probs, silence_segments)
+            if debug: print("Attempting segmented Viterbi alignment with silence anchoring...")
+            result = self._segmented_viterbi_decode(
+                modified_log_probs, true_sequence, true_sequence_idx
+            )
+            if result is not None:
+                if debug: print("Segmented Viterbi alignment successful.")
+                frame_phonemes, frame_phonemes_idx = result
+                if return_scores:
+                    alignment_score = self._calculate_alignment_score(log_probs, frame_phonemes)
+                    return frame_phonemes, frame_phonemes_idx, alignment_score
+                return frame_phonemes, frame_phonemes_idx, None
 
-        # Create CTC path: blank + phoneme + blank + phoneme + ... + blank
-        ctc_path = torch.zeros(2 * seq_len + 1, device=device, dtype=torch.long)
+        if debug: print("Running standard Viterbi...")
 
-        ctc_path_true_idx = ctc_path.clone()
-        ctc_path_true_idx[::2] = -1  # Initialize blanks with -1 (no target index)
+        # Fallback: standard Viterbi (with band constraint for long sequences)
 
-        ctc_path[::2] = self.blank_id  # Even indices are blanks
-        ctc_path[1::2] = true_sequence  # Odd indices are phonemes
-        ctc_path_true_idx[1::2] = true_sequence_idx  # Keep track of which phoneme index corresponds to each position in the CTC path
+        stride = 4
+        if (stride * seq_len + 1) > seq_len*0.9: stride = 3
+        if (stride * seq_len + 1) > seq_len*0.8: stride = 2
+        expanded_len = stride * seq_len + 1
+        if expanded_len > num_frames * 0.99: raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length.")
+
+        
+        
+        
+        ctc_path = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(self.blank_id)
+        ctc_path_true_idx = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(-1)
+        #ctc_path_true_idx[::2] = -1
+        #ctc_path[::2] = self.blank_id
+        ctc_path[1::stride] = true_sequence
+        ctc_path_true_idx[1::stride] = true_sequence_idx
         ctc_len = len(ctc_path)
 
-        # Use diagonal band constraint for long sequences to prevent alignment
-        # from rushing ahead or lagging behind. Band width is proportional to
-        # the CTC path length — generous enough for natural variation but tight
-        # enough to enforce pacing.
-        if anchor_pauses and ctc_len > 60:
-            band_width = max(ctc_len // 3, 30)
-        else:
-            band_width = 0
 
-        # Run standard Viterbi with modified probabilities
-        frame_phonemes, frame_phonemes_idx = self._viterbi_decode(modified_log_probs, ctc_path, ctc_len, ctc_path_true_idx, band_width=band_width)
+        band_width = max(ctc_len // 4, 20) if ctc_len > 60 else 0
+        frame_phonemes, frame_phonemes_idx = self._viterbi_decode(
+            modified_log_probs, ctc_path, ctc_len, ctc_path_true_idx, band_width=band_width, debug=debug
+        )
         
-        ''' removed due to bad logic
-        # Post-process to ensure all target phonemes appear
-        if enforce_all_targets:
-            frame_phonemes, frame_phonemes_idx = self._ensure_all_phonemes_aligned(
-                frame_phonemes, frame_phonemes_idx, true_sequence, modified_log_probs
-            )
-        '''
-
         if return_scores:
             alignment_score = self._calculate_alignment_score(log_probs, frame_phonemes)
             return frame_phonemes, frame_phonemes_idx, alignment_score
-        
+
         return frame_phonemes, frame_phonemes_idx, None
-    
-    def _detect_silence_segments(self, log_probs):
+
+    # --- Segmented alignment: match target SIL groups to audio silences ---
+
+    def _find_target_sil_groups(self, true_sequence):
         """
-        Detect segments of long silence using sliding window averages.
-        
+        Find groups of consecutive SIL tokens in the target sequence.
+
+        Args:
+            true_sequence: Target phoneme tensor [S]
+
+        Returns:
+            List of (start_idx, end_idx) tuples (half-open intervals in target)
+        """
+        seq = true_sequence.tolist() if isinstance(true_sequence, torch.Tensor) else list(true_sequence)
+        groups = []
+        i = 0
+        while i < len(seq):
+            if seq[i] == self.silence_id:
+                start = i
+                while i < len(seq) and seq[i] == self.silence_id:
+                    i += 1
+                groups.append((start, i))
+            else:
+                i += 1
+        return groups
+
+    def _match_silences(self, sil_groups, audio_silences, target_len, num_frames):
+        """
+        Match target SIL groups to audio silence segments by ordered proportional position.
+
+        Args:
+            sil_groups: List of (start, end) in target sequence
+            audio_silences: List of (start_frame, end_frame) in audio
+            target_len: Total length of target sequence
+            num_frames: Total number of audio frames
+
+        Returns:
+            List of (target_group_idx, audio_silence_idx) matched pairs (ordered)
+        """
+        if not sil_groups or not audio_silences or target_len == 0 or num_frames == 0:
+            return []
+
+        matches = []
+        audio_idx = 0
+
+        for tg_idx, (tg_start, tg_end) in enumerate(sil_groups):
+            target_pos = (tg_start + tg_end) / 2.0 / target_len
+
+            best_audio = None
+            best_dist = float('inf')
+
+            for ai in range(audio_idx, len(audio_silences)):
+                as_start, as_end = audio_silences[ai]
+                audio_pos = (as_start + as_end) / 2.0 / num_frames
+                dist = abs(target_pos - audio_pos)
+
+                if dist < best_dist:
+                    best_dist = dist
+                    best_audio = ai
+                elif dist > best_dist:
+                    break  # Getting farther, stop searching
+
+            if best_audio is not None and best_dist < 0.3:
+                matches.append((tg_idx, best_audio))
+                audio_idx = best_audio + 1  # Enforce ordering
+
+        return matches
+
+    def _segmented_viterbi_decode(self, log_probs, true_sequence, true_sequence_idx,
+                                   boundary_pad=3, min_speech_frames=10):
+        """
+        Segmented Viterbi: match target SIL groups to audio silences,
+        split at matched points, run Viterbi on each segment.
+
+        Args:
+            log_probs: Modified log probabilities [T, C]
+            true_sequence: Target phoneme tensor [S]
+            true_sequence_idx: Target index tensor [S]
+            boundary_pad: Number of frames to pad on each side of speech segments
+                so that phonemes near silence edges aren't clipped.
+            min_speech_frames: Minimum frames for a speech segment.  Segments
+                shorter than this are merged with the nearest neighbor.
+
+        Returns (frame_phonemes, frame_phonemes_idx) or None if segmentation
+        is not possible (caller should fall back to single Viterbi).
+        """
+        device = log_probs.device
+        num_frames = log_probs.shape[0]
+        target_len = true_sequence.shape[0]
+
+        # Step 1: find anchor points in both sequences
+        sil_groups = self._find_target_sil_groups(true_sequence)
+        audio_silences = self._detect_silence_segments(log_probs)
+
+        if not sil_groups or not audio_silences:
+            return None, None
+
+        # Step 2: match target SIL groups to audio silences
+        matches = self._match_silences(sil_groups, audio_silences, target_len, num_frames)
+        if not matches:
+            return None, None
+
+        # Step 3: build ordered list of (audio_start, audio_end, target_start, target_end, is_silence)
+        segments = []
+        prev_audio = 0
+        prev_target = 0
+
+        for tg_idx, as_idx in matches:
+            tg_start, tg_end = sil_groups[tg_idx]
+            as_start, as_end = audio_silences[as_idx]
+
+            # Speech segment before this silence
+            if prev_audio < as_start and prev_target < tg_start:
+                segments.append((prev_audio, as_start, prev_target, tg_start, False))
+            elif prev_audio < as_start:
+                # Audio gap but no target phonemes — fill with blank
+                segments.append((prev_audio, as_start, prev_target, prev_target, False))
+
+            # Silence segment
+            segments.append((as_start, as_end, tg_start, tg_end, True))
+
+            prev_audio = as_end
+            prev_target = tg_end
+
+        # Final speech segment after last matched silence
+        if prev_audio < num_frames and prev_target < target_len:
+            segments.append((prev_audio, num_frames, prev_target, target_len, False))
+        elif prev_audio < num_frames:
+            # Remaining audio with no target phonemes — fill with blank
+            segments.append((prev_audio, num_frames, prev_target, prev_target, False))
+
+        # Step 3b: merge speech segments that are too short
+        merged = []
+        for seg in segments:
+            audio_start, audio_end, tgt_start, tgt_end, is_silence = seg
+            n_frames = audio_end - audio_start
+            n_phonemes = tgt_end - tgt_start
+
+            if not is_silence and n_phonemes > 0 and n_frames < min_speech_frames and merged:
+                # Merge with previous segment (extend its audio/target range)
+                prev = merged[-1]
+                merged[-1] = (prev[0], audio_end, prev[2], tgt_end, False)
+            else:
+                merged.append(seg)
+        segments = merged
+
+        # Step 4: process each segment
+        all_frame_phonemes = []
+        all_frame_phonemes_idx = []
+
+        for audio_start, audio_end, tgt_start, tgt_end, is_silence in segments:
+            n_frames_seg = audio_end - audio_start
+            if n_frames_seg <= 0:
+                continue
+
+            if is_silence:
+                # Fill silence frames with SIL, distribute target SIL indices evenly
+                sil_phonemes = torch.full((n_frames_seg,), self.silence_id, dtype=torch.long, device=device)
+                n_sils = tgt_end - tgt_start
+                if n_sils > 0:
+                    sil_idx = torch.full((n_frames_seg,), -1, dtype=torch.long, device=device)
+                    frames_per_sil = n_frames_seg / n_sils
+                    for k in range(n_sils):
+                        f_start = int(k * frames_per_sil)
+                        f_end = int((k + 1) * frames_per_sil)
+                        sil_idx[f_start:f_end] = tgt_start + k
+                else:
+                    sil_idx = torch.full((n_frames_seg,), -1, dtype=torch.long, device=device)
+
+                all_frame_phonemes.append(sil_phonemes)
+                all_frame_phonemes_idx.append(sil_idx)
+            else:
+                # Apply boundary padding: extend the audio slice into
+                # neighboring silence regions so edge phonemes aren't clipped.
+                padded_start = max(0, audio_start - boundary_pad)
+                padded_end = min(num_frames, audio_end + boundary_pad)
+                pad_left = audio_start - padded_start  # frames added on the left
+
+                seg_target = true_sequence[tgt_start:tgt_end]
+                seg_target_idx = true_sequence_idx[tgt_start:tgt_end]
+                seg_log_probs = log_probs[padded_start:padded_end]
+
+                if seg_target.shape[0] == 0:
+                    # No target phonemes for this audio — fill with blank
+                    all_frame_phonemes.append(torch.full((n_frames_seg,), self.blank_id, dtype=torch.long, device=device))
+                    all_frame_phonemes_idx.append(torch.full((n_frames_seg,), -1, dtype=torch.long, device=device))
+                else:
+                    # Boost blank at detected sub-silence frames within this segment
+                    seg_log_probs = self._anchor_silence_in_log_probs(
+                        seg_log_probs,
+                        self._detect_silence_segments(seg_log_probs),
+                        boost=5.0
+                    )
+
+                    # Build CTC path and run Viterbi
+                    seg_seq_len = seg_target.shape[0]
+                    stride = 4
+                    if (stride * seg_seq_len + 1) > seg_log_probs.shape[0]*0.9: stride = 3
+                    if (stride * seg_seq_len + 1) > seg_log_probs.shape[0]*0.8: stride = 2
+                    expanded_len = stride * seg_seq_len + 1
+                    if expanded_len > seg_log_probs.shape[0] * 0.99: raise ValueError(f"Segment audio too short for target phonemes: expected CTC path length {expanded_len} exceeds segment frames {seg_log_probs.shape[0]}. Consider reducing the target sequence or increasing the audio length.")
+                    
+
+                    ctc_path = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(self.blank_id)
+                    ctc_path_true_idx = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(-1)
+                    #ctc_path_true_idx[::2] = -1
+                    #ctc_path[::2] = self.blank_id
+                    ctc_path[1::stride] = seg_target
+                    ctc_path_true_idx[1::stride] = seg_target_idx
+                    ctc_len = len(ctc_path)
+
+                    band_width = max(ctc_len // 3, 30) if ctc_len > 60 else 0
+                    seg_frames, seg_frames_idx = self._viterbi_decode(
+                        seg_log_probs, ctc_path, ctc_len, ctc_path_true_idx, band_width=band_width
+                    )
+
+                    # Trim the padding back off so we return exactly n_frames_seg frames
+                    seg_frames = seg_frames[pad_left: pad_left + n_frames_seg]
+                    seg_frames_idx = seg_frames_idx[pad_left: pad_left + n_frames_seg]
+
+                    all_frame_phonemes.append(seg_frames)
+                    all_frame_phonemes_idx.append(seg_frames_idx)
+
+        # Step 5: concatenate
+        if not all_frame_phonemes:
+            return None, None
+
+        frame_phonemes = torch.cat(all_frame_phonemes, dim=0)
+        frame_phonemes_idx = torch.cat(all_frame_phonemes_idx, dim=0)
+
+        # Verify total frames match (pad/trim if off by rounding)
+        if frame_phonemes.shape[0] < num_frames:
+            pad = num_frames - frame_phonemes.shape[0]
+            frame_phonemes = torch.cat([frame_phonemes, torch.full((pad,), self.blank_id, dtype=torch.long, device=device)])
+            frame_phonemes_idx = torch.cat([frame_phonemes_idx, torch.full((pad,), -1, dtype=torch.long, device=device)])
+        elif frame_phonemes.shape[0] > num_frames:
+            frame_phonemes = frame_phonemes[:num_frames]
+            frame_phonemes_idx = frame_phonemes_idx[:num_frames]
+
+        return frame_phonemes, frame_phonemes_idx
+
+    def _detect_silence_segments(self, log_probs, sil_threshold=-2.0, min_silence_frames=None):
+        """
+        Detect segments of silence using the conditional P(SIL | non-blank).
+
+        During actual silence the model puts most probability on blank (noise),
+        so the *raw* SIL probability is low.  Computing P(SIL | class != blank)
+        via re-normalization over non-blank classes gives a much stronger signal:
+        SIL dominates among real phoneme classes even when blank absorbs most mass.
+
         Args:
             log_probs: Log probabilities tensor [T, C]
-            
-        Returns:
-            List of (start_frame, end_frame) tuples for silence segments
-        """
-        sliding_frames = self.silence_anchors
-        sliding_step = 1
+            sil_threshold: Threshold on log P(SIL | non-blank) after sliding-window
+                averaging.  Default -2.0 ≈ P(SIL|non-blank) > 13%.
+            min_silence_frames: Minimum consecutive silent frames to keep.
+                Defaults to ``self.silence_anchors``.
 
-        if self.silence_id >= log_probs.shape[1]:
-            return []
-        
+        Returns:
+            List of (start_frame, end_frame) tuples for silence segments.
+        """
+        if min_silence_frames is None:
+            min_silence_frames = self.silence_anchors
+
+        sliding_frames = self.silence_anchors
         num_frames = log_probs.shape[0]
+        num_classes = log_probs.shape[1]
+
+        if self.silence_id >= num_classes:
+            return []
         if num_frames < sliding_frames:
             return []
-            
-        # Calculate sliding window averages
-        window_predictions = []
-        for t in range(0, num_frames - sliding_frames + 1, sliding_step):
-            # Average log probs over sliding window
-            window_avg = log_probs[t:t + sliding_frames].mean(dim=0)
-            
-            # Get top-2 predictions to handle CTC where blank often dominates
-            top_values, top_indices = torch.topk(window_avg, k=min(2, window_avg.shape[0]))
-            
-            # Check if silence is the top prediction or top non-blank prediction
-            predicted_class = top_indices[0].item()
-            if predicted_class == self.blank_id and len(top_indices) > 1:
-                # If blank is top, check if silence is second
-                predicted_class = top_indices[1].item()
-            
-            window_predictions.append((t + sliding_frames // 2, predicted_class))
-        
-        # Find contiguous silence segments based on window predictions
+
+        # Compute P(SIL | non-blank) by re-normalizing without blank
+        non_blank_mask = torch.ones(num_classes, dtype=torch.bool, device=log_probs.device)
+        non_blank_mask[self.blank_id] = False
+        non_blank_logits = log_probs[:, non_blank_mask]  # [T, C-1]
+        non_blank_log_probs = F.log_softmax(non_blank_logits, dim=-1)
+
+        # Map silence_id to its index in the non-blank set
+        sil_idx_nb = self.silence_id if self.silence_id < self.blank_id else self.silence_id - 1
+        sil_score = non_blank_log_probs[:, sil_idx_nb]  # [T]
+
+        # Sliding-window average for robustness
+        if sliding_frames > 1:
+            cumsum = torch.cumsum(sil_score, dim=0)
+            padded = torch.cat([torch.zeros(1, device=cumsum.device), cumsum])
+            window_avg = (padded[sliding_frames:] - padded[:-sliding_frames]) / sliding_frames
+        else:
+            window_avg = sil_score
+
+        # Threshold: which windows are silent?
+        is_silent = window_avg > sil_threshold
+
+        # Convert boolean mask to contiguous segments
         silence_segments = []
         in_silence = False
         silence_start = 0
-        
-        for center_frame, predicted_class in window_predictions:
-            is_silence_window = predicted_class == self.silence_id
-            
-            if is_silence_window and not in_silence:
-                # Start of silence
+
+        for i in range(len(is_silent)):
+            if is_silent[i] and not in_silence:
                 in_silence = True
-                silence_start = center_frame - sliding_frames // 2
-            elif not is_silence_window and in_silence:
-                # End of silence
+                silence_start = i
+            elif not is_silent[i] and in_silence:
                 in_silence = False
-                silence_end = center_frame - sliding_frames // 2
-                silence_length = silence_end - silence_start
-                if silence_length >= self.silence_anchors:
-                    silence_segments.append((silence_start, silence_end))
-        
-        # Handle case where sequence ends in silence
+                seg_end = i + sliding_frames - 1  # extend to cover the full window
+                seg_end = min(seg_end, num_frames)
+                if seg_end - silence_start >= min_silence_frames:
+                    silence_segments.append((silence_start, seg_end))
+
+        # Handle sequence ending in silence
         if in_silence:
-            silence_end = num_frames
-            silence_length = silence_end - silence_start
-            if silence_length >= self.silence_anchors:
-                silence_segments.append((silence_start, silence_end))
-        
-        #print(f"Detected {len(silence_segments)} silence segments for anchoring.")
+            seg_end = num_frames
+            if seg_end - silence_start >= min_silence_frames:
+                silence_segments.append((silence_start, seg_end))
+
         return silence_segments
 
     def _anchor_silence_in_log_probs(self, log_probs, silence_segments, boost=10.0):
@@ -256,7 +511,7 @@ class ViterbiDecoder:
             modified[start:end] = F.log_softmax(modified[start:end], dim=-1)
         return modified
 
-    def _viterbi_decode(self, log_probs, ctc_path, ctc_len, ctc_path_true_idx=None, band_width=0):
+    def _viterbi_decode(self, log_probs, ctc_path, ctc_len, ctc_path_true_idx=None, band_width=0, debug=False):
         """
         Standard Viterbi decoding implementation.
 
@@ -270,6 +525,7 @@ class ViterbiDecoder:
                 expected diagonal position, preventing the alignment from rushing ahead
                 or lagging behind. Useful for long sequences.
         """
+        if debug: print("Starting Viterbi decoding...")
         num_frames = log_probs.shape[0]
         device = log_probs.device
 
@@ -347,6 +603,7 @@ class ViterbiDecoder:
                 outside_band = (state_indices < center - band_width) | (state_indices > center + band_width)
                 dp[t, outside_band] = self._neg_inf
         
+    
         # Find best final state
         final_scores = dp[num_frames-1]
         valid_mask = final_scores > self._neg_inf
@@ -363,10 +620,14 @@ class ViterbiDecoder:
         for t in range(num_frames-2, -1, -1):
             path_states[t] = backpointers[t+1, path_states[t+1]]
         
+        
         frame_phonemes = ctc_path[path_states]
+        
+
         if ctc_path_true_idx is not None:
             # Map back to true phoneme indices if provided
             frame_phonemes_idx = ctc_path_true_idx[path_states]
+
             return frame_phonemes, frame_phonemes_idx
         else: return frame_phonemes, None
     
@@ -460,10 +721,12 @@ class ViterbiDecoder:
         # Find all non-blank segments
         #is_blank = frame_phonemes == self.blank_id
         
-        # Find transition points
+        # Find transition points: split when phoneme OR target index changes.
+        # This ensures consecutive SIL tokens with different target positions
+        # (e.g., from two punctuation-derived SILs) produce separate entries.
         transitions = torch.cat([
             torch.tensor([True], device=device),
-            frame_phonemes[1:] != frame_phonemes[:-1]
+            (frame_phonemes[1:] != frame_phonemes[:-1]) | (frame_phonemes_idx[1:] != frame_phonemes_idx[:-1])
         ])
         
         transition_indices = torch.where(transitions)[0]
@@ -520,7 +783,7 @@ class AlignmentUtils: # 2025-09-10
     
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
                          true_seqs_lens=None, forced_alignment=True, 
-                         boost_targets=True, enforce_minimum=True, ):
+                         boost_targets=True, enforce_minimum=True, debug=False):
         """
         Decode alignments with better forced alignment.
         
@@ -564,7 +827,8 @@ class AlignmentUtils: # 2025-09-10
                     # Decode with forced alignment and silence anchoring
                     frame_phonemes, frame_phonemes_idx, _ = self.viterbi_decoder.decode_with_forced_alignment(
                         log_probs_seq, true_seq, return_scores=False,
-                        boost_targets=boost_targets, enforce_minimum=enforce_minimum, anchor_pauses=self.silence_anchors > 0
+                        boost_targets=boost_targets, enforce_minimum=enforce_minimum, anchor_pauses=self.silence_anchors > 0,
+                        debug=debug
                     )
                     all_frame_phonemes.append((frame_phonemes, frame_phonemes_idx))
 
