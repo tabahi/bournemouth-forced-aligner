@@ -134,7 +134,8 @@ class ViterbiDecoder:
             result = self._segmented_viterbi_decode(
                 modified_log_probs, true_sequence, true_sequence_idx
             )
-            if result is not None:
+            if result is not None and len(result[0]) == num_frames:
+                
                 if debug: print("Segmented Viterbi alignment successful.")
                 frame_phonemes, frame_phonemes_idx = result
                 if return_scores:
@@ -150,7 +151,7 @@ class ViterbiDecoder:
         if (stride * seq_len + 1) > seq_len*0.9: stride = 3
         if (stride * seq_len + 1) > seq_len*0.8: stride = 2
         expanded_len = stride * seq_len + 1
-        if expanded_len > num_frames * 0.99: raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length.")
+        if expanded_len > num_frames: raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length.")
 
         
         
@@ -243,7 +244,7 @@ class ViterbiDecoder:
         return matches
 
     def _segmented_viterbi_decode(self, log_probs, true_sequence, true_sequence_idx,
-                                   boundary_pad=3, min_speech_frames=10):
+                                   boundary_pad=3, min_speech_frames=30):
         """
         Segmented Viterbi: match target SIL groups to audio silences,
         split at matched points, run Viterbi on each segment.
@@ -269,12 +270,12 @@ class ViterbiDecoder:
         audio_silences = self._detect_silence_segments(log_probs)
 
         if not sil_groups or not audio_silences:
-            return None, None
+            return [], []
 
         # Step 2: match target SIL groups to audio silences
         matches = self._match_silences(sil_groups, audio_silences, target_len, num_frames)
         if not matches:
-            return None, None
+            return [], []
 
         # Step 3: build ordered list of (audio_start, audio_end, target_start, target_end, is_silence)
         segments = []
@@ -374,8 +375,11 @@ class ViterbiDecoder:
                     if (stride * seg_seq_len + 1) > seg_log_probs.shape[0]*0.9: stride = 3
                     if (stride * seg_seq_len + 1) > seg_log_probs.shape[0]*0.8: stride = 2
                     expanded_len = stride * seg_seq_len + 1
-                    if expanded_len > seg_log_probs.shape[0] * 0.99: raise ValueError(f"Segment audio too short for target phonemes: expected CTC path length {expanded_len} exceeds segment frames {seg_log_probs.shape[0]}. Consider reducing the target sequence or increasing the audio length.")
-                    
+                    if expanded_len > seg_log_probs.shape[0] * 1.2:
+                        # in this case, the SIL has caused the segment to become too short for the target phonemes.  This can happen when there are very long silences or very short speech segments. 
+                        return [], [] # return empty results to trigger fallback to non-segmented Viterbi, which can still align all phonemes but may be less accurate around silences.  Alternatively, could raise an error here to force the caller to handle this case explicitly.
+                        #raise ValueError(f"Segment audio too short for target phonemes: expected CTC path length {expanded_len} exceeds segment frames {seg_log_probs.shape[0]}. Check if the audio segment is too short, or there are no words in the text.")
+
 
                     ctc_path = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(self.blank_id)
                     ctc_path_true_idx = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(-1)
@@ -399,7 +403,7 @@ class ViterbiDecoder:
 
         # Step 5: concatenate
         if not all_frame_phonemes:
-            return None, None
+            return [], []
 
         frame_phonemes = torch.cat(all_frame_phonemes, dim=0)
         frame_phonemes_idx = torch.cat(all_frame_phonemes_idx, dim=0)

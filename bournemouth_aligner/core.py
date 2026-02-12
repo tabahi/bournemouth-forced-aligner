@@ -39,7 +39,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="cpu", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="cpu", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, bad_confidence_threshold=0.6):
         """
         Initialize the phoneme timestamp extractor.
 
@@ -71,6 +71,7 @@ class PhonemeTimestampAligner:
             enforce_minimum (bool): Ensure minimum probability threshold for target phonemes.
             enforce_all_targets (bool): Force all target phonemes to appear in alignment.
             ignore_noise (bool): Skip predicted noise in alignment output.
+            bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true.
 
         Parameter Priority (highest to lowest):
             1. Explicit cupe_ckpt_path
@@ -172,6 +173,7 @@ class PhonemeTimestampAligner:
         self.enforce_minimum = enforce_minimum
         self.enforce_all_targets = enforce_all_targets
         self.ignore_noise = ignore_noise
+        self.bad_confidence_threshold = bad_confidence_threshold
         self.break_at_low_confidence = False # under construction, not fully implemented yet
         self._setup_config()
         self._setup_decoders()
@@ -576,7 +578,7 @@ class PhonemeTimestampAligner:
 
         return logits_class, logits_group, embeddings, spectral_lens
     
-    def ensure_target_coverage(self, phoneme_sequences, aligned_frames, seq_lens=None, debug=False):
+    def ensure_target_coverage(self, phoneme_sequences, aligned_frames, seq_lens=None, _silence_class=0, debug=False):
         '''
 
         Argument:
@@ -593,6 +595,8 @@ class PhonemeTimestampAligner:
         for batch_idx in range(len(aligned_frames)):
             self.total_segments_processed += 1
             self.total_phonemes_aligned += len(aligned_frames[batch_idx])
+            # CTC output length = max end_frame across all aligned phonemes (computed before any modifications)
+            ctc_len = max(f[2] for f in aligned_frames[batch_idx]) if aligned_frames[batch_idx] else 0
             full_seq = phoneme_sequences[batch_idx].tolist() if hasattr(phoneme_sequences[batch_idx], 'tolist') else list(phoneme_sequences[batch_idx])
             # Strip padding using actual sequence length
             actual_len = int(seq_lens[batch_idx]) if seq_lens is not None else len(full_seq)
@@ -655,6 +659,7 @@ class PhonemeTimestampAligner:
                 aligned_frames[batch_idx] = new_aligned_frames
 
             # Insert missing target phonemes with estimated frame positions
+            skipped_sil_indices = set()
             if missing_targets and self.enforce_all_targets:
                 # Build target_idx -> aligned frame lookup
                 target_to_frame = {}
@@ -691,8 +696,66 @@ class PhonemeTimestampAligner:
                         gap_start = prev_frame[2]   # end_frame of previous
                         gap_end = next_frame[1]      # start_frame of next
                     elif prev_frame:
-                        gap_start = prev_frame[2]
-                        gap_end = gap_start + n_missing
+                        # --- Trailing missing targets (no anchor after) ---
+
+                        # Skip trailing SIL phonemes — silence at the end doesn't need insertion
+                        non_sil_group = [tidx for tidx in group if target_phoneme_ids[tidx] != _silence_class]
+                        sil_in_group = [tidx for tidx in group if target_phoneme_ids[tidx] == _silence_class]
+                        if sil_in_group:
+                            if debug: print(f"  Skipping {len(sil_in_group)} trailing SIL phoneme(s)")
+                            skipped_sil_indices.update(sil_in_group)
+                        if not non_sil_group:
+                            continue
+
+                        n_needed = len(non_sil_group)
+
+                        # Try to make room by contracting SIL-aligned phonemes backward,
+                        # then shifting all subsequent frames back to free frames at the end
+                        sorted_frames = sorted(aligned_frames[batch_idx], key=lambda x: x[1])
+                        frames_freed = 0
+
+                        # Pass 1: contract SIL phonemes only
+                        for scan_idx in range(len(sorted_frames) - 1, -1, -1):
+                            if frames_freed >= n_needed:
+                                break
+                            f = sorted_frames[scan_idx]
+                            span = f[2] - f[1]
+                            if f[0] == _silence_class and span > 1:
+                                can_give = min(span - 1, n_needed - frames_freed)
+                                sorted_frames[scan_idx] = (*f[:2], f[2] - can_give, *f[3:])
+                                for j in range(scan_idx + 1, len(sorted_frames)):
+                                    sj = sorted_frames[j]
+                                    sorted_frames[j] = (sj[0], sj[1] - can_give, sj[2] - can_give, *sj[3:])
+                                frames_freed += can_give
+
+                        # Pass 2: if still not enough, contract any phoneme (last first)
+                        if frames_freed < n_needed:
+                            for steal_idx in range(len(sorted_frames) - 1, -1, -1):
+                                if frames_freed >= n_needed:
+                                    break
+                                f = sorted_frames[steal_idx]
+                                span = f[2] - f[1]
+                                if span > 1:
+                                    can_steal = min(span - 1, n_needed - frames_freed)
+                                    sorted_frames[steal_idx] = (*f[:2], f[2] - can_steal, *f[3:])
+                                    for j in range(steal_idx + 1, len(sorted_frames)):
+                                        sj = sorted_frames[j]
+                                        sorted_frames[j] = (sj[0], sj[1] - can_steal, sj[2] - can_steal, *sj[3:])
+                                    frames_freed += can_steal
+
+                        aligned_frames[batch_idx] = list(sorted_frames)
+                        target_to_frame = {int(f[3]): f for f in aligned_frames[batch_idx]}
+                        last_end = max(f[2] for f in aligned_frames[batch_idx])
+
+                        for i, tidx in enumerate(non_sil_group):
+                            est_start = min(last_end + i, ctc_len - 1)
+                            est_end = min(est_start + 1, ctc_len)
+                            new_frame = (target_phoneme_ids[tidx], est_start, est_end, tidx, True)
+                            self.total_phonemes_aligned += 1
+                            aligned_frames[batch_idx].append(new_frame)
+                            target_to_frame[tidx] = new_frame
+                        continue
+
                     elif next_frame:
                         gap_end = next_frame[1]
                         gap_start = max(0, gap_end - n_missing)
@@ -700,20 +763,20 @@ class PhonemeTimestampAligner:
                         gap_start = 0
                         gap_end = n_missing
 
-                    # Distribute frames evenly across the group
+                    # Distribute frames evenly across the group, clamped to valid CTC range
                     gap_size = max(gap_end - gap_start, n_missing)
                     frames_per_phoneme = gap_size / n_missing
 
                     for i, tidx in enumerate(group):
-                        est_start = int(gap_start + i * frames_per_phoneme)
-                        est_end = max(int(gap_start + (i + 1) * frames_per_phoneme), est_start + 1)
-                        new_frame = (target_phoneme_ids[tidx], est_start, est_end, tidx, True)  # last True indicates this is an estimated frame
+                        est_start = min(int(gap_start + i * frames_per_phoneme), ctc_len - 1)
+                        est_end = min(max(int(gap_start + (i + 1) * frames_per_phoneme), est_start + 1), ctc_len)
+                        new_frame = (target_phoneme_ids[tidx], est_start, est_end, tidx, True)
                         self.total_phonemes_aligned += 1
                         aligned_frames[batch_idx].append(new_frame)
                         target_to_frame[tidx] = new_frame
 
-            # Sort by target sequence index to maintain order
-            aligned_frames[batch_idx].sort(key=lambda x: x[1]) # sort by start_frame
+            # Sort by start_frame to maintain order
+            aligned_frames[batch_idx].sort(key=lambda x: x[1])
 
             # add False flag to non-estimated frames for consistency
             for i in range(len(aligned_frames[batch_idx])):
@@ -722,13 +785,15 @@ class PhonemeTimestampAligner:
                     self.total_phonemes_aligned_correctly += 1
 
             if self.enforce_all_targets:
+                expected_count = len(target_phoneme_ids) - len(skipped_sil_indices)
                 targets_found2 = [0] * len(target_phoneme_ids)
                 for api in range(len(aligned_frames[batch_idx])):
                     target_idx = int(aligned_frames[batch_idx][api][3])
                     if target_idx < len(target_phoneme_ids) and target_idx != -1:
                         targets_found2[target_idx] += 1
-                if sum(targets_found2) != len(target_phoneme_ids) or len(aligned_frames[batch_idx]) != len(target_phoneme_ids):
-                    raise Exception(f"Post-processing error: target coverage mismatch for segment {batch_idx}. Before: {targets_found}, After: {targets_found2}")
+                actual_covered = sum(targets_found2)
+                if actual_covered != expected_count or len(aligned_frames[batch_idx]) != expected_count:
+                    raise Exception(f"Post-processing error: target coverage mismatch for segment {batch_idx}. Expected {expected_count}, got {actual_covered} covered, {len(aligned_frames[batch_idx])} aligned. Skipped SIL: {skipped_sil_indices}")
 
         return aligned_frames
             
@@ -839,8 +904,8 @@ class PhonemeTimestampAligner:
         )
 
 
-        frame_phonemes = self.ensure_target_coverage(phoneme_sequences, aligned_frames=frame_phonemes, seq_lens=ph_seq_lens, debug=debug)
-        frame_groups = self.ensure_target_coverage(group_sequences, aligned_frames=frame_groups, seq_lens=ph_seq_lens, debug=debug)
+        frame_phonemes = self.ensure_target_coverage(phoneme_sequences, aligned_frames=frame_phonemes, seq_lens=ph_seq_lens, _silence_class=self.silence_class, debug=debug)
+        frame_groups = self.ensure_target_coverage(group_sequences, aligned_frames=frame_groups, seq_lens=ph_seq_lens, _silence_class=self.silence_group, debug=debug)
 
 
         # Calculate confidence scores
@@ -1152,9 +1217,9 @@ class PhonemeTimestampAligner:
                     low_confidence_count = sum(1 for c in confidences if c < 0.5)
                     low_confidence_ratio = low_confidence_count / len(confidences)
 
-                    if low_confidence_ratio > 0.6:
-                        print(f"  WARNING: Segment {si+1} has a high ratio of low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) with average confidence {avg_confidence:.3f}")
-
+                    if low_confidence_ratio > self.bad_confidence_threshold:
+                        print(f"  WARNING: Segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) with average confidence {avg_confidence:.3f}")
+                        vs2_segment["coverage_analysis"]["bad_alignment"] = True
                     first_20_confidences = sum(confidences[10:30])/20
                     last_20_confidences = sum(confidences[-30:-10])/20
 
@@ -1163,7 +1228,7 @@ class PhonemeTimestampAligner:
                             raise Exception(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. This phoneme sequence might be too large. Consider setting `silence_anchors=3` or adjusting the segment boundaries.")
                         else:
                             print(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. Consider reviewing this segment for potential boundary issues or adjusting `silence_anchors` setting.")
-
+                            vs2_segment["coverage_analysis"]["bad_alignment"] = True
         if debug:
             overall_avg_confidence = total_confidence / total_phonemes if total_phonemes > 0 else 0.0
             print(f"Overall average confidence: {overall_avg_confidence:.3f}")
@@ -1375,9 +1440,9 @@ class PhonemeTimestampAligner:
                     low_confidence_count = sum(1 for c in confidences if c < 0.5)
                     low_confidence_ratio = low_confidence_count / len(confidences)
 
-                    if low_confidence_ratio > 0.6:
-                        print(f"  WARNING: Segment {si+1} has a high ratio of low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) with average confidence {avg_confidence:.3f}")
-
+                    if low_confidence_ratio > self.bad_confidence_threshold:
+                        print(f"  WARNING: Segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) with average confidence {avg_confidence:.3f}")
+                        vs2_segment["coverage_analysis"]["bad_alignment"] = True
                     first_20_confidences = sum(confidences[10:30])/20
                     last_20_confidences = sum(confidences[-30:-10])/20
 
@@ -1386,7 +1451,7 @@ class PhonemeTimestampAligner:
                             raise Exception(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. This phoneme sequence might be too large. Consider setting `silence_anchors=3` or adjusting the segment boundaries.")
                         else:
                             print(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. Consider reviewing this segment for potential boundary issues or adjusting `silence_anchors` setting.")
-
+                            vs2_segment["coverage_analysis"]["bad_alignment"] = True
         if debug:
             overall_avg_confidence = total_confidence / total_phonemes if total_phonemes > 0 else 0.0
 
@@ -1534,7 +1599,8 @@ class PhonemeTimestampAligner:
             'extra_count': len(extra),
             'coverage_ratio': coverage,
             'missing_phonemes': [index_to_label.get(p, f'UNK_{p}') for p in missing],
-            'extra_phonemes': [index_to_label.get(p, f'UNK_{p}') for p in extra]
+            'extra_phonemes': [index_to_label.get(p, f'UNK_{p}') for p in extra],
+            'bad_alignment': coverage < 0.8  # arbitrary threshold for flagging bad alignments
         }
         
         return analysis

@@ -26,7 +26,8 @@ def weighted_pool_embeddings(embeddings, log_probs, framestamps):
     probs = torch.exp(log_probs.to(embeddings.device))
     pooled_embeddings = []
     
-    for phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence, start_ms, end_ms in framestamps:
+    for framestamp in framestamps:
+        phoneme_idx, start_frame, end_frame,  = framestamp[:3]  # Ignore start_ms and end_ms for pooling
         # Clamp frame indices to valid range
         start_frame = max(0, int(start_frame))
         end_frame = min(embeddings.shape[0], int(end_frame))
@@ -84,8 +85,11 @@ def _calculate_confidences(log_probs, framestamps):
         # Clamp to valid range
         start_frame = max(0, int(start_frame))
         end_frame = min(log_probs.shape[0], int(end_frame))
-        avg_confidence = probs[start_frame, phoneme_idx]
-        
+        if not is_estimated or (start_frame < probs.shape[0] and end_frame <= log_probs.shape[0]):
+            avg_confidence = probs[start_frame, phoneme_idx]
+        else:
+            raise ValueError(f"Invalid frame range for estimated timestamp: start_frame={start_frame}, end_frame={end_frame}, log_probs shape={log_probs.shape}, is_estimated={is_estimated}, phoneme_id={phoneme_idx}")
+
         if start_frame < end_frame and phoneme_idx < log_probs.shape[1]:
 
             half_confidence = avg_confidence/2
