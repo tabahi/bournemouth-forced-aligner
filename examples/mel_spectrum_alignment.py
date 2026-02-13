@@ -1,6 +1,5 @@
 # dependency: pip install librosa
 import torch
-import time
 from bournemouth_aligner import PhonemeTimestampAligner
 
 
@@ -83,7 +82,7 @@ def example_audio_timestamps():
     full_clip_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 
 
-    timestamps = extractor.process_sentence(text_sentences, full_clip_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=False, debug=False)
+    timestamps = extractor.process_sentence(text_sentences, full_clip_wav, extract_embeddings=False, do_groups=False, debug=False)
 
 
     
@@ -105,9 +104,9 @@ def example_audio_timestamps():
     
     total_frames = mel_spec.shape[0]
     frames_per_second = total_frames / segment_duration
-    frames_assorted = extractor.framewise_assortment(aligned_ts=timestamps['segments'][0]['phoneme_ts'], total_frames=total_frames, frames_per_second=frames_per_second, gap_contraction=5, select_key="phoneme_id")
+    frames_assorted = extractor.framewise_assortment(aligned_ts=timestamps['segments'][0]['phoneme_ts'], total_frames=total_frames, frames_per_second=frames_per_second, gap_contraction=0, select_key="phoneme_id")
     # convert phoneme IDs to labels
-    frames_assorted = [extractor.phoneme_id_to_label[phoneme_id] for phoneme_id in frames_assorted]
+    frames_assorted = [extractor.phoneme_id_to_label.get(phoneme_id, "...") for phoneme_id in frames_assorted] # ... for empty spaced in between phonemes
 
     compress_framesed = extractor.compress_frames(frames_assorted)
 

@@ -113,9 +113,7 @@ t0 = time.time()
 timestamps = extractor.process_sentence(
     text_sentence,
     audio_wav,
-    ts_out_path=None,
     extract_embeddings=False,
-    vspt_path=None,
     do_groups=True,
     debug=True
 )
@@ -620,7 +618,7 @@ PhonemeTimestampAligner.process_srt_file(
     ts_out_path=None,
     extract_embeddings=False,
     vspt_path=None,
-    do_groups=True,
+    do_groups=False,
     debug=True
 )
 ```
@@ -628,13 +626,13 @@ PhonemeTimestampAligner.process_srt_file(
 **Parameters:**
 - `srt_path`: Path to input SRT file (whisper JSON format).
 - `audio_path`: Path to audio file.
-- `ts_out_path`: Output path for timestamps (vs2 format).
+- `ts_out_path`: Output path for timestamps (vs2 JSON format).
 - `extract_embeddings`: Extract embeddings.
 - `vspt_path`: Path to save embeddings (`.pt` file).
 - `do_groups`: Extract group timestamps.
 - `debug`: Enable debug output.
 
-**Returns:**  
+**Returns:**
 - `timestamps_dict`: Dictionary with extracted timestamps.
 
 ---
@@ -645,10 +643,8 @@ PhonemeTimestampAligner.process_srt_file(
 PhonemeTimestampAligner.process_sentence(
     text,
     audio_wav,
-    ts_out_path=None,
     extract_embeddings=False,
-    vspt_path=None,
-    do_groups=True,
+    do_groups=False,
     debug=False
 )
 ```
@@ -656,37 +652,42 @@ PhonemeTimestampAligner.process_sentence(
 **Parameters:**
 - `text`: Sentence/text.
 - `audio_wav`: Audio waveform tensor (`torch.Tensor`).
-- `ts_out_path`: Output path for timestamps (optional).
 - `extract_embeddings`: Extract embeddings (optional).
-- `vspt_path`: Path to save embeddings (`.pt`, optional).
 - `do_groups`: Extract group timestamps (optional).
 - `debug`: Enable debug output (optional).
 
-Returns: `timestamps_dict`
+**Returns:**
+- If `extract_embeddings=False`: `timestamps_dict` with extracted timestamps.
+- If `extract_embeddings=True`: Tuple of `(timestamps_dict, phoneme_embeddings, group_embeddings)`.
 
 ---
 
 ### Batch Processing
 
-For processing multiple audio-text pairs efficiently, use the batch methods:
+For processing multiple audio clips efficiently, use `process_segments`. Each batch item pairs one audio waveform with one or more time-bounded segments:
 
 ```python
-# Batch sentence processing — multiple text+audio pairs
-vs2_data = aligner.process_sentence_batch(
-    texts=["sentence one", "sentence two"],
-    audio_wavs=[audio_wav1, audio_wav2],
-    do_groups=True,
-    debug=True
-)
+# Batch processing — multiple clips, each with their own segments
+srt_data = [
+    {"segments": [{"start": 0.0, "end": 3.5, "text": "hello world"}, ...]},  # clip 1
+    {"segments": [{"start": 0.0, "end": 5.0, "text": "another clip"}, ...]},  # clip 2
+]
+audio_wavs = [audio_wav1, audio_wav2]  # one waveform per clip
 
-# Batch SRT segment processing — pre-segmented whisper-style segments
-vs2_data = aligner.process_segments_batch(
-    segments=[{"start": 0.0, "end": 3.5, "text": "hello world"}, ...],
-    audio_wavs=[audio_wav1, ...],  # one per segment
-    ts_out_path="output.vs.json",
-    do_groups=True,
+batch_results = aligner.process_segments(
+    srt_data,
+    audio_wavs,
+    extract_embeddings=False,
+    do_groups=False,
     debug=True
 )
+# Returns: list of dicts, one per clip, each with "segments" key
+
+# With embeddings — returns tuple with per-clip nested lists
+batch_results, batch_p_embds, batch_g_embds = aligner.process_segments(
+    srt_data, audio_wavs, extract_embeddings=True
+)
+# batch_p_embds[clip_idx][segment_idx] = embedding tensor
 ```
 
 See [batch_aligment.py](examples/batch_aligment.py) for complete examples.
@@ -716,6 +717,7 @@ Phonemizes a sentence and returns a detailed mapping:
 - `words`: List of words corresponding to phonemes
 - `word_num`: Word indices for each phoneme
 
+
 **Example Usage:**
 ```python
 result = PhonemeTimestampAligner.phonemize_sentence("butterfly")
@@ -724,6 +726,67 @@ print(result["ph66"])  # [29, 10, 58, 9, 43, 56, 23]
 print(result["pg16"])  # [7, 2, 14, 2, 8, 13, 5]
 ```
 
+#### Phoneme dictionaries
+BFA uses a reduced phoneme dictionary of 66 phonemes (ph66) during alignment. But all the phonemes can be mapped back to their original IPA phonemes derived from espeak-ng. 
+In the timestamps dict `output["segments][si]["phoneme_ts"]` there are both lables. For example:
+```json
+[
+    {
+        "segments": [{
+                ...,
+            "phoneme_ts": [
+                    {
+                        "phoneme_id": 28,
+                        "phoneme_label": "p",
+                        "ipa_label": "p",
+                        "start_ms": 0.0,
+                        "end_ms": 32.18333435058594,
+                        "confidence": 0.7316462993621826,
+                        "is_estimated": false,
+                        "target_seq_idx": 0,
+                        "index": 0
+                    },
+                    
+                    {
+                        "phoneme_id": 2,
+                        "phoneme_label": "i:",
+                        "ipa_label": "i\u02d0",
+                        "start_ms": 2445.933349609375,
+                        "end_ms": 2478.11669921875,
+                        "confidence": 0.43211930990219116,
+                        "is_estimated": false,
+                        "target_seq_idx": 27,
+                        "index": 27
+                    },
+                    {
+                        "phoneme_id": 19,
+                        "phoneme_label": "a:",
+                        "ipa_label": "\u0251\u02d0\u0279",
+                        "start_ms": 2478.11669921875,
+                        "end_ms": 2606.85009765625,
+                        "confidence": 0.93682461977005,
+                        "is_estimated": false,
+                        "target_seq_idx": 28,
+                        "index": 28
+                    },
+                    {
+                        "phoneme_id": 59,
+                        "phoneme_label": "\u0279",
+                        "ipa_label": "-", // indictes the continuation of the compound phoneme "\u0251\u02d0\u0279"
+                        "start_ms": 2606.85009765625,
+                        "end_ms": 2639.033203125,
+                        "confidence": 0.664559543132782,
+                        "is_estimated": false,  // true means it was not aligned by viterbi algorithm, but was estimated, if enforce_all_targets=True
+                        "target_seq_idx": 29,
+                        "index": 29
+                    },
+            ]
+            
+        }]
+    }
+]
+```
+BFA also break down long compound phonemes, for example /'ɑːɹ'/ into ['a:', 'ɹ']. In the timestamps, the 'a:' and 'ɹ' would have their own timestamps. The original IPA label of is assigned only to the first half of the compound timestamps ("ipa_label": "ɑːɹ"), while the second phoneme has "ipa_label": "-" indicating the continuation of the compound.
 
 
 ### Extract Timestamps from Segment

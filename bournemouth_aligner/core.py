@@ -1,4 +1,4 @@
-''' 2025-08-07
+''' 2026-02-13
 Aligned Phonemes Extraction Module
 
 This module extracts phoneme-level timestamps from audio files using a pre-trained CUPE model.
@@ -39,7 +39,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="cpu", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="cpu", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, bad_confidence_threshold=0.6):
         """
         Initialize the phoneme timestamp extractor.
 
@@ -71,6 +71,7 @@ class PhonemeTimestampAligner:
             enforce_minimum (bool): Ensure minimum probability threshold for target phonemes.
             enforce_all_targets (bool): Force all target phonemes to appear in alignment.
             ignore_noise (bool): Skip predicted noise in alignment output.
+            extend_soft_boundaries (bool): Enable the extension of the phoeneme either boundaries. The end-boundaries are less precise, therefore extending them can help to cover the full phoneme duration. This will try to extend the end boundary of each phoneme to the start of the next phoneme, but will not extend beyond the 10x of the original duration, to prevent excessive extension.
             bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true.
 
         Parameter Priority (highest to lowest):
@@ -173,6 +174,7 @@ class PhonemeTimestampAligner:
         self.enforce_minimum = enforce_minimum
         self.enforce_all_targets = enforce_all_targets
         self.ignore_noise = ignore_noise
+        self.extend_soft_boundaries = extend_soft_boundaries
         self.bad_confidence_threshold = bad_confidence_threshold
         self.break_at_low_confidence = False # under construction, not fully implemented yet
         self._setup_config()
@@ -419,72 +421,6 @@ class PhonemeTimestampAligner:
         
         return logits_class, logits_group, embeddings, spectral_len
     
-    def extract_timestamps_from_segment(self, wav, wav_len, phoneme_sequence, start_offset_time=0,
-                                      group_sequence=None, extract_embeddings=True, do_groups=True,
-                                      debug=True, ):
-        """
-        Extract phoneme and group timestamps from a single audio segment.
-        This is a wrapper around extract_timestamps_from_segment_batch that handles a single item.
-
-        Args:
-            wav: Audio tensor for the segment.
-            wav_len: Length of the audio segment in samples.
-            phoneme_sequence: List or tensor of phoneme indices.
-            start_offset_time: Start time offset in seconds for the segment.
-            group_sequence: Optional list or tensor of phoneme group indices.
-            extract_embeddings: Whether to extract pooled embeddings.
-            do_groups: Whether to extract phoneme group timestamps.
-            debug: Enable debug output.
-
-        Returns:
-            timestamp_dict: Dictionary with 'phoneme_timestamps' and 'group_timestamps'.
-            pooled_embeddings_phonemes: Pooled phoneme embeddings or None.
-            pooled_embeddings_groups: Pooled group embeddings or None.
-        """
-
-        # Convert single item to batch format
-        if wav.dim() == 1:
-            wavs = wav.unsqueeze(0)
-        else:
-            wavs = wav
-
-        wav_lens = [wav_len]
-        phoneme_sequences = [phoneme_sequence] if not isinstance(phoneme_sequence, torch.Tensor) else [phoneme_sequence.tolist()]
-        group_sequences = [group_sequence] if group_sequence is not None else None
-        start_offset_times = [start_offset_time]
-
-        if debug:
-            if isinstance(phoneme_sequence, torch.Tensor):
-                print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p.item(), f'UNK_{p}') for p in phoneme_sequence]}")
-            else:
-                print(f"Target phonemes: {len(phoneme_sequence)}, Expected: {[self.phonemizer.index_to_plabel.get(p, f'UNK_{p}') for p in phoneme_sequence]}")
-
-        t0 = time.time()
-
-        # Call the batch version
-        timestamp_dicts, pooled_embeddings_phonemes_list, pooled_embeddings_groups_list = \
-            self.extract_timestamps_from_segment_batch(
-                wavs=wavs,
-                wav_lens=wav_lens,
-                phoneme_sequences=phoneme_sequences,
-                start_offset_times=start_offset_times,
-                group_sequences=group_sequences,
-                extract_embeddings=extract_embeddings,
-                do_groups=do_groups,
-                debug=debug
-            )
-
-        if debug:
-            t1 = time.time()
-            print(f"Forced alignment took {(t1-t0)*1000:.3f} ms")
-
-        # Extract single item from batch results
-        timestamp_dict = timestamp_dicts[0]
-        pooled_embeddings_phonemes = pooled_embeddings_phonemes_list[0] if pooled_embeddings_phonemes_list else None
-        pooled_embeddings_groups = pooled_embeddings_groups_list[0] if pooled_embeddings_groups_list else None
-
-        return timestamp_dict, pooled_embeddings_phonemes, pooled_embeddings_groups
-
     
     def _cupe_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
         """
@@ -796,7 +732,132 @@ class PhonemeTimestampAligner:
                     raise Exception(f"Post-processing error: target coverage mismatch for segment {batch_idx}. Expected {expected_count}, got {actual_covered} covered, {len(aligned_frames[batch_idx])} aligned. Skipped SIL: {skipped_sil_indices}")
 
         return aligned_frames
-            
+    
+
+    def extend_soft_boundaries_func(self, log_probs, framestamps, debug=False):
+        '''
+        Extend start and end boundaries of aligned phonemes based on confidence scores from log probabilities.
+        Three passes:
+          1. Extend start boundaries with strict thresholds
+          2. Extend end boundaries with lenient thresholds
+          3. Extend start boundaries again with even more lenient thresholds (to fill remaining gaps)
+
+        Args:
+            log_probs: Tensor of shape [B, T, C] containing log probabilities.
+            framestamps: List of lists of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated).
+
+        Returns:
+            Updated framestamps with extended boundaries (same structure as input).
+        '''
+        max_extension_factor = 10.0
+        updated_batch = []
+        for b in range(len(framestamps)):
+            probs = torch.exp(log_probs[b])  # [T, C]
+            num_frames = probs.shape[0]
+            tuples_list = list(framestamps[b])
+
+            # Precompute mean probs for each phoneme using original boundaries
+            mean_probs = []
+            for phoneme_id, start_frame, end_frame, _, _ in tuples_list:
+                if start_frame < num_frames and phoneme_id < probs.shape[1] and start_frame < end_frame:
+                    mean_probs.append(probs[start_frame:end_frame, phoneme_id].mean().item())
+                else:
+                    mean_probs.append(0.001)
+
+            # --- Pass 1: Extend start boundaries (strict) ---
+            for i in range(len(tuples_list)):
+                phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated = tuples_list[i]
+                if start_frame >= num_frames or phoneme_id >= probs.shape[1]:
+                    continue
+                original_duration = end_frame - start_frame
+
+                min_start = max(0, int(start_frame - original_duration * max_extension_factor))
+                if i > 0:
+                    min_start = max(min_start, min(tuples_list[i - 1][2]+10, start_frame))  # prev end_frame + 10
+
+                start_threshold = min(mean_probs[i] * 0.001, 0.001)
+                new_start = start_frame
+                for f in range(start_frame - 1, min_start - 1, -1):
+                    if probs[f, phoneme_id].item() >= start_threshold:
+                        new_start = f
+                    else:
+                        break
+
+                tuples_list[i] = (phoneme_id, new_start, end_frame, target_seq_idx, is_estimated)
+
+            # --- Pass 2: Extend end boundaries (lenient) ---
+            for i in range(len(tuples_list)):
+                phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated = tuples_list[i]
+                if start_frame >= num_frames or phoneme_id >= probs.shape[1]:
+                    continue
+                original_duration = end_frame - start_frame
+
+                max_end = min(num_frames, int(end_frame + original_duration * max_extension_factor))
+                if i + 1 < len(tuples_list):
+                    max_end = min(max_end, min(end_frame, tuples_list[i + 1][1]-10))  # next start_frame
+
+                end_threshold = min(mean_probs[i] * 0.001, 0.001)
+                new_end = end_frame
+                for f in range(end_frame, max_end):
+                    if probs[f, phoneme_id].item() >= end_threshold:
+                        new_end = f + 1
+                    else:
+                        break
+                tuples_list[i] = (phoneme_id, start_frame, new_end, target_seq_idx, is_estimated)
+
+            # --- Pass 3: Extend start boundaries again (lenient, fills remaining gaps) ---
+            for i in range(len(tuples_list)):
+                phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated = tuples_list[i]
+                if start_frame >= num_frames or phoneme_id >= probs.shape[1]:
+                    continue
+
+                min_start = 0
+                if i > 0:
+                    min_start = tuples_list[i - 1][2]  # prev end_frame (already extended)
+
+                # Only extend if there's a gap to fill
+                if start_frame <= min_start:
+                    continue
+
+                new_start = start_frame
+                for f in range(start_frame - 1, min_start - 1, -1):
+                    if probs[f, phoneme_id].item() >= 0.0000001:
+                        new_start = f
+                    else:
+                        break
+
+                tuples_list[i] = (phoneme_id, new_start, end_frame, target_seq_idx, is_estimated)
+
+
+            # --- Pass 4: Extend end boundaries  (lenient, fills remaining gaps) ---
+            for i in range(len(tuples_list)):
+                phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated = tuples_list[i]
+                if start_frame >= num_frames or phoneme_id >= probs.shape[1]:
+                    continue
+                original_duration = end_frame - start_frame
+
+                max_end = min(num_frames, int(end_frame + original_duration * max_extension_factor))
+                if i + 1 < len(tuples_list):
+                    max_end = min(max_end, tuples_list[i + 1][1])  # next start_frame
+
+                #end_threshold = min(mean_probs[i] * 0.00001, 0.000001)
+                new_end = end_frame
+                for f in range(end_frame, max_end):
+                    if probs[f, phoneme_id].item() >= 0.0000001:  # allow any positive evidence to extend end boundary in final pass
+                        new_end = f + 1
+                    else:
+                        break
+
+                if debug and (i < 5 or i >= len(tuples_list) - 5):
+                    label = self.phonemizer.index_to_plabel.get(phoneme_id, f'UNK_{phoneme_id}')
+                    print(f"Extended {label} (idx {target_seq_idx}): [{framestamps[b][i][1]}, {framestamps[b][i][2]}) -> [{start_frame}, {new_end}), mean={mean_probs[i]:.4f}")
+                    if i == 4: print("...")
+
+                tuples_list[i] = (phoneme_id, start_frame, new_end, target_seq_idx, is_estimated)
+
+            updated_batch.append(tuples_list)
+
+        return updated_batch
 
     def extract_timestamps_from_segment_batch(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0,
                                       group_sequences=None, extract_embeddings=True, do_groups=True,
@@ -816,6 +877,13 @@ class PhonemeTimestampAligner:
 
         Returns:
             timestamp_dicts: List of dictionaries with 'phoneme_timestamps' and 'group_timestamps'.
+                    `timestamp_dicts = [
+                    {
+                        'phoneme_timestamps': frame_phonemes[b],
+                        'group_timestamps': frame_groups[b],
+                    }
+                    for b in range(len(frame_phonemes))
+                ]`
             pooled_embeddings_phonemes_list: List of pooled phoneme embeddings or list of None.
             pooled_embeddings_groups_list: List of pooled group embeddings or list of None.
         """
@@ -907,10 +975,12 @@ class PhonemeTimestampAligner:
         frame_phonemes = self.ensure_target_coverage(phoneme_sequences, aligned_frames=frame_phonemes, seq_lens=ph_seq_lens, _silence_class=self.silence_class, debug=debug)
         frame_groups = self.ensure_target_coverage(group_sequences, aligned_frames=frame_groups, seq_lens=ph_seq_lens, _silence_class=self.silence_group, debug=debug)
 
-
+        if self.extend_soft_boundaries:
+            if debug: print("Extending end boundaries of aligned phonemes/groups based on confidence scores...")
+            frame_phonemes = self.extend_soft_boundaries_func(log_probs_p, frame_phonemes, debug=debug)
+            frame_groups = self.extend_soft_boundaries_func(log_probs_g, frame_groups, debug=False)
+            
         # Calculate confidence scores
-        
-        
         
         for b in range(len(frame_phonemes)): # loop over batch items
             frame_phonemes[b] = _calculate_confidences(log_probs_p[b], frame_phonemes[b])
@@ -1065,109 +1135,59 @@ class PhonemeTimestampAligner:
         """
         return self.phonemizer.phonemize_sentence(text)
 
-    def process_segments(self, srt_data, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True,  debug=False):
 
-        # Process each segment
-        vs2_segments = [] # timestamps for each phoneme in the segment
-        vspt_g_embds = []
-        vspt_p_embd  = []
-
-    
-        for i, segment in enumerate(srt_data):
-            start_time = segment["start"] # segment start time
-            end_time = segment["end"]
-
-            ts_out = self.phonemize_sentence(segment["text"])
-            
-
-            phoneme_sequence = ts_out[self.phonemes_key]
-            
-
-            group_sequence = ts_out[self.phoneme_groups_key] if do_groups else None
-
-            segment[self.phonemes_key] = phoneme_sequence
-            segment[self.phoneme_groups_key] = group_sequence
-
-            if not phoneme_sequence or len(phoneme_sequence) < self.ph_seq_min:
-                print(f"Skipping segment {i+1} due to insufficient phoneme sequence length: {len(phoneme_sequence)}")
-                continue
-
-            # Extract timestamps for this segment
-            wav, wav_len = self.chop_wav(audio_wav, int(start_time * self.resampler_sample_rate), int(end_time * self.resampler_sample_rate))
-
-            result, pooled_embeddings_p, pooled_embeddings_g = self.extract_timestamps_from_segment(wav, wav_len, phoneme_sequence, start_offset_time=start_time, group_sequence=group_sequence, extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
-
-            coverage_analysis = self.analyze_alignment_coverage(
-                phoneme_sequence, 
-                result["phoneme_timestamps"], 
-                self.phonemizer.index_to_plabel
-            )
-        
-            if debug:
-                # Analyze alignment coverage
-                
-                print(f"Alignment Coverage Analysis:")
-                print(f"  Target phonemes: {coverage_analysis['target_count']}")
-                print(f"  Aligned phonemes: {coverage_analysis['aligned_count']}")
-                print(f"  Coverage ratio: {coverage_analysis['coverage_ratio']:.2%}")
-                if coverage_analysis['missing_phonemes']:
-                    print(f"  Missing: {coverage_analysis['missing_phonemes']}")
-                if coverage_analysis['extra_phonemes']:
-                    print(f"  Extra: {coverage_analysis['extra_phonemes']}")
-
-            
-            if extract_embeddings:
-                pooled_embeddings_p = pooled_embeddings_p.detach()
-                if pooled_embeddings_p.device != torch.device("cpu"): pooled_embeddings_p = pooled_embeddings_p.cpu()
-                vspt_p_embd.append(pooled_embeddings_p)
-                assert len(vspt_p_embd[-1]) == len(result["phoneme_timestamps"]), "Embeddings length does not match phoneme timestamps length"
-                if (do_groups):
-                    pooled_embeddings_g = pooled_embeddings_g.detach()
-                    if pooled_embeddings_g.device != torch.device("cpu"): pooled_embeddings_g = pooled_embeddings_g.cpu()
-                    vspt_g_embds.append(pooled_embeddings_g)
-                    assert len(vspt_g_embds[-1]) == len(result["group_timestamps"]), "Embeddings length does not match phoneme groups timestamps length"
-                
+    def post_process_segment(self, segment, ts, phoneme_sequence, phoneme_timestamps, group_timestamps=None, debug=False):
 
 
-            
-            # Create vs2 segment (copy original segment data and add timestamps)
-            vs2_segment = segment.copy()
-            vs2_segment["coverage_analysis"] = coverage_analysis
-            vs2_segment["ipa"] = ts_out.get("eipa", "")
-            vs2_segment["word_num"] = ts_out.get("word_num", "")
-            vs2_segment["words"] = ts_out.get("words", "")
-            
-            
-            # Add phoneme timestamps (convert 5-tuple back to simple format for JSON)
-            vs2_segment["phoneme_ts"] = [
-                {
-                    "phoneme_id": int(ph_idx),
-                    "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
-                    "ipa_label": vs2_segment["ipa"][target_seq_idx] if 0 <= target_seq_idx < len(vs2_segment["ipa"]) else "overflow",
-                    "start_ms": float(start_ms),
-                    "end_ms": float(end_ms),
-                    "confidence": float(avg_confidence),
-                    "is_estimated": bool(is_estimated),
-                    "target_seq_idx": int(target_seq_idx),
-                    "index": idx
-                }
-                for idx, (ph_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms) in enumerate(result["phoneme_timestamps"])
-            ]
-            
+        coverage_analysis = self.analyze_alignment_coverage(
+            phoneme_sequence,
+            phoneme_timestamps,
+            self.phonemizer.index_to_plabel
+        )
 
-            if debug:
-                print(f"\nSegment {i+1}: '{segment['text']}'")
+        if debug:
+            print(f"Alignment Coverage Analysis:")
+            print(f"  Target phonemes: {coverage_analysis['target_count']}")
+            print(f"  Aligned phonemes: {coverage_analysis['aligned_count']}")
+            print(f"  Coverage ratio: {coverage_analysis['coverage_ratio']:.2%}")
+            if coverage_analysis['missing_phonemes']:
+                print(f"  Missing: {coverage_analysis['missing_phonemes']}")
+            if coverage_analysis['extra_phonemes']:
+                print(f"  Extra: {coverage_analysis['extra_phonemes']}")
 
-                
-                for tsi in range(len(vs2_segment["phoneme_ts"])):
-                    if tsi < 20 or tsi >= len(vs2_segment["phoneme_ts"]) - 20:  # Print first and last 20 phonemes for brevity
-                        ts = vs2_segment["phoneme_ts"][tsi]
-                        print(f"{tsi}  Phoneme ID: {ts['phoneme_id']}, mLabel: {ts['phoneme_label']}, IPA: {ts['ipa_label']}, Start: {int(ts['start_ms'])} ms, End: {int(ts['end_ms'])} ms, Confidence: {ts['confidence']:.3f}")
-                    elif tsi == 20:
-                        print("... (omitting middle phonemes for brevity) ...")
 
-            # Add group timestamps
-            vs2_segment["group_ts"] = [
+        ts_out_segment = segment.copy()
+        ts_out_segment["coverage_analysis"] = coverage_analysis
+        ts_out_segment["ipa"] = ts.get("eipa", "")
+        ts_out_segment["word_num"] = ts.get("word_num", "")
+        ts_out_segment["words"] = ts.get("words", "")
+
+        ts_out_segment["phoneme_ts"] = [
+            {
+                "phoneme_id": int(ph_idx),
+                "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
+                "ipa_label": ts_out_segment["ipa"][target_seq_idx] if 0 <= target_seq_idx < len(ts_out_segment["ipa"]) else "overflow",
+                "start_ms": float(start_ms),
+                "end_ms": float(end_ms),
+                "confidence": float(avg_confidence),
+                "is_estimated": bool(is_estimated),
+                "target_seq_idx": int(target_seq_idx),
+                "index": idx
+            }
+            for idx, (ph_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms) in enumerate(phoneme_timestamps)
+        ]
+
+        if debug:
+            print(f"\nSegment: '{segment['text']}'")
+            for tsi in range(len(ts_out_segment["phoneme_ts"])):
+                if tsi < 20 or tsi >= len(ts_out_segment["phoneme_ts"]) - 20:  # Print first and last 20 phonemes for brevity
+                    ts_item = ts_out_segment["phoneme_ts"][tsi]
+                    print(f"{tsi}  Phoneme ID: {ts_item['phoneme_id']}, ph66: {ts_item['phoneme_label']}, IPA: {ts_item['ipa_label']}, Start: {int(ts_item['start_ms'])} ms, End: {int(ts_item['end_ms'])} ms, Confidence: {ts_item['confidence']:.3f}")
+                elif tsi == 20:
+                    print("... (omitting middle phonemes for brevity) ...")
+
+        if group_timestamps is not None:
+            ts_out_segment["group_ts"] = [
                 {
                     "group_id": int(grp_idx),
                     "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
@@ -1178,310 +1198,214 @@ class PhonemeTimestampAligner:
                     "target_seq_idx": int(target_seq_idx),
                     "index": idx
                 }
-                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms) in  enumerate(result["group_timestamps"])
+                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms) in enumerate(group_timestamps)
             ]
 
-            vs2_segment["words_ts"] = self._align_words(vs2_segment["phoneme_ts"], ts_out.get("word_num", []), ts_out.get("words", []))
-            
-            vs2_segments.append(vs2_segment)
-        
-        if debug: 
-            print(f"\n{'='*60}")
-            print(f"PROCESSING SUMMARY")
-            print(f"{'='*60}")
-            print(f"Total segments processed: {len(vs2_segments)}")
-         
-        # Calculate overall statistics
-        total_phonemes = 0
-        total_confidence = 0.0
-        
-        for si in range(len(vs2_segments)):
-            if vs2_segments[si]["phoneme_ts"]:
-                total_phonemes += len(vs2_segments[si]["phoneme_ts"])
-                total_confidence += sum(ts["confidence"] for ts in vs2_segments[si]["phoneme_ts"])
-                
-                # Check if sequence matches perfectly
-                predicted_sequence = [ts["phoneme_id"] for ts in vs2_segments[si]["phoneme_ts"]]
-                if predicted_sequence == vs2_segments[si][self.phonemes_key]:
-                    self.perfect_matches += 1
-                elif debug:
-                    # find the index where they first differ
-                    for idx, (pred_id, target_id) in enumerate(zip(predicted_sequence, vs2_segments[si][self.phonemes_key])):
-                        if pred_id != target_id:
-                            print(f"  Mismatch at position {idx}: predicted {pred_id} ({self.phonemizer.index_to_plabel.get(pred_id, f'UNK_{pred_id}')}) vs target {target_id} ({self.phonemizer.index_to_plabel.get(target_id, f'UNK_{target_id}')})")
-                            break
-
-                if (len(vs2_segments[si]["phoneme_ts"]) > 60): # long sequence, further analyze confidence distribution
-                    confidences = [ts["confidence"] for ts in vs2_segments[si]["phoneme_ts"]]
-                    avg_confidence = sum(confidences) / len(confidences)
-                    low_confidence_count = sum(1 for c in confidences if c < 0.5)
-                    low_confidence_ratio = low_confidence_count / len(confidences)
-
-                    if low_confidence_ratio > self.bad_confidence_threshold:
-                        print(f"  WARNING: Segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) with average confidence {avg_confidence:.3f}")
-                        vs2_segment["coverage_analysis"]["bad_alignment"] = True
-                    first_20_confidences = sum(confidences[10:30])/20
-                    last_20_confidences = sum(confidences[-30:-10])/20
-
-                    if first_20_confidences > 0.1 and last_20_confidences < 0.1:
-                        if self.silence_anchors == 0:
-                            raise Exception(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. This phoneme sequence might be too large. Consider setting `silence_anchors=3` or adjusting the segment boundaries.")
-                        else:
-                            print(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. Consider reviewing this segment for potential boundary issues or adjusting `silence_anchors` setting.")
-                            vs2_segment["coverage_analysis"]["bad_alignment"] = True
-        if debug:
-            overall_avg_confidence = total_confidence / total_phonemes if total_phonemes > 0 else 0.0
-            print(f"Overall average confidence: {overall_avg_confidence:.3f}")
-            print(f"Totals,  segments processed: {self.total_segments_processed}", f"\tPhonemes aligned: {self.total_phonemes_aligned}",
-                   f"\tTarget phonemes: {self.total_phonemes_target}", f"\tPhonemes missed: {self.total_phonemes_missed}",
-                   f"\tPhonemes extra: {self.total_phonemes_extra}", f"\tPhonemes aligned correctly: {self.total_phonemes_aligned_correctly}")
-            print(f"{'='*60}")
-
-        # Create vs2 output
-        vs2_data = {"segments": vs2_segments}
-        
-        if ts_out_path is not None:
-            # Save vs2 file
-            if (os.path.dirname(ts_out_path)):
-                os.makedirs(os.path.dirname(ts_out_path), exist_ok=True)
-            with open(ts_out_path, 'w') as f:
-                json.dump(vs2_data, f, indent=4 if (debug) else None, ensure_ascii=False)
-            
-            if extract_embeddings and vspt_path is not None and vspt_p_embd:
-                torch.save((vspt_p_embd, vspt_g_embds), vspt_path)
-                if debug: 
-                    print(f"Embeddings saved to: {vspt_path}")
-
-            if debug:  
-                print(f"Results saved to: {ts_out_path}")
-        return vs2_data
-
-    def process_segments_batch(self, srt_data, audio_wavs, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+        ts_out_segment["words_ts"] = self._align_words(
+            ts_out_segment["phoneme_ts"],
+            ts.get("word_num", []),
+            ts.get("words", [])
+        )
+        return ts_out_segment
+    
+    def process_segments(self, srt_data, audio_wavs, extract_embeddings=False, do_groups=False, debug=False):
         """
-        Process multiple audio segments in a single batch call. Batch variant of process_segments.
+        Process multiple audio clips in a batch, each with multiple time-bounded segments.
 
         Args:
-            srt_data: List of segment dicts, each with 'start', 'end', 'text' keys.
-            audio_wavs: List of audio waveform tensors, one per segment.
-            ts_out_path: Path to save output JSON file (optional).
+            srt_data: List of dicts (one per clip in the batch), each with "segments" key
+                containing a list of {"start", "end", "text"} dicts. Or single dict with "segments".
+                Example: [{"segments": [{"start": 0.0, "end": 2.5, "text": "Hello world"}, ...]}, ...]
+            audio_wavs: List of audio waveform tensors (one per clip). Each clip's waveform
+                is shared across all its segments. Can also be a single (C, T) or batched (B, C, T) tensor.
             extract_embeddings: Whether to extract pooled embeddings.
-            vspt_path: Path to save embeddings .pt file (optional).
             do_groups: Whether to extract phoneme group timestamps.
             debug: Enable debug output.
+
+        Returns:
+            List of dicts (one per batch item), each with "segments" key containing processed segments.
+            If extract_embeddings=True, returns tuple:
+                (batch_results, batch_phoneme_embeddings, batch_group_embeddings)
+                where embeddings are nested lists [batch_item][segment] = embedding_tensor.
         """
 
-        
-        vs2_segments = []
-        vspt_g_embds = []
-        vspt_p_embd = []
+        # --- Input normalization ---
+        if isinstance(audio_wavs, torch.Tensor):
+            if audio_wavs.dim() == 3:  # (B, C, T)
+                audio_wavs = [audio_wavs[i] for i in range(audio_wavs.size(0))]
+            elif audio_wavs.dim() == 2:  # (C, T)
+                audio_wavs = [audio_wavs]
+            else:
+                raise ValueError(f"Expected audio_wavs of 2D (C,T) or 3D (B,C,T), got {audio_wavs.dim()}D")
 
-        # Phonemize all segments
-        ts_outs = [self.phonemize_sentence(segment["text"]) for segment in srt_data]
+        if isinstance(srt_data, dict):
+            srt_data = [srt_data]
 
+        if len(srt_data) != len(audio_wavs):
+            raise ValueError(f"Batch size mismatch: {len(srt_data)} srt items vs {len(audio_wavs)} audio waveforms.")
+
+        # --- Validate structure ---
+        for bi, batch_item in enumerate(srt_data):
+            if "segments" not in batch_item:
+                raise ValueError(f"Batch item {bi} missing 'segments' key. Keys: {list(batch_item.keys())}")
+            for si, seg in enumerate(batch_item["segments"]):
+                if not all(k in seg for k in ("start", "end", "text")):
+                    raise ValueError(f"Batch {bi}, segment {si} missing required keys (start/end/text). Has: {list(seg.keys())}")
+
+        num_batch = len(srt_data)
+
+        # --- Flatten sub-segments across all clips, tracking batch index ---
+        flat_items = []  # (batch_idx, segment_dict, clip_audio_wav)
+        for bi, (batch_item, clip_wav) in enumerate(zip(srt_data, audio_wavs)):
+            for seg in batch_item["segments"]:
+                flat_items.append((bi, seg, clip_wav))
+
+        if not flat_items:
+            empty = [{"segments": []} for _ in range(num_batch)]
+            if extract_embeddings:
+                return empty, [[] for _ in range(num_batch)], [[] for _ in range(num_batch)]
+            return empty
+
+        # --- Phonemize all sub-segments ---
+        ts_outs = [self.phonemize_sentence(seg["text"]) for _, seg, _ in flat_items]
         phoneme_sequences = [ts[self.phonemes_key] for ts in ts_outs]
-        group_sequences = [ts[self.phoneme_groups_key] for ts in ts_outs] if do_groups else [None] * len(srt_data)
+        group_sequences = [ts[self.phoneme_groups_key] for ts in ts_outs] if do_groups else [None] * len(flat_items)
 
-        for segment, phoneme_sequence, group_sequence in zip(srt_data, phoneme_sequences, group_sequences):
-            segment[self.phonemes_key] = phoneme_sequence
-            segment[self.phoneme_groups_key] = group_sequence
+        for (_, seg, _), ph_seq, grp_seq in zip(flat_items, phoneme_sequences, group_sequences):
+            seg[self.phonemes_key] = ph_seq
+            seg[self.phoneme_groups_key] = grp_seq
 
-        # Filter out segments with insufficient phoneme sequences
-        filtered = []
-        for i, (segment, phoneme_sequence, group_sequence, ts, audio_wav) in enumerate(
-            zip(srt_data, phoneme_sequences, group_sequences, ts_outs, audio_wavs)
-        ):
-            if not phoneme_sequence or len(phoneme_sequence) < self.ph_seq_min:
-                print(f"Skipping segment {i+1} due to insufficient phoneme sequence length: {len(phoneme_sequence)}")
+        # --- Filter sub-segments with insufficient phoneme sequences ---
+        valid_indices = []
+        for i, ((bi, seg, _), ph_seq) in enumerate(zip(flat_items, phoneme_sequences)):
+            if not ph_seq or len(ph_seq) < self.ph_seq_min:
+                if debug:
+                    print(f"Skipping clip {bi}, segment '{seg.get('text', '')[:30]}': insufficient phoneme sequence ({len(ph_seq) if ph_seq else 0})")
                 continue
-            filtered.append((segment, phoneme_sequence, group_sequence, ts, audio_wav))
+            valid_indices.append(i)
 
-        if not filtered:
-            return {"segments": []}
+        # Initialize per-batch-item result containers
+        batch_results = [{"segments": []} for _ in range(num_batch)]
+        batch_p_embds = [[] for _ in range(num_batch)]
+        batch_g_embds = [[] for _ in range(num_batch)]
 
-        srt_data_f = [seg for seg, _, _, _, _ in filtered]
-        phoneme_sequences_f = [ph for _, ph, _, _, _ in filtered]
-        group_sequences_f = [grp for _, _, grp, _, _ in filtered]
-        ts_outs_f = [ts for _, _, _, ts, _ in filtered]
-        audio_wavs_f = [aw for _, _, _, _, aw in filtered]
+        if not valid_indices:
+            if extract_embeddings:
+                return batch_results, batch_p_embds, batch_g_embds
+            return batch_results
 
-        start_times = [seg["start"] for seg in srt_data_f]
-        end_times = [seg["end"] for seg in srt_data_f]
+        # Build filtered lists
+        flat_items_f = [flat_items[i] for i in valid_indices]
+        ph_seqs_f = [phoneme_sequences[i] for i in valid_indices]
+        grp_seqs_f = [group_sequences[i] for i in valid_indices]
+        ts_outs_f = [ts_outs[i] for i in valid_indices]
 
+        # --- Chop audio from each sub-segment's parent clip ---
         wavs_and_lens = [
-            self.chop_wav(audio_wav, int(start_time * self.resampler_sample_rate), int(end_time * self.resampler_sample_rate))
-            for audio_wav, start_time, end_time in zip(audio_wavs_f, start_times, end_times)
+            self.chop_wav(
+                clip_wav,
+                int(seg["start"] * self.resampler_sample_rate),
+                int(seg["end"] * self.resampler_sample_rate)
+            )
+            for _, seg, clip_wav in flat_items_f
         ]
         wavs, wav_lens = zip(*wavs_and_lens)
         wavs = torch.stack(wavs, dim=0)
+        start_times = [seg["start"] for _, seg, _ in flat_items_f]
 
-        results, pooled_embeddings_p_list, pooled_embeddings_g_list = self.extract_timestamps_from_segment_batch(
-            wavs, wav_lens, phoneme_sequences_f,
+        # --- Model inference (single batched call across all segments) ---
+        results, pooled_emb_p_list, pooled_emb_g_list = self.extract_timestamps_from_segment_batch(
+            wavs, wav_lens, ph_seqs_f,
             start_offset_times=start_times,
-            group_sequences=group_sequences_f,
+            group_sequences=grp_seqs_f if do_groups else None,
             extract_embeddings=extract_embeddings,
             do_groups=do_groups,
             debug=debug
         )
 
-        for i, (segment, result, ts) in enumerate(zip(srt_data_f, results, ts_outs_f)):
-            phoneme_sequence = segment[self.phonemes_key]
-
-            coverage_analysis = self.analyze_alignment_coverage(
-                phoneme_sequence,
+        # --- Post-process and regroup results by batch item ---
+        for idx, ((bi, seg, _), result, ts) in enumerate(zip(flat_items_f, results, ts_outs_f)):
+            ph_seq = seg[self.phonemes_key]
+            processed = self.post_process_segment(
+                seg, ts, ph_seq,
                 result["phoneme_timestamps"],
-                self.phonemizer.index_to_plabel
+                result["group_timestamps"] if do_groups else None,
+                debug=debug
             )
-
-            if debug:
-                print(f"Alignment Coverage Analysis:")
-                print(f"  Target phonemes: {coverage_analysis['target_count']}")
-                print(f"  Aligned phonemes: {coverage_analysis['aligned_count']}")
-                print(f"  Coverage ratio: {coverage_analysis['coverage_ratio']:.2%}")
-                if coverage_analysis['missing_phonemes']:
-                    print(f"  Missing: {coverage_analysis['missing_phonemes']}")
-                if coverage_analysis['extra_phonemes']:
-                    print(f"  Extra: {coverage_analysis['extra_phonemes']}")
+            batch_results[bi]["segments"].append(processed)
 
             if extract_embeddings:
-                pooled_emb_p = pooled_embeddings_p_list[i]
+                pooled_emb_p = pooled_emb_p_list[idx]
                 if pooled_emb_p is not None:
-                    pooled_emb_p = pooled_emb_p.detach()
-                    if pooled_emb_p.device != torch.device("cpu"):
-                        pooled_emb_p = pooled_emb_p.cpu()
-                    vspt_p_embd.append(pooled_emb_p)
+                    batch_p_embds[bi].append(pooled_emb_p.detach().cpu())
                 if do_groups:
-                    pooled_emb_g = pooled_embeddings_g_list[i]
+                    pooled_emb_g = pooled_emb_g_list[idx]
                     if pooled_emb_g is not None:
-                        pooled_emb_g = pooled_emb_g.detach()
-                        if pooled_emb_g.device != torch.device("cpu"):
-                            pooled_emb_g = pooled_emb_g.cpu()
-                        vspt_g_embds.append(pooled_emb_g)
+                        batch_g_embds[bi].append(pooled_emb_g.detach().cpu())
 
-            vs2_segment = segment.copy()
-            vs2_segment["coverage_analysis"] = coverage_analysis
-            vs2_segment["ipa"] = ts.get("eipa", "")
-            vs2_segment["word_num"] = ts.get("word_num", "")
-            vs2_segment["words"] = ts.get("words", "")
-
-            vs2_segment["phoneme_ts"] = [
-                {
-                    "phoneme_id": int(ph_idx),
-                    "phoneme_label": self.phonemizer.index_to_plabel.get(ph_idx, f"UNK_{ph_idx}"),
-                    "ipa_label": vs2_segment["ipa"][target_seq_idx] if 0 <= target_seq_idx < len(vs2_segment["ipa"]) else "overflow",
-                    "start_ms": float(start_ms),
-                    "end_ms": float(end_ms),
-                    "confidence": float(avg_confidence),
-                    "is_estimated": bool(is_estimated),
-                    "target_seq_idx": int(target_seq_idx),
-                    "index": idx
-                }
-                for idx, (ph_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms) in enumerate(result["phoneme_timestamps"])
-            ]
-
-            if debug:
-                print(f"\nSegment {i+1}: '{segment['text']}'")
-                for tsi in range(len(vs2_segment["phoneme_ts"])):
-                    if tsi < 20 or tsi >= len(vs2_segment["phoneme_ts"]) - 20:  # Print first and last 20 phonemes for brevity
-                        ts_item = vs2_segment["phoneme_ts"][tsi]
-                        print(f"{tsi}  Phoneme ID: {ts_item['phoneme_id']}, mLabel: {ts_item['phoneme_label']}, IPA: {ts_item['ipa_label']}, Start: {int(ts_item['start_ms'])} ms, End: {int(ts_item['end_ms'])} ms, Confidence: {ts_item['confidence']:.3f}")
-                    elif tsi == 20:
-                        print("... (omitting middle phonemes for brevity) ...")
-
-            vs2_segment["group_ts"] = [
-                {
-                    "group_id": int(grp_idx),
-                    "group_label": self.phonemizer.index_to_glabel.get(grp_idx, f"UNK_{grp_idx}"),
-                    "start_ms": float(start_ms),
-                    "end_ms": float(end_ms),
-                    "confidence": float(avg_confidence),
-                    "is_estimated": bool(is_estimated),
-                    "target_seq_idx": int(target_seq_idx),
-                    "index": idx
-                }
-                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms) in enumerate(result["group_timestamps"])
-            ]
-
-            vs2_segment["words_ts"] = self._align_words(
-                vs2_segment["phoneme_ts"],
-                ts.get("word_num", []),
-                ts.get("words", [])
-            )
-
-            vs2_segments.append(vs2_segment)
-
-        if debug:
-            print(f"\n{'='*60}")
-            print(f"PROCESSING SUMMARY")
-            print(f"{'='*60}")
-            print(f"Total segments processed: {len(vs2_segments)}")
-
+        # --- Confidence analysis ---
         total_phonemes = 0
         total_confidence = 0.0
 
-        for si in range(len(vs2_segments)):
-            if vs2_segments[si]["phoneme_ts"]:
-                total_phonemes += len(vs2_segments[si]["phoneme_ts"])
-                total_confidence += sum(ts_item["confidence"] for ts_item in vs2_segments[si]["phoneme_ts"])
+        for bi, batch_item in enumerate(batch_results):
+            for si, seg_out in enumerate(batch_item["segments"]):
+                if not seg_out.get("phoneme_ts"):
+                    continue
+
+                phoneme_ts = seg_out["phoneme_ts"]
+                total_phonemes += len(phoneme_ts)
+                total_confidence += sum(ts_item["confidence"] for ts_item in phoneme_ts)
 
                 # Check if sequence matches perfectly
-                predicted_sequence = [ts_item["phoneme_id"] for ts_item in vs2_segments[si]["phoneme_ts"]]
-                if predicted_sequence == vs2_segments[si][self.phonemes_key]:
+                predicted_sequence = [ts_item["phoneme_id"] for ts_item in phoneme_ts]
+                if predicted_sequence == seg_out[self.phonemes_key]:
                     self.perfect_matches += 1
                 elif debug:
-                    # find the index where they first differ
-                    for idx, (pred_id, target_id) in enumerate(zip(predicted_sequence, vs2_segments[si][self.phonemes_key])):
+                    for pidx, (pred_id, target_id) in enumerate(zip(predicted_sequence, seg_out[self.phonemes_key])):
                         if pred_id != target_id:
-                            print(f"  Mismatch at position {idx}: predicted {pred_id} ({self.phonemizer.index_to_plabel.get(pred_id, f'UNK_{pred_id}')}) vs target {target_id} ({self.phonemizer.index_to_plabel.get(target_id, f'UNK_{target_id}')})")
+                            print(f"  Mismatch at position {pidx}: predicted {pred_id} ({self.phonemizer.index_to_plabel.get(pred_id, f'UNK_{pred_id}')}) vs target {target_id} ({self.phonemizer.index_to_plabel.get(target_id, f'UNK_{target_id}')})")
                             break
 
-                if (len(vs2_segments[si]["phoneme_ts"]) > 60): # long sequence, further analyze confidence distribution
-                    confidences = [ts_item["confidence"] for ts_item in vs2_segments[si]["phoneme_ts"]]
+                if len(phoneme_ts) > 60:
+                    confidences = [ts_item["confidence"] for ts_item in phoneme_ts]
                     avg_confidence = sum(confidences) / len(confidences)
                     low_confidence_count = sum(1 for c in confidences if c < 0.5)
                     low_confidence_ratio = low_confidence_count / len(confidences)
 
                     if low_confidence_ratio > self.bad_confidence_threshold:
-                        print(f"  WARNING: Segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) with average confidence {avg_confidence:.3f}")
-                        vs2_segment["coverage_analysis"]["bad_alignment"] = True
-                    first_20_confidences = sum(confidences[10:30])/20
-                    last_20_confidences = sum(confidences[-30:-10])/20
+                        print(f"  WARNING: Clip {bi}, segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) avg={avg_confidence:.3f}")
+                        batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
+                    first_20_confidences = sum(confidences[10:30]) / 20
+                    last_20_confidences = sum(confidences[-30:-10]) / 20
 
                     if first_20_confidences > 0.1 and last_20_confidences < 0.1:
                         if self.silence_anchors == 0:
-                            raise Exception(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. This phoneme sequence might be too large. Consider setting `silence_anchors=3` or adjusting the segment boundaries.")
+                            raise Exception(f"Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider setting `silence_anchors=3`.")
                         else:
-                            print(f"Suspicious confidence pattern in segment {si+1}: first 20 confidences average {first_20_confidences:.3f} vs last 20 confidences average {last_20_confidences:.3f}. Consider reviewing this segment for potential boundary issues or adjusting `silence_anchors` setting.")
-                            vs2_segment["coverage_analysis"]["bad_alignment"] = True
+                            print(f"  WARNING: Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider adjusting `silence_anchors`.")
+                            batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
+
         if debug:
             overall_avg_confidence = total_confidence / total_phonemes if total_phonemes > 0 else 0.0
-
+            total_segments = sum(len(item["segments"]) for item in batch_results)
+            print(f"\n{'='*60}")
+            print(f"PROCESSING SUMMARY")
+            print(f"{'='*60}")
+            print(f"Clip items: {num_batch}, Segments processed: {total_segments}")
             print(f"Overall average confidence: {overall_avg_confidence:.3f}")
-            # print self counters
             print(f"Totals,  segments processed: {self.total_segments_processed}", f"\tPhonemes aligned: {self.total_phonemes_aligned}",
                    f"\tTarget phonemes: {self.total_phonemes_target}", f"\tPhonemes missed: {self.total_phonemes_missed}",
                    f"\tPhonemes extra: {self.total_phonemes_extra}", f"\tPhonemes aligned correctly: {self.total_phonemes_aligned_correctly}")
             print(f"{'='*60}")
 
-        vs2_data = {"segments": vs2_segments}
+        if extract_embeddings:
+            return batch_results, batch_p_embds, batch_g_embds
+        return batch_results
 
-        if ts_out_path is not None:
-            if os.path.dirname(ts_out_path):
-                os.makedirs(os.path.dirname(ts_out_path), exist_ok=True)
-            with open(ts_out_path, 'w') as f:
-                json.dump(vs2_data, f, indent=4 if debug else None, ensure_ascii=False)
-            if extract_embeddings and vspt_path is not None and vspt_p_embd:
-                torch.save((vspt_p_embd, vspt_g_embds), vspt_path)
-                if debug:
-                    print(f"Embeddings saved to: {vspt_path}")
-            if debug:
-                print(f"Results saved to: {ts_out_path}")
 
-        return vs2_data
-    
-    
-    def process_srt_file(self, srt_path, audio_path, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True):
+    def process_srt_file(self, srt_path, audio_path, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=False, debug=True):
         """
-        New version, read setences from SRT file and process them.
+        Read sentences from SRT file and process them.
         Process entire srt file and generate vs2 output with timestamps.
         
         Args:
@@ -1518,45 +1442,97 @@ class PhonemeTimestampAligner:
 
         audio_wav = self.load_audio(audio_path)
 
-        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path, extract_embeddings, vspt_path, do_groups, debug)
+
+
+        srt_batch = [{"segments": srt_data["segments"]}]
+        result = self.process_segments(srt_batch, [audio_wav], extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+
+        if extract_embeddings:
+            batch_results, batch_p_embds, batch_g_embds = result
+            vs_out_data = batch_results[0]
+        else:
+            vs_out_data = result[0]
+
+        if ts_out_path is not None:
+            if os.path.dirname(ts_out_path):
+                os.makedirs(os.path.dirname(ts_out_path), exist_ok=True)
+            with open(ts_out_path, 'w') as f:
+                json.dump(vs_out_data, f, indent=4 if debug else None, ensure_ascii=False)
+            if extract_embeddings and vspt_path is not None and batch_p_embds:
+                torch.save((batch_p_embds[0], batch_g_embds[0]), vspt_path)
+                if debug:
+                    print(f"Embeddings saved to: {vspt_path}")
+            if debug:
+                print(f"Results saved to: {ts_out_path}")
+
+        return vs_out_data
     
-    def process_sentence(self, text, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+    def process_sentence(self, text, audio_wav, extract_embeddings=False, do_groups=False, debug=False):
         """
-        Process a single transcription and audio waveform, generating vs2 output with timestamps.
+        Process a single text sentence along with it's audio waveform, returning an output dict with timestamps.
 
         Args:
             text: Text (str).
             audio_wav: Audio waveform tensor (torch.Tensor).
             ts_out_path: Path to output vs2 file (optional).
             extract_embeddings: Whether to extract embeddings (bool, optional).
-            vspt_path: Path to save embeddings (.pt file, optional).
             do_groups: Whether to extract group timestamps (bool, optional).
             debug: Whether to print debug information (bool, optional).
+
+
+        Returns:
+            If extract_embeddings is False:
+                vs2 output dict for the sentence.
+            If extract_embeddings is True:
+                Tuple of (timestamps_output_dict, phoneme_embeddings, group_embeddings)
+                where timestamps_output_dict is the output dict,
+                phoneme_embeddings and group_embeddings are embedding tensors.
         """
 
         duration = audio_wav.shape[1] / self.sample_rate
-        srt_data = {"segments": [{"start": 0.0, "end": duration, "text": text.strip()}]}  # create whisper style SRT data
+        srt_data = [ {"segments": [{"start": 0.0, "end": duration, "text": text.strip()}]} ]  # create whisper style SRT data
 
-        return self.process_segments(srt_data["segments"], audio_wav, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
+        result = self.process_segments(srt_data, [audio_wav], extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
 
-    def process_sentence_batch(self, texts, audio_wavs, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False):
+        # Unwrap single batch item
+        if extract_embeddings:
+            timestamps_output_dict, batch_p_embds, batch_g_embds = result
+            return timestamps_output_dict[0], batch_p_embds[0], batch_g_embds[0]
+        return result[0]
+
+    def process_sentences_batch(self, texts, audio_wavs, extract_embeddings=False, do_groups=False, debug=False):
         """
-        Process a batch of transcriptions and audio waveforms, generating vs2 output with timestamps.
+        Process a batch of sentences and audio waveforms, generating vs2 output with timestamps.
 
         Args:
-            texts: List of texts (str).
+            texts: List of text strings.
             audio_wavs: List of audio waveform tensors (torch.Tensor).
-            ts_out_path: Path to output vs2 file (optional).
             extract_embeddings: Whether to extract embeddings (bool, optional).
-            vspt_path: Path to save embeddings (.pt file, optional).
             do_groups: Whether to extract group timestamps (bool, optional).
             debug: Whether to print debug information (bool, optional).
+
+        Returns:
+            If extract_embeddings is False:
+                List of timestamps_output_dicts, one per sentence.
+            If extract_embeddings is True:
+                Tuple of (timestamps_list, phoneme_embeddings, group_embeddings)
+                where timestamps_list is a list of timestamps_output_dicts,
+                phoneme_embeddings and group_embeddings are lists of embedding tensors.
         """
+        assert len(texts) == len(audio_wavs), f"Number of texts ({len(texts)}) must match number of audio waveforms ({len(audio_wavs)})"
+        srt_data = []
+        for text, audio_wav in zip(texts, audio_wavs):
+            duration = audio_wav.shape[1] / self.sample_rate
+            srt_data.append({"segments": [{"start": 0.0, "end": duration, "text": text.strip()}]})
 
-        durations = [audio_wav.shape[1] / self.sample_rate for audio_wav in audio_wavs]
-        srt_data = {"segments": [{"start": 0.0, "end": duration, "text": text.strip()} for text, duration in zip(texts, durations)]}  # create whisper style SRT data
+        result = self.process_segments(srt_data, audio_wavs, extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
 
-        return self.process_segments_batch(srt_data["segments"], audio_wavs, ts_out_path=ts_out_path, extract_embeddings=extract_embeddings, vspt_path=vspt_path, do_groups=do_groups, debug=debug)
+        if extract_embeddings:
+            timestamps_output_dicts, batch_p_embds, batch_g_embds = result
+            return timestamps_output_dicts, batch_p_embds, batch_g_embds
+        return result
+
+
 
     def convert_to_textgrid(self, timestamps_dict, output_file=None, include_confidence=False):
         """
@@ -1692,41 +1668,36 @@ class PhonemeTimestampAligner:
             total_frames: Total number of frames in the mel spectrogram.
             frames_per_second: Frame rate of the mel spectrogram.
             gap_contraction: extra gaps (in frames) to fill during the assortment process. Compensate for silence overwhelment on either side of unvoiced segments.
-            select_key: Key to select timestamps from the aligned_ts dictionary. Default is "phoneme_id".
+            select_key: Key to select timestamps from the aligned_ts dictionary. Default is "phoneme_id". It can be set to "ipa_label" to use IPA labels instead of phoneme IDs, or "group_id" to use group IDs.
             offset_ms: Offset in milliseconds to adjust the start and end times of each timestamp. Pass `timestamps["segments"][segment_id]["start"]*1000` to align with the original audio.
         """
         '''
         
         where <aligned_ts> is expected to be in the following format:
-        "phoneme_ts": [{"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9967153072357178}, {"phoneme_id": 53, "phoneme_label": "n", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7659286260604858}, {"phoneme_id": 29, "phoneme_label": "b", "start_ms": 181.69129943847656, "end_ms": 198.2086944580078, "confidence": 0.978035569190979}, {"phoneme_id": 2, "phoneme_label": "i:", "start_ms": 198.2086944580078, "end_ms": 214.72608947753906, "confidence": 0.8755438327789307}, {"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.31954720616340637}, {"phoneme_id": 55, "phoneme_label": "ŋ", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.6084036231040955}, {"phoneme_id": 32, "phoneme_label": "k", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5099813342094421}, {"phoneme_id": 8, "phoneme_label": "ə", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.8283558487892151}, {"phoneme_id": 52, "phoneme_label": "m", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.9580954909324646}, {"phoneme_id": 28, "phoneme_label": "p", "start_ms": 594.6260986328125, "end_ms": 627.660888671875, "confidence": 0.6376017928123474}, {"phoneme_id": 20, "phoneme_label": "æ", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8247546553611755}, {"phoneme_id": 59, "phoneme_label": "ɹ", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5612516403198242}, {"phoneme_id": 8, "phoneme_label": "ə", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.2321549355983734}, {"phoneme_id": 30, "phoneme_label": "t", "start_ms": 941.4913330078125, "end_ms": 991.0435180664062, "confidence": 0.8491405844688416}, {"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.793982744216919}, {"phoneme_id": 44, "phoneme_label": "v", "start_ms": 1040.595703125, "end_ms": 1123.1826171875, "confidence": 0.9437225461006165}, {"phoneme_id": 56, "phoneme_label": "l", "start_ms": 1172.7347412109375, "end_ms": 1222.2869873046875, "confidence": 0.5690894722938538}, {"phoneme_id": 1, "phoneme_label": "i", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.3983164429664612}, {"phoneme_id": 52, "phoneme_label": "m", "start_ms": 1354.4261474609375, "end_ms": 1387.4608154296875, "confidence": 0.864766538143158}, {"phoneme_id": 19, "phoneme_label": "a:", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.056571315973997116}, {"phoneme_id": 31, "phoneme_label": "d", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.48222440481185913}, {"phoneme_id": 9, "phoneme_label": "ɚ", "start_ms": 1668.2564697265625, "end_ms": 1684.77392578125, "confidence": 0.9793221354484558}, {"phoneme_id": 53, "phoneme_label": "n", "start_ms": 1767.3609619140625, "end_ms": 1783.8782958984375, "confidence": 0.11690044403076172}, {"phoneme_id": 0, "phoneme_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07832614332437515}], 
-        "group_ts": [{"group_id": 1, "group_label": "front_vowels", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9991531372070312}, {"group_id": 12, "group_label": "nasals", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7814053893089294}, {"group_id": 7, "group_label": "voiced_stops", "start_ms": 165.17391967773438, "end_ms": 198.2086944580078, "confidence": 0.4964541494846344}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 198.2086944580078, "end_ms": 231.24346923828125, "confidence": 0.993299126625061}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 280.795654296875, "end_ms": 313.8304443359375, "confidence": 0.21188485622406006}, {"group_id": 12, "group_label": "nasals", "start_ms": 363.3825988769531, "end_ms": 396.4173889160156, "confidence": 0.5997515320777893}, {"group_id": 6, "group_label": "voiceless_stops", "start_ms": 429.4521789550781, "end_ms": 462.4869384765625, "confidence": 0.5166441202163696}, {"group_id": 2, "group_label": "central_vowels", "start_ms": 512.0391235351562, "end_ms": 528.5565185546875, "confidence": 0.9326215386390686}, {"group_id": 12, "group_label": "nasals", "start_ms": 528.5565185546875, "end_ms": 561.59130859375, "confidence": 0.748111367225647}, {"group_id": 6, "group_label": "voiceless_stops", "start_ms": 561.59130859375, "end_ms": 627.660888671875, "confidence": 0.995503842830658}, {"group_id": 4, "group_label": "low_vowels", "start_ms": 759.7999877929688, "end_ms": 776.3174438476562, "confidence": 0.8065245151519775}, {"group_id": 14, "group_label": "rhotics", "start_ms": 776.3174438476562, "end_ms": 809.3521728515625, "confidence": 0.5473693013191223}, {"group_id": 2, "group_label": "central_vowels", "start_ms": 858.9043579101562, "end_ms": 875.4217529296875, "confidence": 0.15379419922828674}, {"group_id": 6, "group_label": "voiceless_stops", "start_ms": 924.973876953125, "end_ms": 991.0435180664062, "confidence": 0.9740506410598755}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 1024.0782470703125, "end_ms": 1040.595703125, "confidence": 0.7481966018676758}, {"group_id": 9, "group_label": "voiced_fricatives", "start_ms": 1040.595703125, "end_ms": 1139.7000732421875, "confidence": 0.9575645327568054}, {"group_id": 13, "group_label": "laterals", "start_ms": 1172.7347412109375, "end_ms": 1205.76953125, "confidence": 0.8053812384605408}, {"group_id": 1, "group_label": "front_vowels", "start_ms": 1255.32177734375, "end_ms": 1271.839111328125, "confidence": 0.9730117917060852}, {"group_id": 12, "group_label": "nasals", "start_ms": 1271.839111328125, "end_ms": 1387.4608154296875, "confidence": 0.540493369102478}, {"group_id": 4, "group_label": "low_vowels", "start_ms": 1437.0130615234375, "end_ms": 1453.5303955078125, "confidence": 0.1977187544107437}, {"group_id": 7, "group_label": "voiced_stops", "start_ms": 1602.1868896484375, "end_ms": 1618.704345703125, "confidence": 0.460404634475708}, {"group_id": 2, "group_label": "central_vowels", "start_ms": 1618.704345703125, "end_ms": 1684.77392578125, "confidence": 0.5910724997520447}, {"group_id": 12, "group_label": "nasals", "start_ms": 1750.843505859375, "end_ms": 1800.3956298828125, "confidence": 0.1525062620639801}, {"group_id": 0, "group_label": "SIL", "start_ms": 1833.430419921875, "end_ms": 1882.982666015625, "confidence": 0.07381139695644379}], 
+        "phoneme_ts": [{"phoneme_id": 4, "phoneme_label": "ɪ", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9967153072357178}, {"phoneme_id": 53, "phoneme_label": "n", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7659286260604858}, {"phoneme_id": 29, "phoneme_label": "b", "start_ms": 181.69129943847656, "end_ms": 198.2086944580078, "confidence": 0.978035569190979}, ...], 
+        "group_ts": [{"group_id": 1, "group_label": "front_vowels", "start_ms": 33.03478240966797, "end_ms": 49.55217361450195, "confidence": 0.9991531372070312}, {"group_id": 12, "group_label": "nasals", "start_ms": 49.55217361450195, "end_ms": 82.58695983886719, "confidence": 0.7814053893089294},  ... ], 
         "words_ts": [{"word": "in", "start_ms": 33.03478240966797, "end_ms": 82.58695983886719, "confidence": 0.8813219666481018, "ph66": [4, 53], "ipa": ["ɪ", "n"]}, {"word": "being", "start_ms": 181.69129943847656, "end_ms": 396.4173889160156, "confidence": 0.6953825578093529, "ph66": [29, 2, 4, 55], "ipa": ["b", "i:", "ɪ", "ŋ"]}, {"word": "comparatively", "start_ms": 429.4521789550781, "end_ms": 1271.839111328125, "confidence": 0.6755372906724612, "ph66": [32, 8, 52, 28, 20, 59, 8, 30, 4, 44, 56, 1], "ipa": ["k", "ə", "m", "p", "æ", "ɹ", "ə", "t", "ɪ", "v", "l", "i"]}, {"word": "modern", "start_ms": 1354.4261474609375, "end_ms": 1783.8782958984375, "confidence": 0.4999569676816463, "ph66": [52, 19, 31, 9, 53], "ipa": ["m", "a:", "d", "ɚ", "n"]}`
         
         and `select_ts` and `select_key` are used to specify which timestamps to align.
         '''
         
-        gap_fill_frame_value = 0
+        gap_fill_frame_value = -1  # sentinel: must not collide with any valid id (SIL=0)
 
         ms_per_frame = 1000.0 / frames_per_second
-
 
         # first sort by start_ms
         aligned_ts.sort(key=lambda x: x["start_ms"])
 
-        framewise_label = []
-
         # fill with gap frames
         framewise_label = [gap_fill_frame_value] * total_frames
-
 
         # Stage 1: Fill frames using exact timestamp boundaries (no tolerance)
         for i, ts_item in enumerate(aligned_ts):
             # Calculate exact frame boundaries without any gap tolerance
             framewise_start_index = max(int((ts_item["start_ms"]-offset_ms) / ms_per_frame), 0)
             framewise_end_index = min(self.ceil((ts_item["end_ms"]-offset_ms) / ms_per_frame), total_frames)
-            
-            
-            if framewise_end_index-framewise_start_index >= total_frames:
+
+            if framewise_end_index-framewise_start_index > total_frames:
                 print(f"Warning: Timestamp start frame {framewise_start_index} exceeds total frames {total_frames}, skipping.")
                 continue
             elif framewise_end_index > total_frames:
@@ -1734,9 +1705,9 @@ class PhonemeTimestampAligner:
                 framewise_end_index = total_frames
 
             # Simple assignment - fill the exact range
+            if select_key not in ts_item:
+                raise ValueError(f"select_key '{select_key}' not found in timestamp item", ts_item)
             for frame_i in range(max(framewise_start_index-1, 0), min(framewise_end_index+1, total_frames)):
-                if select_key not in ts_item:
-                    raise ValueError(f"select_key '{select_key}' not found in timestamp item", ts_item)
                 if framewise_label[frame_i] == gap_fill_frame_value:
                     framewise_label[frame_i] = ts_item[select_key]
 
@@ -1753,8 +1724,8 @@ class PhonemeTimestampAligner:
                 gaps.append((gap_start, gap_end))
             else:
                 i += 1
-                
-        
+
+
         # Contract gaps from both sides using the frame values from either side:
         for gap_start, gap_end in gaps:
             if gap_start > 0 and gap_end <= total_frames:
@@ -1766,7 +1737,7 @@ class PhonemeTimestampAligner:
                     right_value = gap_fill_frame_value
                 if left_value != gap_fill_frame_value and (right_value != gap_fill_frame_value or gap_end == total_frames):
                     gap_size = gap_end - gap_start
-                    
+
                     # Only fill gaps up to gap_contraction * 2 in size
 
                     if gap_size <= gap_contraction:
@@ -1790,80 +1761,15 @@ class PhonemeTimestampAligner:
                                 framewise_label[j] = left_value
                             # then right side
                             for j in range(gap_end - 1, max(gap_end - gap_contraction - 1, gap_start - 1), -1):
-                                framewise_label[j] = right_value    
+                                framewise_label[j] = right_value
 
 
         return framewise_label
 
-
-def process_sentence(transcription, audio_path, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", lang="en-us", duration_max=10, ts_out_path=None, device="cpu"):
-
-    extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
-
-    audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
-
-
-    return extractor.process_sentence(transcription, audio_wav, ts_out_path=ts_out_path, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False)
-
-
-
-def process_single_clip(cupe_ckpt_path, audio_path, srt_path, ts_out_path = None, vspt_path=None,  duration_max=10, lang="en-us", device="cuda:0", extract_embeddings=False, debug=True):
-    """
-    Process a single audio clip for phoneme timestamp extraction.
-
-    Args:
-        cupe_ckpt_path (str): Path to CUPE model checkpoint.
-        audio_path (str): Path to audio file.
-        srt_path (str): Path to SRT file (JSON format), e.g., {"segments": [{"start": 0.0, "end": 9.23, "text": "text"}], }
-        ts_out_path (str, optional): Path to output vs2 file. Timestamps output json format.
-        vspt_path (str, optional): Path to save embeddings (.pt file).
-        duration_max (float): Maximum segment duration in seconds.
-        lang (str): Language code for phonemization (e.g., "en-us").
-        device (str): Device to run inference on (e.g., "cuda:0" or "cpu").
-        extract_embeddings (bool): Whether to extract embeddings (default: False).
-        debug (bool): Whether to print debug information (default: True).
-    """
-    extractor = PhonemeTimestampAligner(cupe_ckpt_path=cupe_ckpt_path, lang=lang, duration_max=duration_max, device=device)
-
-    if not os.path.exists(audio_path):
-        raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
-    
-    if not os.path.exists(srt_path):
-        raise FileNotFoundError(f"SRT file does not exist: {srt_path}")
-
-    if (vspt_path is None) and extract_embeddings:
-        vspt_path = srt_path.replace('.srt', '.vs.pt')
-        if not vspt_path.endswith('.vs.pt'):
-            vspt_path = vspt_path.rsplit('.', 1)[0] + '.vs.pt'
-        
-    return extractor.process_srt_file(srt_path, audio_path, ts_out_path, extract_embeddings, vspt_path, debug=debug)
-
-
-
-
-
-def example_audio_timestamps():
-
-    transcription = "butterfly"
-    audio_path = "samples/audio/109867__timkahn__butterfly.wav"
-    
-    model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt" 
-    extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
-
-    audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
-
-    t0 = time.time()
-
-    timestamps = extractor.process_sentence(transcription, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True)
-
-    t1 = time.time()
-    print("Timestamps:")
-    print(json.dumps(timestamps, indent=4, ensure_ascii=False))
-    print(f"Processing time: {t1 - t0:.2f} seconds")
 
 
 
 
 if __name__ == "__main__":
     torch.random.manual_seed(42)
-    example_audio_timestamps()
+    

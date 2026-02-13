@@ -46,7 +46,7 @@ text_sentence = "ah What!"
 
 
 
-timestamps = extractor.process_sentence(text_sentence, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=False)
+timestamps = extractor.process_sentence(text_sentence, audio_wav, extract_embeddings=False, do_groups=True, debug=False)
 
 
 # Step4 (optional): Convert to textgrid

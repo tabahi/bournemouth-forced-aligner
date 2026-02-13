@@ -12,7 +12,7 @@ def weighted_pool_embeddings(embeddings, log_probs, framestamps):
     Args:
         embeddings: Tensor of shape [T, D] where T is number of frames and D is embedding dimension
         log_probs:  log_probs: Log probabilities [T, C], can pass either phoneme or group log_probs
-        timestamps: List of tuples (phoneme_idx, start_frame, end_frame, start_ms, end_ms)
+        timestamps: List of tuples (phoneme_id, start_frame, end_frame, start_ms, end_ms)
     
     Returns:
         pooled_embeddings: Tensor of shape [N, D] where N is length of timestamps
@@ -27,7 +27,7 @@ def weighted_pool_embeddings(embeddings, log_probs, framestamps):
     pooled_embeddings = []
     
     for framestamp in framestamps:
-        phoneme_idx, start_frame, end_frame,  = framestamp[:3]  # Ignore start_ms and end_ms for pooling
+        phoneme_id, start_frame, end_frame,  = framestamp[:3]  # Ignore start_ms and end_ms for pooling
         # Clamp frame indices to valid range
         start_frame = max(0, int(start_frame))
         end_frame = min(embeddings.shape[0], int(end_frame))
@@ -35,7 +35,7 @@ def weighted_pool_embeddings(embeddings, log_probs, framestamps):
         if start_frame < end_frame:
             # Get segment embeddings and confidence weights
             segment_embeddings = embeddings[start_frame:end_frame]  # Shape: [num_frames, D]
-            confidence_weights = probs[start_frame:end_frame, phoneme_idx]  # Shape: [num_frames]
+            confidence_weights = probs[start_frame:end_frame, phoneme_id]  # Shape: [num_frames]
             
             # Compute weighted average
             # Expand weights to match embedding dimensions: [num_frames, 1] 
@@ -73,60 +73,55 @@ def _calculate_confidences(log_probs, framestamps):
 
     Args:
         log_probs: Log probabilities [T, C]
-        framestamps: List of (phoneme_idx, start_frame, end_frame, target_seq_idx) tuples
+        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx) tuples
 
     Returns:
-        List of (phoneme_idx, start_frame, end_frame, target_seq_idx, avg_confidence) tuples
+        List of (phoneme_id, start_frame, end_frame, target_seq_idx, avg_confidence) tuples
     """
     probs = torch.exp(log_probs)
     updated_tuples = []
 
-    for phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated in framestamps:
+    for phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated in framestamps:
         # Clamp to valid range
         start_frame = max(0, int(start_frame))
         end_frame = min(log_probs.shape[0], int(end_frame))
         if not is_estimated or (start_frame < probs.shape[0] and end_frame <= log_probs.shape[0]):
-            avg_confidence = probs[start_frame, phoneme_idx]
+            avg_confidence = probs[start_frame, phoneme_id]
         else:
-            raise ValueError(f"Invalid frame range for estimated timestamp: start_frame={start_frame}, end_frame={end_frame}, log_probs shape={log_probs.shape}, is_estimated={is_estimated}, phoneme_id={phoneme_idx}")
+            raise ValueError(f"Invalid frame range for estimated timestamp: start_frame={start_frame}, end_frame={end_frame}, log_probs shape={log_probs.shape}, is_estimated={is_estimated}, phoneme_id={phoneme_id}")
 
-        if start_frame < end_frame and phoneme_idx < log_probs.shape[1]:
+        if start_frame < end_frame and phoneme_id < log_probs.shape[1]:
 
             half_confidence = avg_confidence/2
-            #if (half_confidence < 0.01): half_confidence = avg_confidence*2
-            last_good_frame = start_frame
             total_good_frames = 1
 
             # since there can be blanks after the first one, we only take probablities if at least prob > 0.5 compared to the first frame to avoid for-sure blanks
             for f in range(start_frame+1, end_frame):
-                frame_prob = probs[f, phoneme_idx]
+                frame_prob = probs[f, phoneme_id]
                 if (frame_prob > half_confidence) or (frame_prob > 0.1):
                     avg_confidence += frame_prob
-                    last_good_frame = f
                     total_good_frames += 1
             if total_good_frames > 1:
                 avg_confidence /= total_good_frames
-                end_frame = min(log_probs.shape[0], int(last_good_frame + 1 )) # end_frame is exclusive, so we add 1
 
-                max_confidence = probs[start_frame:end_frame, phoneme_idx].max()
+                max_confidence = probs[start_frame:end_frame, phoneme_id].max()
                 if avg_confidence < max_confidence/2:
-                    #print(avg_confidence, max_confidence)
                     avg_confidence = max_confidence
             
-        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence.item()))
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence.item()))
 
     return updated_tuples
 
 def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate):
     '''
     Args:
-        framestamps: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence)
+        framestamps: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence)
         spectral_length: Number of spectral frames (int)
         start_time: Start time of the segment in seconds, used to offset the timestamps
         wav_len: Length of the audio segment in samples, used to estimate the duration per spectral-frame
         sample_rate: Sample rate of the audio, used to convert frames to milliseconds
     Returns:
-        updated_tuples: List of tuples (phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
+        updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
     '''
     duration_in_seconds = wav_len / sample_rate
     duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
@@ -134,10 +129,10 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
     updated_tuples = []
     for tup in framestamps:
         if len(tup) == 6:
-            phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence = tup
+            phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence = tup
         else:
             # fallback for tuples with different length
-            phoneme_idx, start_frame, end_frame = tup[:3]
+            phoneme_id, start_frame, end_frame = tup[:3]
             target_seq_idx = tup[3] if len(tup) > 3 else -1
             is_estimated = tup[4] if len(tup) > 4 else False
             avg_confidence = tup[5] if len(tup) > 5 else 0.0
@@ -149,7 +144,7 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
         start_ms = start_sec * 1000
         end_ms = end_sec * 1000
 
-        updated_tuples.append((phoneme_idx, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms))
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms))
 
     return updated_tuples
     

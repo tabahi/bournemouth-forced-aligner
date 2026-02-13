@@ -20,7 +20,7 @@ def example_audio_timestamps():
 
     t0 = time.time()
 
-    timestamps = extractor.process_sentence(text_sentence, audio_wav, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=True, debug=True)
+    timestamps = extractor.process_sentence(text_sentence, audio_wav, extract_embeddings=False, do_groups=True, debug=True)
 
     t1 = time.time()
     print("Timestamps:")

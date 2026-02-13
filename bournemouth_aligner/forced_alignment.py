@@ -132,7 +132,7 @@ class ViterbiDecoder:
         if anchor_pauses and self.silence_id is not None:
             if debug: print("Attempting segmented Viterbi alignment with silence anchoring...")
             result = self._segmented_viterbi_decode(
-                modified_log_probs, true_sequence, true_sequence_idx
+                modified_log_probs, true_sequence, true_sequence_idx, debug=debug
             )
             if result is not None and len(result[0]) == num_frames:
                 
@@ -201,7 +201,7 @@ class ViterbiDecoder:
                 i += 1
         return groups
 
-    def _match_silences(self, sil_groups, audio_silences, target_len, num_frames):
+    def _match_silences(self, sil_groups, audio_silences, target_len, num_frames, best_dist_threshold=0.3):
         """
         Match target SIL groups to audio silence segments by ordered proportional position.
 
@@ -210,7 +210,7 @@ class ViterbiDecoder:
             audio_silences: List of (start_frame, end_frame) in audio
             target_len: Total length of target sequence
             num_frames: Total number of audio frames
-
+            best_dist_threshold: Maximum allowed distance (as proportion of sequence) for a match
         Returns:
             List of (target_group_idx, audio_silence_idx) matched pairs (ordered)
         """
@@ -237,14 +237,14 @@ class ViterbiDecoder:
                 elif dist > best_dist:
                     break  # Getting farther, stop searching
 
-            if best_audio is not None and best_dist < 0.3:
+            if best_audio is not None and best_dist < best_dist_threshold:
                 matches.append((tg_idx, best_audio))
                 audio_idx = best_audio + 1  # Enforce ordering
 
         return matches
 
     def _segmented_viterbi_decode(self, log_probs, true_sequence, true_sequence_idx,
-                                   boundary_pad=3, min_speech_frames=30):
+                                   boundary_pad=3, min_speech_frames=20, debug=False):
         """
         Segmented Viterbi: match target SIL groups to audio silences,
         split at matched points, run Viterbi on each segment.
@@ -267,7 +267,32 @@ class ViterbiDecoder:
 
         # Step 1: find anchor points in both sequences
         sil_groups = self._find_target_sil_groups(true_sequence)
-        audio_silences = self._detect_silence_segments(log_probs)
+        
+        if len(sil_groups) == 0 :
+            if debug: print("WARN: No target SIL groups detected in the target sequence. No punctuation detected. Use punctuated text or disable silence anchoring for better alignment.")
+            return [], []  # No silences to anchor on, fallback to single Viterbi
+        min_silence_frames = self.silence_anchors
+        audio_silences = self._detect_silence_segments(log_probs, sil_prob_threshold=0.9,  min_silence_frames=min_silence_frames, debug=debug)
+        if len(audio_silences) == 0 and len(true_sequence) > 200:
+            #_thresh_by_nframes = {6: 0.4, 7: 0.3, 8: 0.2, 9: 0.1, 10: 0.05}
+            new_thresh = 1.0 - (0.09 * min_silence_frames)
+            new_thresh = max(0.05, new_thresh)  # Ensure threshold stays positive
+
+            if debug: print(f"WARN: No audio silences detected. Retrying with lower threshold {new_thresh:.2f}")
+            audio_silences = self._detect_silence_segments(log_probs, sil_prob_threshold=new_thresh, min_silence_frames=min_silence_frames, debug=debug)
+        if len(audio_silences) == 0 and len(true_sequence) > 200 and min_silence_frames > 3:
+            if debug: print("WARN: No audio silences detected. Retrying with min_silence_frames=3 , previously=", min_silence_frames)
+            min_silence_frames = 3
+            audio_silences = self._detect_silence_segments(log_probs, sil_prob_threshold=0.9, min_silence_frames=min_silence_frames, debug=debug)
+
+
+        if debug:
+            print(f"Detected target SIL (text punctuation) at indices: {sil_groups}")
+            print(f"Detected audio silences at frames: {audio_silences}")
+
+        if len(audio_silences) == 0:
+            if debug: print("WARN:  No audio silences detected in the audio. Skipping segmented alignment.")
+            return [], []  # No silences to anchor on, fallback to single Viterbi
 
         if not sil_groups or not audio_silences:
             return [], []
@@ -325,6 +350,8 @@ class ViterbiDecoder:
         all_frame_phonemes = []
         all_frame_phonemes_idx = []
 
+        if debug: print(f"Segments after silence anchoring: {segments}")
+
         for audio_start, audio_end, tgt_start, tgt_end, is_silence in segments:
             n_frames_seg = audio_end - audio_start
             if n_frames_seg <= 0:
@@ -365,7 +392,7 @@ class ViterbiDecoder:
                     # Boost blank at detected sub-silence frames within this segment
                     seg_log_probs = self._anchor_silence_in_log_probs(
                         seg_log_probs,
-                        self._detect_silence_segments(seg_log_probs),
+                        self._detect_silence_segments(seg_log_probs, min_silence_frames=min_silence_frames),
                         boost=5.0
                     )
 
@@ -419,19 +446,19 @@ class ViterbiDecoder:
 
         return frame_phonemes, frame_phonemes_idx
 
-    def _detect_silence_segments(self, log_probs, sil_threshold=-2.0, min_silence_frames=None):
+    def _detect_silence_segments(self, log_probs, sil_prob_threshold=0.8, min_silence_frames=None, debug=False):
         """
-        Detect segments of silence using the conditional P(SIL | non-blank).
+        Detect segments of silence using softmax P(SIL) across all classes.
 
-        During actual silence the model puts most probability on blank (noise),
-        so the *raw* SIL probability is low.  Computing P(SIL | class != blank)
-        via re-normalization over non-blank classes gives a much stronger signal:
-        SIL dominates among real phoneme classes even when blank absorbs most mass.
+        Uses the full softmax probability of SIL in context with all other classes
+        (including blank/noise). A sliding window averages the per-frame SIL
+        probability, and windows where the average exceeds the threshold are
+        marked as silence.
 
         Args:
             log_probs: Log probabilities tensor [T, C]
-            sil_threshold: Threshold on log P(SIL | non-blank) after sliding-window
-                averaging.  Default -2.0 ≈ P(SIL|non-blank) > 13%.
+            sil_prob_threshold: Minimum average P(SIL) within a window to count
+                as silence. Default 0.8 (80%).
             min_silence_frames: Minimum consecutive silent frames to keep.
                 Defaults to ``self.silence_anchors``.
 
@@ -441,7 +468,7 @@ class ViterbiDecoder:
         if min_silence_frames is None:
             min_silence_frames = self.silence_anchors
 
-        sliding_frames = self.silence_anchors
+        sliding_frames = min_silence_frames
         num_frames = log_probs.shape[0]
         num_classes = log_probs.shape[1]
 
@@ -450,26 +477,22 @@ class ViterbiDecoder:
         if num_frames < sliding_frames:
             return []
 
-        # Compute P(SIL | non-blank) by re-normalizing without blank
-        non_blank_mask = torch.ones(num_classes, dtype=torch.bool, device=log_probs.device)
-        non_blank_mask[self.blank_id] = False
-        non_blank_logits = log_probs[:, non_blank_mask]  # [T, C-1]
-        non_blank_log_probs = F.log_softmax(non_blank_logits, dim=-1)
-
-        # Map silence_id to its index in the non-blank set
-        sil_idx_nb = self.silence_id if self.silence_id < self.blank_id else self.silence_id - 1
-        sil_score = non_blank_log_probs[:, sil_idx_nb]  # [T]
+        # Full softmax P(SIL) across all classes including blank
+        probs = torch.exp(log_probs)  # [T, C]
+        sil_prob = probs[:, self.silence_id]  # [T]
 
         # Sliding-window average for robustness
         if sliding_frames > 1:
-            cumsum = torch.cumsum(sil_score, dim=0)
+            cumsum = torch.cumsum(sil_prob, dim=0)
             padded = torch.cat([torch.zeros(1, device=cumsum.device), cumsum])
             window_avg = (padded[sliding_frames:] - padded[:-sliding_frames]) / sliding_frames
         else:
-            window_avg = sil_score
+            window_avg = sil_prob
 
-        # Threshold: which windows are silent?
-        is_silent = window_avg > sil_threshold
+        if debug: print(f"Silence detection: max_avg_prob={window_avg.max().item():.4f}, threshold={sil_prob_threshold}")
+
+        # Threshold: which windows have >= 80% SIL probability?
+        is_silent = window_avg >= sil_prob_threshold
 
         # Convert boolean mask to contiguous segments
         silence_segments = []
