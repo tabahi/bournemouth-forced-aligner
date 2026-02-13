@@ -25,7 +25,7 @@ from .forced_alignment import AlignmentUtils
 #from .ipamappers.ph66_mapper import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
 from .ipamappers import ph66_phonemeizer
 from .presets import get_preset
-from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences, convert_to_ms
+from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences, convert_to_ms, detect_device_automatically
 # Create reverse mappings for interpretability
 #index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
 #index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
@@ -39,7 +39,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="cpu", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="auto", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, bad_confidence_threshold=0.6):
         """
         Initialize the phoneme timestamp extractor.
 
@@ -65,7 +65,7 @@ class PhonemeTimestampAligner:
             duration_max (float): Maximum segment duration in seconds for padding (10-60 recommended).
             output_frames_key (str): Frame output format. Options: "phoneme_id", "phoneme_label",
                 "group_id", "group_label".
-            device (str): Processing device ("cpu" or "cuda").
+            device (str): Processing device ("cpu", "cuda", "mps", or "auto" to detect automatically).
             silence_anchors (int): Silent frames threshold for segment splitting (0 to disable).
             boost_targets (bool): Enhance target phoneme probabilities for better alignment.
             enforce_minimum (bool): Ensure minimum probability threshold for target phonemes.
@@ -119,6 +119,8 @@ class PhonemeTimestampAligner:
                 lang="zh"
             )
         """
+        if device == "auto":
+            device = detect_device_automatically()
         self.device = device
 
         # Parameter priority handling:

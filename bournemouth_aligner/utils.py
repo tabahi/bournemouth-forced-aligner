@@ -410,3 +410,12 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
     else:
         return result
 
+
+
+def detect_device_automatically():
+    if torch.cuda.is_available():
+        return 'cuda'
+    elif torch.backends.mps.is_available():
+        return 'mps'
+    else:
+        return 'cpu'

@@ -95,7 +95,7 @@ audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 extractor = PhonemeTimestampAligner(
     preset="en-us",  # Automatically selects best English model
     duration_max=10,
-    device='cpu'
+    device='auto'
 )
 
 # Alternative: explicit model selection
@@ -103,7 +103,7 @@ extractor = PhonemeTimestampAligner(
 #     model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt",
 #     lang='en-us',
 #     duration_max=10,
-#     device='cpu'
+#     device='auto'
 # )
 
 # Load and process
@@ -947,7 +947,7 @@ from bournemouth_aligner import PhonemeTimestampAligner
 
 # Initialize aligner
 extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", 
-                                  lang='en-us', duration_max=10, device='cpu')
+                                  lang='en-us', duration_max=10, device='auto')
 
 # Process audio and get timestamps
 audio_wav = extractor.load_audio("examples/samples/audio/109867__timkahn__butterfly.wav")
