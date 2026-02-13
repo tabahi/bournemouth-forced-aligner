@@ -568,33 +568,40 @@ aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
 
 ```python
 PhonemeTimestampAligner(
-    preset="en-us",  # Language preset (recommended)
-    model_name=None,  # Optional: explicit model override
-    cupe_ckpt_path=None,  # Optional: direct checkpoint path
-    lang="en-us",  # Language for phonemization
-    duration_max=10,
+    preset="en-us",           # Language preset (recommended)
+    model_name=None,          # Optional: explicit model override
+    cupe_ckpt_path=None,      # Optional: direct checkpoint path
+    lang="en-us",             # Language for phonemization
+    mapper="ph66",            # Phoneme mapper
+    duration_max=10,          # Max segment duration (seconds)
     output_frames_key="phoneme_id",
-    device="cpu",
+    device="auto",            # "auto", "cpu", "cuda", or "mps"
+    silence_anchors=0,        # 0 to disable silence-anchored segmentation
     boost_targets=True,
     enforce_minimum=True,
     enforce_all_targets=True,
-    ignore_noise=True
+    ignore_noise=True,
+    extend_soft_boundaries=True,
+    bad_confidence_threshold=0.6
 )
 ```
 
 **Parameters:**
-- `preset`: **[NEW]** Language preset for automatic model and language selection. Use language codes like "de", "fr", "hi", "ja", etc. Supports 127+ languages with intelligent model selection.
+- `preset`: Language preset for automatic model and language selection. Use language codes like `"de"`, `"fr"`, `"hi"`, etc. Supports 80+ languages with intelligent model selection.
 - `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). Overrides preset selection. Downloaded automatically if available.
 - `cupe_ckpt_path`: Local path to model checkpoint. Highest priority - overrides both preset and model_name.
 - `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
-- `duration_max`: Maximum segment duration (seconds, for batch padding). Best to keep <30 seconds.
-- `output_frames_key`: Output key for frame assortment (`phoneme_id`, `ipa_label`, `phoneme_label`, `group_id`, `group_label`).
-- `device`: Inference device (`cpu`, `cuda` or `mps`).
-- `silence_anchors`: Number of silent frames to anchor pauses (i.e., split segments when at least `silence_anchors` frames are silent). Set `0` to disable. Default is `10`. Set a lower value to increase sensitivity to silences. Best set `enforce_all_targets=True` when using this.
+- `mapper`: Phoneme mapper to use. Currently only `"ph66"` is supported.
+- `duration_max`: Maximum segment duration in seconds, used for batch padding. Best to keep <30 seconds.
+- `output_frames_key`: Output key for frame assortment (`"phoneme_id"`, `"phoneme_label"`, `"group_id"`, `"group_label"`).
+- `device`: Inference device. `"auto"` (default) auto-detects the best available device. Also accepts `"cpu"`, `"cuda"`, or `"mps"`.
+- `silence_anchors`: Sliding window size for silence-anchored segmented alignment. When >0, enables splitting long segments at detected silence regions matched to SIL tokens in the target sequence. Set `0` (default) to disable and use pure Viterbi. Set a lower value (e.g. 3) to increase sensitivity to silences. Recommended with `enforce_all_targets=True`.
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
-- `enforce_minimum`: Enforce minimum probability for target phonemes.
-- `enforce_all_targets`: Band-aid postprocessing patch. It will insert phonemes missed by viterbi decoding at their expected positions based on target positions.
-- `ignore_noise`:  Whether to ignore the predicted "noise" in the alignment. If set to True, noise will be skipped over. If False, long noisy/silent segments will be included as "noise" timestamps.
+- `enforce_minimum`: Enforce minimum probability threshold for target phonemes.
+- `enforce_all_targets`: Postprocessing step that inserts phonemes missed by Viterbi decoding at their expected positions based on target sequence positions.
+- `ignore_noise`: Whether to ignore predicted "noise" in the alignment. If `True`, noise is skipped. If `False`, long noisy/silent segments are included as "noise" timestamps.
+- `extend_soft_boundaries`: Extend phoneme end-boundaries to cover the full phoneme duration. Tries to extend the end boundary of each phoneme to the start of the next phoneme, but will not extend beyond 10x of the original duration to prevent excessive extension.
+- `bad_confidence_threshold`: Ratio threshold for flagging low-confidence alignments (set to `1` to disable). Default `0.6` means a warning is issued if 60% of phonemes have low confidence. When triggered, `segments[i]["coverage_analysis"]["bad_alignment"]` is set to `True`.
 ---
 
 **Models:**
