@@ -14,7 +14,7 @@ def example_batch_sentence_processing():
     Processes multiple text-audio pairs in a single batch call.
     All audio clips must fit within duration_max seconds."""
 
-    aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='cpu')
+    bfa_aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='auto')
 
     # Load audio files
     texts = [
@@ -26,10 +26,10 @@ def example_batch_sentence_processing():
         "examples/samples/LJSpeech/LJ001-0002.wav",
     ]
 
-    audio_wavs = [aligner.load_audio(p) for p in audio_paths]
+    audio_wavs = [bfa_aligner.load_audio(p) for p in audio_paths]
 
     t0 = time.time()
-    timestamps = aligner.process_sentences_batch(texts, audio_wavs, do_groups=True, debug=True)
+    timestamps = bfa_aligner.process_sentences_batch(texts, audio_wavs, do_groups=True, debug=True)
     print(f"Batch processing took {(time.time() - t0)*1000:.1f} ms")
 
     # Print results
@@ -44,12 +44,18 @@ def example_batch_sentence_processing():
                 print(f"    ... ({len(seg['phoneme_ts']) - 5} more)")
 
 
+
+    # view detailed debug info
+    print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
+            f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
+            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned correctly: {bfa_aligner.total_phonemes_aligned_correctly}")
+
 def example_batch_SRT_processing():
     """Example of batch processing with process_segments_batch.
     Uses whisper-style SRT json files with pre-segmented audio.
     Each segment gets its own audio tensor (chopped from the full audio)."""
 
-    aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='cpu', silence_anchors=3)
+    bfa_aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='cpu', silence_anchors=3)
 
     srt_paths = [
         "examples/samples/LJSpeech/LJ001-0001.srt.json",
@@ -67,13 +73,13 @@ def example_batch_SRT_processing():
     for srt_path, audio_path in zip(srt_paths, audio_paths):
         with open(srt_path, 'r') as f:
             srt_data = json.load(f)
-        audio_wav = aligner.load_audio(audio_path)
+        audio_wav = bfa_aligner.load_audio(audio_path)
 
         all_texts_srts.append(srt_data)
         all_audio_wavs.append(audio_wav)
 
     t0 = time.time()
-    timestamps = aligner.process_segments(
+    timestamps = bfa_aligner.process_segments(
         all_texts_srts,
         all_audio_wavs,
         do_groups=True,
@@ -93,6 +99,14 @@ def example_batch_SRT_processing():
             for w in seg.get("words_ts", []):
                 print(f"  {w['word']}: {w['start_ms']:.0f}-{w['end_ms']:.0f} ms, conf={w['confidence']:.3f}")
 
+
+    
+
+    # view detailed debug info
+    print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
+            f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
+            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned correctly: {bfa_aligner.total_phonemes_aligned_correctly}")
+    
     print ("\n\nBatch processing complete. Output saved to:", ts_out_path)
 
 if __name__ == "__main__":

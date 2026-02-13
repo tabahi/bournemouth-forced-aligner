@@ -194,8 +194,9 @@ class PhonemeTimestampAligner:
         self.reset_counters()
 
     def reset_counters(self):
-        """Reset internal counters for tracking alignment statistics."""
+        """Reset internal counters for tracking alignment statistics. Purely for debugging and analysis purposes."""
         self.total_segments_processed = 0
+        self.total_segments_bad = 0
         self.total_phonemes_aligned = 0
         self.total_phonemes_target = 0
         self.total_phonemes_aligned_correctly = 0
@@ -1377,6 +1378,7 @@ class PhonemeTimestampAligner:
                     if low_confidence_ratio > self.bad_confidence_threshold:
                         print(f"  WARNING: Clip {bi}, segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) avg={avg_confidence:.3f}")
                         batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
+                        self.total_segments_bad += 1
                     first_20_confidences = sum(confidences[10:30]) / 20
                     last_20_confidences = sum(confidences[-30:-10]) / 20
 
@@ -1386,6 +1388,7 @@ class PhonemeTimestampAligner:
                         else:
                             print(f"  WARNING: Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider adjusting `silence_anchors`.")
                             batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
+                            self.total_segments_bad += 1
 
         if debug:
             overall_avg_confidence = total_confidence / total_phonemes if total_phonemes > 0 else 0.0

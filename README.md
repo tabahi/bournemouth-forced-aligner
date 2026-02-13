@@ -1,4 +1,4 @@
-# 🎯 Bournemouth Forced Aligner (BFA)
+# Bournemouth Forced Aligner (BFA)
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/tabahi/bournemouth-forced-aligner.svg)](https://github.com/tabahi/bournemouth-forced-aligner/stargazers)
 
 **High-precision multi-lingual phoneme-level timestamp extraction from audio files**
-> 🎯 **Find the exact time when any phoneme is spoken** - provided you have the audio and its text.
+> **Find the exact time when any phoneme is spoken** - provided you have the audio and its text. Crucial for creating a text-to-speech (TTS) dataset.
 
 
 [🚀 Quick Start](#-getting-started) • [📚 Documentation](#-how-does-it-work) • [🔧 Installation](#-installation) • [💻 CLI](#-command-line-interface-cli) • [🤝 Contributing](https://github.com/tabahi/bournemouth-forced-aligner/issues)
@@ -17,12 +17,22 @@
 
 ---
 
-## ✨ Overview
+
+## *News* v1.1.0:
+- Now the longer sentences are handled much more robustly, due to silence anchoring.
+- The silence anchors are detected using VAD-like method to fix the position of silences on the punctuation marks, given enough confidence, that helps break down long speech segments into chuncks.
+- The "coverage_analysis" now runs multiple alignment quality tests. If "bad_confidence" is true, then it's better to discard that segment to avoid bad training data for TTS.
+- There are more warnings printed and errors raised when the alignment fails due to bad confidence.
+- The "phoneme_ts" output now includes original espeak IPA labels, along with the standardized ones. It's helps to train much eloquent TTS models.
+- The latest update v1.1.0 (2026-02-13) breaks the compatibility with the previous versions. The code is refactored to support batch processing.
+
+
+## Overview
 
 BFA is a lightning-fast Python library that extracts **phoneme/word timestamps** from audio files with millisecond precision. Built on  [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
 
 
-## 🌟 Key Features
+## Key Features
 
 <div align="center">
 
@@ -62,7 +72,7 @@ pip install bournemouth-forced-aligner
 apt-get install espeak-ng ffmpeg
 ```
 
-### ✅ Verify Installation
+### Verify Installation
 
 ```bash
 # Show help
@@ -77,7 +87,7 @@ python -c "from bournemouth_aligner import PhonemeTimestampAligner; print('✅ I
 
 ---
 
-## 🎯 Getting Started
+## Getting Started
 
 ### 🔥 Quick Example
 
@@ -92,14 +102,14 @@ text_sentence = "butterfly"
 audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 
 # Initialize aligner using language preset (recommended)
-extractor = PhonemeTimestampAligner(
+bfa_aligner = PhonemeTimestampAligner(
     preset="en-us",  # Automatically selects best English model
     duration_max=10,
     device='auto'
 )
 
 # Alternative: explicit model selection
-# extractor = PhonemeTimestampAligner(
+# bfa_aligner = PhonemeTimestampAligner(
 #     model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt",
 #     lang='en-us',
 #     duration_max=10,
@@ -107,10 +117,10 @@ extractor = PhonemeTimestampAligner(
 # )
 
 # Load and process
-audio_wav = extractor.load_audio(audio_path) # use RMS normalization for preloaded wav `audio_wav = extractor._rms_normalize(audio_wav)`
+audio_wav = bfa_aligner.load_audio(audio_path) # use RMS normalization for preloaded wav `audio_wav = extractor._rms_normalize(audio_wav)`
 
 t0 = time.time()
-timestamps = extractor.process_sentence(
+timestamps = bfa_aligner.process_sentence(
     text_sentence,
     audio_wav,
     extract_embeddings=False,
@@ -119,9 +129,18 @@ timestamps = extractor.process_sentence(
 )
 t1 = time.time()
 
-print("🎯 Timestamps:")
+print("Timestamps:")
 print(json.dumps(timestamps, indent=4, ensure_ascii=False))
-print(f"⚡ Processing time: {t1 - t0:.2f} seconds")
+print(f"Processing time: {t1 - t0:.2f} seconds")
+
+
+
+# view detailed debug info
+print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
+        f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
+        f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned correctly: {bfa_aligner.total_phonemes_aligned_correctly}")
+bfa_aligner.reset_counters() # reset totals
+
 ```
 
 
@@ -146,7 +165,7 @@ aligner_fr = PhonemeTimestampAligner(preset="fr")
 <summary>📋 Click to see detailed JSON output</summary>
 
 ```json
-# version 0.1.8
+# version 1.1.0
 Timestamps:
 {
     "segments": [
@@ -783,7 +802,7 @@ In the timestamps dict `output["segments][si]["phoneme_ts"]` there are both labl
                         "start_ms": 2606.85009765625,
                         "end_ms": 2639.033203125,
                         "confidence": 0.664559543132782,
-                        "is_estimated": false,  // true means it was not aligned by viterbi algorithm, but was estimated, if enforce_all_targets=True
+                        "is_estimated": false,  // if 'true', it means it was not aligned by viterbi algorithm, but was estimated, if enforce_all_targets=True
                         "target_seq_idx": 29,
                         "index": 29
                     },
