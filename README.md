@@ -593,7 +593,6 @@ PhonemeTimestampAligner(
     lang="en-us",             # Language for phonemization
     mapper="ph66",            # Phoneme mapper
     duration_max=10,          # Max segment duration (seconds)
-    output_frames_key="phoneme_id",
     device="auto",            # "auto", "cpu", "cuda", or "mps"
     silence_anchors=0,        # 0 to disable silence-anchored segmentation
     boost_targets=True,
@@ -612,15 +611,16 @@ PhonemeTimestampAligner(
 - `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
 - `mapper`: Phoneme mapper to use. Currently only `"ph66"` is supported.
 - `duration_max`: Maximum segment duration in seconds, used for batch padding. Best to keep <30 seconds.
-- `output_frames_key`: Output key for frame assortment (`"phoneme_id"`, `"phoneme_label"`, `"group_id"`, `"group_label"`).
 - `device`: Inference device. `"auto"` (default) auto-detects the best available device. Also accepts `"cpu"`, `"cuda"`, or `"mps"`.
 - `silence_anchors`: Sliding window size for silence-anchored segmented alignment. When >0, enables splitting long segments at detected silence regions matched to SIL tokens in the target sequence. Set `0` (default) to disable and use pure Viterbi. Set a lower value (e.g. 3) to increase sensitivity to silences. Recommended with `enforce_all_targets=True`.
 - `boost_targets`: Boost target phoneme probabilities for better alignment.
 - `enforce_minimum`: Enforce minimum probability threshold for target phonemes.
 - `enforce_all_targets`: Postprocessing step that inserts phonemes missed by Viterbi decoding at their expected positions based on target sequence positions.
 - `ignore_noise`: Whether to ignore predicted "noise" in the alignment. If `True`, noise is skipped. If `False`, long noisy/silent segments are included as "noise" timestamps.
-- `extend_soft_boundaries`: Extend phoneme end-boundaries to cover the full phoneme duration. Tries to extend the end boundary of each phoneme to the start of the next phoneme, but will not extend beyond 10x of the original duration to prevent excessive extension.
+- `extend_soft_boundaries`: Enable the extension of the phoeneme start/end boundaries beyond the core of the phoneme. Use `boundary_softness` to control the leniency of the extension. This can help capture more of the phoneme duration, especially for softer phonemes or in cases where the model's confidence extends beyond the core frames.
+- `boundary_softness`: Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 7, which corresponds to a threshold of 0.0000001. Set it to 2 or 3 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
 - `bad_confidence_threshold`: Ratio threshold for flagging low-confidence alignments (set to `1` to disable). Default `0.6` means a warning is issued if 60% of phonemes have low confidence. When triggered, `segments[i]["coverage_analysis"]["bad_alignment"]` is set to `True`.
+
 ---
 
 **Models:**

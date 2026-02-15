@@ -39,9 +39,9 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_id", device="auto", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, device="auto", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, boundary_softness=7, bad_confidence_threshold=0.6):
         """
-        Initialize the phoneme timestamp extractor.
+        Initialize the BFA phoneme timestamp extractor.
 
         Args:
             preset (str): Language preset for automatic model and language selection.
@@ -63,7 +63,7 @@ class PhonemeTimestampAligner:
                 See: https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
             mapper (str): Phoneme mapper to use (default: "ph66").
             duration_max (float): Maximum segment duration in seconds for padding (10-60 recommended).
-            output_frames_key (str): Frame output format. Options: "phoneme_id", "phoneme_label",
+            output_frames_key (str): --- Deprecated, as it was unused --- Frame output format. Options: "phoneme_id", "phoneme_label",
                 "group_id", "group_label".
             device (str): Processing device ("cpu", "cuda", "mps", or "auto" to detect automatically).
             silence_anchors (int): Silent frames threshold for segment splitting (0 to disable).
@@ -71,8 +71,9 @@ class PhonemeTimestampAligner:
             enforce_minimum (bool): Ensure minimum probability threshold for target phonemes.
             enforce_all_targets (bool): Force all target phonemes to appear in alignment.
             ignore_noise (bool): Skip predicted noise in alignment output.
-            extend_soft_boundaries (bool): Enable the extension of the phoeneme either boundaries. The end-boundaries are less precise, therefore extending them can help to cover the full phoneme duration. This will try to extend the end boundary of each phoneme to the start of the next phoneme, but will not extend beyond the 10x of the original duration, to prevent excessive extension.
-            bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true.
+            extend_soft_boundaries (bool): Enable the extension of the phoeneme start/end boundaries beyond the core of the phoneme. Use `boundary_softness` to control the leniency of the extension. This can help capture more of the phoneme duration, especially for softer phonemes or in cases where the model's confidence extends beyond the core frames.
+            boundary_softness (int): Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 7, which corresponds to a threshold of 0.0000001. Set it to 2 or 3 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
+            bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true. It's recommended to avoid bad-confidence segments for the downstream tasks.
 
         Parameter Priority (highest to lowest):
             1. Explicit cupe_ckpt_path
@@ -147,7 +148,6 @@ class PhonemeTimestampAligner:
         self.padding_ph_label = -100
         self.ph_seq_min = 1
         #self.ph_seq_max = ph_seq_max
-        self.output_frames_key = output_frames_key
         
         self.seg_duration_min = 0.05  # seconds
         self.seg_duration_min_samples = int(self.seg_duration_min * self.resampler_sample_rate)
@@ -177,6 +177,7 @@ class PhonemeTimestampAligner:
         self.enforce_all_targets = enforce_all_targets
         self.ignore_noise = ignore_noise
         self.extend_soft_boundaries = extend_soft_boundaries
+        self.boundary_softness = boundary_softness
         self.bad_confidence_threshold = bad_confidence_threshold
         self.break_at_low_confidence = False # under construction, not fully implemented yet
         self._setup_config()
@@ -199,7 +200,7 @@ class PhonemeTimestampAligner:
         self.total_segments_bad = 0
         self.total_phonemes_aligned = 0
         self.total_phonemes_target = 0
-        self.total_phonemes_aligned_correctly = 0
+        self.total_phonemes_aligned_easily = 0
         self.total_phonemes_missed = 0
         self.total_phonemes_extra = 0
         self.perfect_matches = 0
@@ -532,7 +533,7 @@ class PhonemeTimestampAligner:
 
 
         for batch_idx in range(len(aligned_frames)):
-            self.total_segments_processed += 1
+            
             self.total_phonemes_aligned += len(aligned_frames[batch_idx])
             # CTC output length = max end_frame across all aligned phonemes (computed before any modifications)
             ctc_len = max(f[2] for f in aligned_frames[batch_idx]) if aligned_frames[batch_idx] else 0
@@ -721,7 +722,7 @@ class PhonemeTimestampAligner:
             for i in range(len(aligned_frames[batch_idx])):
                 if len(aligned_frames[batch_idx][i]) == 4:
                     aligned_frames[batch_idx][i] = (*aligned_frames[batch_idx][i], False)
-                    self.total_phonemes_aligned_correctly += 1
+                    self.total_phonemes_aligned_easily += 1
 
             if self.enforce_all_targets:
                 expected_count = len(target_phoneme_ids) - len(skipped_sil_indices)
@@ -737,7 +738,7 @@ class PhonemeTimestampAligner:
         return aligned_frames
     
 
-    def extend_soft_boundaries_func(self, log_probs, framestamps, debug=False):
+    def extend_soft_boundaries_func(self, log_probs, framestamps, boundary_softness=7, debug=False):
         '''
         Extend start and end boundaries of aligned phonemes based on confidence scores from log probabilities.
         Three passes:
@@ -748,11 +749,15 @@ class PhonemeTimestampAligner:
         Args:
             log_probs: Tensor of shape [B, T, C] containing log probabilities.
             framestamps: List of lists of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated).
+            boundary_softness: Hyperparameter controlling leniency of boundary extension. Higher means more lenient (allows extension with lower confidence). Default is 7, which corresponds to a threshold of 0.0000001.
 
         Returns:
             Updated framestamps with extended boundaries (same structure as input).
         '''
         max_extension_factor = 10.0
+        boundary_softness_initial = max(2, 7 - 4)  # initial pass is stricter, then we relax it in subsequent passes
+        _thresh_1 = 10.0 ** (-1*boundary_softness_initial)  # e.g. 0.00001 for boundary_softness_initial of 5
+        _thresh_2 = 10.0 ** (-1*boundary_softness)  # e.g. 0.0000001 for boundary_softness of 7
         updated_batch = []
         for b in range(len(framestamps)):
             probs = torch.exp(log_probs[b])  # [T, C]
@@ -778,7 +783,7 @@ class PhonemeTimestampAligner:
                 if i > 0:
                     min_start = max(min_start, min(tuples_list[i - 1][2]+10, start_frame))  # prev end_frame + 10
 
-                start_threshold = min(mean_probs[i] * 0.001, 0.001)
+                start_threshold = min(mean_probs[i] * _thresh_1, _thresh_1) # strict threshold for initial extension, based on mean confidence of the phoneme's original segment
                 new_start = start_frame
                 for f in range(start_frame - 1, min_start - 1, -1):
                     if probs[f, phoneme_id].item() >= start_threshold:
@@ -799,7 +804,7 @@ class PhonemeTimestampAligner:
                 if i + 1 < len(tuples_list):
                     max_end = min(max_end, min(end_frame, tuples_list[i + 1][1]-10))  # next start_frame
 
-                end_threshold = min(mean_probs[i] * 0.001, 0.001)
+                end_threshold = min(mean_probs[i] * _thresh_1, _thresh_1) # strict threshold for initial extension, based on mean confidence of the phoneme's original segment
                 new_end = end_frame
                 for f in range(end_frame, max_end):
                     if probs[f, phoneme_id].item() >= end_threshold:
@@ -824,7 +829,7 @@ class PhonemeTimestampAligner:
 
                 new_start = start_frame
                 for f in range(start_frame - 1, min_start - 1, -1):
-                    if probs[f, phoneme_id].item() >= 0.0000001:
+                    if probs[f, phoneme_id].item() >= _thresh_2: # _thresh_2 of 7 means threshold of 0.0000001, which is very lenient and allows extension as long as there's any meaningful confidence
                         new_start = f
                     else:
                         break
@@ -846,7 +851,7 @@ class PhonemeTimestampAligner:
                 #end_threshold = min(mean_probs[i] * 0.00001, 0.000001)
                 new_end = end_frame
                 for f in range(end_frame, max_end):
-                    if probs[f, phoneme_id].item() >= 0.0000001:  # allow any positive evidence to extend end boundary in final pass
+                    if probs[f, phoneme_id].item() >= _thresh_2:
                         new_end = f + 1
                     else:
                         break
@@ -980,8 +985,8 @@ class PhonemeTimestampAligner:
 
         if self.extend_soft_boundaries:
             if debug: print("Extending end boundaries of aligned phonemes/groups based on confidence scores...")
-            frame_phonemes = self.extend_soft_boundaries_func(log_probs_p, frame_phonemes, debug=debug)
-            frame_groups = self.extend_soft_boundaries_func(log_probs_g, frame_groups, debug=False)
+            frame_phonemes = self.extend_soft_boundaries_func(log_probs_p, frame_phonemes, boundary_softness=self.boundary_softness, debug=debug)
+            frame_groups = self.extend_soft_boundaries_func(log_probs_g, frame_groups, boundary_softness=self.boundary_softness, debug=False)
             
         # Calculate confidence scores
         
@@ -1352,7 +1357,9 @@ class PhonemeTimestampAligner:
 
         for bi, batch_item in enumerate(batch_results):
             for si, seg_out in enumerate(batch_item["segments"]):
+                self.total_segments_processed += 1
                 if not seg_out.get("phoneme_ts"):
+                    self.total_segments_failed += 1
                     continue
 
                 phoneme_ts = seg_out["phoneme_ts"]
@@ -1398,9 +1405,9 @@ class PhonemeTimestampAligner:
             print(f"{'='*60}")
             print(f"Clip items: {num_batch}, Segments processed: {total_segments}")
             print(f"Overall average confidence: {overall_avg_confidence:.3f}")
-            print(f"Totals,  segments processed: {self.total_segments_processed}", f"\tPhonemes aligned: {self.total_phonemes_aligned}",
+            print(f"Totals, Segments processed: {self.total_segments_processed}", f"\tSegments bad: {self.total_segments_bad}", f"\tPhonemes aligned: {self.total_phonemes_aligned}",
                    f"\tTarget phonemes: {self.total_phonemes_target}", f"\tPhonemes missed: {self.total_phonemes_missed}",
-                   f"\tPhonemes extra: {self.total_phonemes_extra}", f"\tPhonemes aligned correctly: {self.total_phonemes_aligned_correctly}")
+                   f"\tPhonemes extra: {self.total_phonemes_extra}", f"\tPhonemes aligned easily: {self.total_phonemes_aligned_easily}") # self.total_phonemes_aligned_easily counts phonemes that were not enforced in post-processing
             print(f"{'='*60}")
 
         if extract_embeddings:
