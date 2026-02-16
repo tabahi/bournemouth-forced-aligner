@@ -882,3 +882,61 @@ class AlignmentUtils: # 2025-09-10
                 assorted.extend(frames)
             return assorted
 
+
+
+    def decode_alignments_simple(self, log_probs, true_seqs, pred_lens=None, true_seqs_lens=None):
+        """
+        Simple forced alignment: CTC path construction + Viterbi + assort.
+        No boosting, no silence anchoring. Designed for easy C++ porting.
+
+        Args:
+            log_probs: Log probabilities tensor [B, T, C]
+            true_seqs: Target phoneme sequences [B, S]
+            pred_lens: Optional prediction lengths [B]
+            true_seqs_lens: Target sequence lengths [B]
+
+        Returns:
+            List of frame-level alignments per batch item.
+            Each is a list of (phoneme_id, start_frame, end_frame, target_seq_idx).
+        """
+        batch_size = log_probs.shape[0]
+        device = log_probs.device
+        blank_id = self.viterbi_decoder.blank_id
+
+        assorted = []
+        for i in range(batch_size):
+            # Extract per-sample tensors
+            T = pred_lens[i] if pred_lens is not None else log_probs.shape[1]
+            lp = log_probs[i, :T]  # [T, C]
+
+            S = true_seqs_lens[i] if true_seqs_lens is not None else true_seqs.shape[1]
+            seq = true_seqs[i, :S]  # [S]
+            seq_idx = torch.arange(S, device=device)
+
+            # Build CTC path: blank-phoneme-blank-phoneme-...-blank
+            # stride between phonemes chosen to fit within T frames
+            stride = 4
+            if stride * S + 1 > T * 0.9:
+                stride = 3
+            if stride * S + 1 > T * 0.8:
+                stride = 2
+            ctc_len = stride * S + 1
+
+            ctc_path = torch.full((ctc_len,), blank_id, device=device, dtype=torch.long)
+            ctc_path_idx = torch.full((ctc_len,), -1, device=device, dtype=torch.long)
+            ctc_path[1::stride] = seq
+            ctc_path_idx[1::stride] = seq_idx
+
+            # Band constraint for long sequences
+            band_width = max(ctc_len // 4, 20) if ctc_len > 60 else 0
+
+            # Viterbi decode
+            frame_phonemes, frame_phonemes_idx = self.viterbi_decoder._viterbi_decode(
+                lp, ctc_path, ctc_len, ctc_path_idx, band_width=band_width
+            )
+
+            # Assort into (phoneme, start, end, target_idx) segments
+            frames = self.viterbi_decoder.assort_frames(frame_phonemes, frame_phonemes_idx)
+            assorted.append(frames)
+
+        return assorted

@@ -4,10 +4,10 @@ __pycache__/
 wandb/
 models/
 mfa_corpus/
-src/prosodic_clusters_train.py
-src/p3vs2contrastive/hp_vs2cont.yaml
-src/p3vs2contrastive/train_vs2contrastive.py
-src/p3vs2contrastive/datamodule_vs2.py
+# ONNX Runtime files
+bournemouth_aligner/cpp_onix/onnxruntime-linux-x64-gpu-1.24.1.tgz
+bournemouth_aligner/cpp_onix/onnxruntime-linux-x64-gpu-1.24.1/
+
 *.yaml
 *.pyc
 *.pt

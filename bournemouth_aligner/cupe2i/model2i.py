@@ -11,8 +11,13 @@ Class AllophoneExtractor is a wrapper around the ContextFreePhonemeRecognizer cl
 import torch
 import torch.nn as nn
 import math
-from . import model_utils as model_utils
-
+try:
+    from . import model_utils as model_utils
+except ImportError:
+    # not installed as a package, try relative import
+    import sys
+    sys.path.append('./bournemouth_aligner/cupe2i')
+    import model_utils
 # big change over model2h: adding a grouped classification task for phoneme groups. IT's not a multi-task learning, but a single task with multiple outputs
 
 

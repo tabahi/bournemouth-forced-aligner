@@ -1050,7 +1050,56 @@ class PhonemeTimestampAligner:
         return timestamp_dicts, [None] * len(frame_phonemes), [None] * len(frame_phonemes)
 
     
-    
+    def extract_timestamps_from_segment_simplified(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0.0, debug=True):
+        '''
+        Simplified version of extract_timestamps_from_segment_batch.
+        No group timestamps, no embeddings, no target boosting, no silence anchoring.
+        Straight CUPE -> log_softmax -> Viterbi -> timestamps.
+        To be ported to C++ for real-time applications.
+        '''
+
+        # Compute sequence lengths before padding
+        if isinstance(phoneme_sequences, torch.Tensor):
+            ph_seq_lens = [(seq != self.blank_class).sum().item() for seq in phoneme_sequences]
+        else:
+            ph_seq_lens = [len(seq) for seq in phoneme_sequences]
+
+        # Pad phoneme sequences to tensor
+        if not isinstance(phoneme_sequences, torch.Tensor):
+            max_len = max(len(seq) for seq in phoneme_sequences)
+            phoneme_sequences = torch.tensor(
+                [seq + [self.blank_class] * (max_len - len(seq)) for seq in phoneme_sequences],
+                dtype=torch.long,
+            )
+
+        # CUPE forward pass (no embeddings)
+        logits_class, _, _, spectral_lens = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings=False)
+
+        # Log softmax
+        log_probs_p = F.log_softmax(logits_class, dim=2)
+
+        # Simple Viterbi alignment
+        ph_seqs = phoneme_sequences.to(self.device)
+        ph_seq_lens_t = torch.tensor(ph_seq_lens, dtype=torch.long, device=self.device)
+        spectral_lens_t = torch.tensor(spectral_lens, dtype=torch.long, device=self.device)
+
+        frame_phonemes = self.alignment_utils_p.decode_alignments_simple(
+            log_probs_p,
+            true_seqs=ph_seqs,
+            pred_lens=spectral_lens_t,
+            true_seqs_lens=ph_seq_lens_t,
+        )
+
+        # Convert frames to millisecond timestamps
+        for b in range(len(frame_phonemes)):
+            offset = start_offset_times[b] if isinstance(start_offset_times, (list, tuple)) else start_offset_times
+            frame_phonemes[b] = convert_to_ms(
+                frame_phonemes[b], spectral_lens[b], offset, wav_lens[b], self.resampler_sample_rate,
+            )
+
+        timestamp_dicts = [{'phoneme_timestamps': frame_phonemes[b]} for b in range(len(frame_phonemes))]
+
+        return timestamp_dicts
 
 
 
