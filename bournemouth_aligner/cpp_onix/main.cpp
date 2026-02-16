@@ -9,9 +9,9 @@
 
 # compile it with:
  cd bournemouth_aligner/cpp_onix
- g++ -std=c++17 main.cpp   -Ionnxruntime-linux-x64-gpu-1.24.1/include   -Lonnxruntime-linux-x64-gpu-1.24.1/lib   -lonnxruntime -lpthread   -o main
+ g++ -std=c++17 main.cpp   -Ionnxruntime-linux-x64-gpu-1.24.1/include   -Lonnxruntime-linux-x64-gpu-1.24.1/lib   -lonnxruntime -lpthread   -o compile_binary_x64_linux
 # run it :
- ./main
+ ./compile_binary_x64_linux
 
  */
 
@@ -38,7 +38,7 @@
 #include <unistd.h>
 #include <onnxruntime_cxx_api.h>
 
-static Ort::Env global_env(ORT_LOGGING_LEVEL_WARNING, "global");
+//static Ort::Env global_env(ORT_LOGGING_LEVEL_WARNING, "global");
 
 std::vector<float> resampleAudio(const std::vector<float> &audio_data,
                                  int source_sr, int target_sr)
@@ -189,13 +189,33 @@ std::vector<float> loadAudioFromWav(const std::string &wav_path, float &original
 // ============================================================
 
 std::unordered_map<std::string, int> phoneme_mapped_index = {
-    {"SIL", 0}, {"i", 1}, {"i:", 2}, {"\xc9\xa8", 3}, {"\xc9\xaa", 4}, {"e", 5}, {"e:", 6}, {"\xc9\x9b", 7}, {"\xc9\x99", 8}, {"\xc9\x9a", 9}, {"\xca\x8c", 10}, {"u", 11}, {"u:", 12}, {"\xca\x8a", 13}, {"\xc9\xaf", 14}, {"o", 15}, {"o:", 16}, {"\xc9\x94", 17}, {"a", 18}, {"a:", 19}, {"\xc3\xa6", 20}, {"y", 21}, {"\xc3\xb8", 22}, {"a\xc9\xaa", 23}, {"e\xc9\xaa", 24}, {"a\xca\x8a", 25}, {"o\xca\x8a", 26}, {"\xc9\x94\xc9\xaa", 27}, {"p", 28}, {"b", 29}, {"t", 30}, {"d", 31}, {"k", 32}, {"g", 33}, {"q", 34}, {"ts", 35}, {"s", 36}, {"z", 37}, {"t\xca\x83", 38}, {"d\xca\x92", 39}, {"\xca\x83", 40}, {"\xca\x92", 41}, {"\xc9\x95", 42}, {"f", 43}, {"v", 44}, {"\xce\xb8", 45}, {"\xc3\xb0", 46}, {"\xc3\xa7", 47}, {"x", 48}, {"\xc9\xa3", 49}, {"h", 50}, {"\xca\x81", 51}, {"m", 52}, {"n", 53}, {"\xc9\xb2", 54}, {"\xc5\x8b", 55}, {"l", 56}, {"\xc9\xad", 57}, {"\xc9\xbe", 58}, {"\xc9\xb9", 59}, {"j", 60}, {"w", 61}, {"t\xca\xb2", 62}, {"n\xca\xb2", 63}, {"r\xca\xb2", 64}, {"\xc9\xad\xca\xb2", 65}, {"noise", 66}};
+    {"SIL", 0}, {"i", 1}, {"i:", 2}, {"\xc9\xa8", 3}, {"\xc9\xaa", 4}, {"e", 5}, {"e:", 6}, {"\xc9\x9b", 7}, 
+    {"\xc9\x99", 8}, {"\xc9\x9a", 9}, {"\xca\x8c", 10}, {"u", 11}, {"u:", 12}, {"\xca\x8a", 13}, {"\xc9\xaf", 14}, 
+    {"o", 15}, {"o:", 16}, {"\xc9\x94", 17}, {"a", 18}, {"a:", 19}, {"\xc3\xa6", 20}, {"y", 21}, {"\xc3\xb8", 22}, 
+    {"a\xc9\xaa", 23}, {"e\xc9\xaa", 24}, {"a\xca\x8a", 25}, {"o\xca\x8a", 26}, {"\xc9\x94\xc9\xaa", 27}, 
+    {"p", 28}, {"b", 29}, {"t", 30}, {"d", 31}, {"k", 32}, {"g", 33}, {"q", 34}, {"ts", 35}, {"s", 36}, {"z", 37}, 
+    {"t\xca\x83", 38}, {"d\xca\x92", 39}, {"\xca\x83", 40}, {"\xca\x92", 41}, {"\xc9\x95", 42}, 
+    {"f", 43}, {"v", 44}, {"\xce\xb8", 45}, {"\xc3\xb0", 46}, {"\xc3\xa7", 47}, {"x", 48}, {"\xc9\xa3", 49}, 
+    {"h", 50}, {"\xca\x81", 51}, {"m", 52}, {"n", 53}, {"\xc9\xb2", 54}, {"\xc5\x8b", 55}, {"l", 56}, 
+    {"\xc9\xad", 57}, {"\xc9\xbe", 58}, {"\xc9\xb9", 59}, {"j", 60}, {"w", 61}, 
+    {"t\xca\xb2", 62}, {"n\xca\xb2", 63}, {"r\xca\xb2", 64}, {"\xc9\xad\xca\xb2", 65}, {"noise", 66}
+};
 
 std::unordered_map<int, int> phoneme_groups_mapper = {
-    {0, 0}, {1, 1}, {2, 1}, {3, 3}, {4, 1}, {5, 1}, {6, 1}, {7, 1}, {8, 2}, {9, 2}, {10, 2}, {11, 3}, {12, 3}, {13, 3}, {14, 3}, {15, 3}, {16, 3}, {17, 3}, {18, 4}, {19, 4}, {20, 4}, {21, 1}, {22, 1}, {23, 5}, {24, 5}, {25, 5}, {26, 5}, {27, 5}, {28, 6}, {29, 7}, {30, 6}, {31, 7}, {32, 6}, {33, 7}, {34, 6}, {35, 10}, {36, 8}, {37, 9}, {38, 10}, {39, 11}, {40, 8}, {41, 9}, {42, 8}, {43, 8}, {44, 9}, {45, 8}, {46, 9}, {47, 8}, {48, 8}, {49, 9}, {50, 8}, {51, 9}, {52, 12}, {53, 12}, {54, 12}, {55, 12}, {56, 13}, {57, 13}, {58, 14}, {59, 14}, {60, 15}, {61, 15}, {62, 6}, {63, 12}, {64, 14}, {65, 13}, {66, 16}};
+    {0, 0}, {1, 1}, {2, 1}, {3, 3}, {4, 1}, {5, 1}, {6, 1}, {7, 1}, {8, 2}, {9, 2}, {10, 2}, {11, 3}, {12, 3}, {13, 3}, 
+    {14, 3}, {15, 3}, {16, 3}, {17, 3}, {18, 4}, {19, 4}, {20, 4}, {21, 1}, {22, 1}, {23, 5}, {24, 5}, {25, 5}, {26, 5}, 
+    {27, 5}, {28, 6}, {29, 7}, {30, 6}, {31, 7}, {32, 6}, {33, 7}, {34, 6}, {35, 10}, {36, 8}, {37, 9}, {38, 10}, {39, 11}, 
+    {40, 8}, {41, 9}, {42, 8}, {43, 8}, {44, 9}, {45, 8}, {46, 9}, {47, 8}, {48, 8}, {49, 9}, {50, 8}, {51, 9}, {52, 12}, 
+    {53, 12}, {54, 12}, {55, 12}, {56, 13}, {57, 13}, {58, 14}, {59, 14}, {60, 15}, {61, 15}, {62, 6}, {63, 12}, {64, 14}, 
+    {65, 13}, {66, 16}
+};
 
 std::unordered_map<std::string, int> phoneme_groups_index = {
-    {"SIL", 0}, {"front_vowels", 1}, {"central_vowels", 2}, {"back_vowels", 3}, {"low_vowels", 4}, {"diphthongs", 5}, {"voiceless_stops", 6}, {"voiced_stops", 7}, {"voiceless_fricatives", 8}, {"voiced_fricatives", 9}, {"voiceless_affricates", 10}, {"voiced_affricates", 11}, {"nasals", 12}, {"laterals", 13}, {"rhotics", 14}, {"glides", 15}, {"noise", 16}};
+    {"SIL", 0}, {"front_vowels", 1}, {"central_vowels", 2}, {"back_vowels", 3}, {"low_vowels", 4}, {"diphthongs", 5}, 
+    {"voiceless_stops", 6}, {"voiced_stops", 7}, {"voiceless_fricatives", 8}, {"voiced_fricatives", 9}, 
+    {"voiceless_affricates", 10}, {"voiced_affricates", 11}, {"nasals", 12}, {"laterals", 13}, {"rhotics", 14}, 
+    {"glides", 15}, {"noise", 16}
+};
 
 // Reverse lookup: index -> label
 std::unordered_map<int, std::string> index_to_plabel;
@@ -733,6 +753,8 @@ private:
     std::unique_ptr<Ort::Env> env_;
     std::unique_ptr<Ort::MemoryInfo> memory_info_;
 
+    
+
     static MemoryUsage get_memory_usage() {
         struct rusage usage;
         getrusage(RUSAGE_SELF, &usage);
@@ -758,12 +780,15 @@ private:
 
 public:
     CUPEONNXPredictor(const std::string &onnx_path,
-                      const std::vector<std::string> &providers = {"CUDAExecutionProvider", "CPUExecutionProvider"})
+                  const std::vector<std::string> &providers = {"CUDAExecutionProvider", "CPUExecutionProvider"})
     {
         auto mem_before = get_memory_usage();
         std::cout << "=== MEMORY BEFORE MODEL LOAD ===" << std::endl;
         std::cout << "RSS: " << mem_before.rss_mb << " MB" << std::endl;
 
+        // MUST create Env FIRST, before SessionOptions
+        env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "CUPEONNX");
+        
         Ort::SessionOptions session_options;
         OrtCUDAProviderOptions cuda_options{};
         memset(&cuda_options, 0, sizeof(cuda_options));
@@ -772,10 +797,8 @@ public:
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         session_options.AppendExecutionProvider_CUDA(cuda_options);
 
-        //env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "CUPEONNX");
         memory_info_ = std::make_unique<Ort::MemoryInfo>(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault));
-        //session_ = std::make_unique<Ort::Session>(*env_, onnx_path.c_str(), session_options);
-        session_ = std::make_unique<Ort::Session>(global_env, onnx_path.c_str(), session_options);
+        session_ = std::make_unique<Ort::Session>(*env_, onnx_path.c_str(), session_options);
 
         auto mem_after = get_memory_usage();
         std::cout << "=== MEMORY AFTER MODEL LOAD ===" << std::endl;
@@ -1311,9 +1334,12 @@ int main()
         auto it = index_to_plabel.find(ts.phoneme_idx);
         if (it != index_to_plabel.end()) label = it->second;
 
+        // FIX: Use target_seq_idx (stored in confidence field) to index ipa_labels
         std::string ipa = "?";
-        if (ts.phoneme_idx < ipa_labels.size())
-            ipa = ipa_labels[ts.phoneme_idx];
+        int target_idx = static_cast<int>(ts.confidence);
+        if (target_idx >= 0 && target_idx < static_cast<int>(ipa_labels.size())) {
+            ipa = ipa_labels[target_idx];
+        }
 
         std::cout << "  " << std::setw(2) << (i + 1) << ": "
                   << std::setw(6) << std::right << label
