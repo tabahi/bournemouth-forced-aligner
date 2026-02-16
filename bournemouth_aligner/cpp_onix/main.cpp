@@ -9,9 +9,9 @@
 
 # compile it with:
  cd bournemouth_aligner/cpp_onix
- g++ -std=c++17 main.cpp   -Ionnxruntime-linux-x64-gpu-1.24.1/include   -Lonnxruntime-linux-x64-gpu-1.24.1/lib   -lonnxruntime -lpthread   -o compile_binary_x64_linux
+ g++ -std=c++17 main.cpp   -Ionnxruntime-linux-x64-gpu-1.24.1/include   -Lonnxruntime-linux-x64-gpu-1.24.1/lib   -lonnxruntime -lpthread   -o compiled_binary_x64_linux
 # run it :
- ./compile_binary_x64_linux
+ ./compiled_binary_x64_linux
 
  */
 
