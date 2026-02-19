@@ -966,8 +966,8 @@ class ViterbiDecoder:
 
         # Fallback: standard Viterbi (with band constraint for long sequences)
         stride = 4
-        if (stride * seq_len + 1) > seq_len * 0.9: stride = 3
-        if (stride * seq_len + 1) > seq_len * 0.8: stride = 2
+        if (stride * seq_len + 1) > num_frames * 0.9: stride = 3
+        if (stride * seq_len + 1) > num_frames * 0.8: stride = 2
         expanded_len = stride * seq_len + 1
         if expanded_len > num_frames:
             raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length.")
@@ -1204,7 +1204,7 @@ class AlignmentUtils: # 2025-09-10
             assorted = []
             for frame_phonemes_seq in frame_phonemes:
                 frames = self.viterbi_decoder.assort_frames(frame_phonemes_seq, torch.full_like(frame_phonemes_seq, -1))
-                assorted.extend(frames)
+                assorted.append(frames)
             return assorted
 
 
