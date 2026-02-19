@@ -443,6 +443,7 @@ struct FrameStamp {
     int start_frame;
     int end_frame;
     int target_seq_idx;
+    float confidence = 0.0f;
 };
 
 // ============================================================
@@ -651,6 +652,518 @@ public:
 
         return framestamps;
     }
+
+    // ---- Advanced alignment methods (match bfaonnx.py) ----
+
+    struct ViterbiResult {
+        std::vector<int> frame_phonemes;
+        std::vector<int> frame_phonemes_idx;
+        float alignment_score;
+    };
+
+    /**
+     * Boost target phoneme probabilities and re-normalize with log_softmax.
+     * Matches Python _boost_target_phonemes (bfaonnx.py line 496).
+     */
+    std::vector<float> boost_target_phonemes(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        const std::vector<int>& target_phonemes, float boost_factor = 5.0f)
+    {
+        std::vector<float> boosted = log_probs_flat;
+
+        std::unordered_set<int> unique_targets(target_phonemes.begin(), target_phonemes.end());
+        unique_targets.erase(blank_id_);
+        unique_targets.erase(-100);
+
+        for (int phoneme_idx : unique_targets) {
+            if (phoneme_idx >= 0 && phoneme_idx < C) {
+                for (int t = 0; t < T; t++)
+                    boosted[t * C + phoneme_idx] += boost_factor;
+            }
+        }
+
+        for (int t = 0; t < T; t++) {
+            std::vector<float> frame(boosted.begin() + t * C, boosted.begin() + (t + 1) * C);
+            auto normalized = log_softmax_frame(frame);
+            std::copy(normalized.begin(), normalized.end(), boosted.begin() + t * C);
+        }
+
+        return boosted;
+    }
+
+    /**
+     * Ensure target phonemes have minimum probability at each frame.
+     * Matches Python _enforce_minimum_probabilities (bfaonnx.py line 525).
+     */
+    std::vector<float> enforce_minimum_probabilities(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        const std::vector<int>& target_phonemes)
+    {
+        std::vector<float> modified = log_probs_flat;
+        float min_log_prob = std::log(min_phoneme_prob_);
+
+        std::unordered_set<int> unique_targets(target_phonemes.begin(), target_phonemes.end());
+        unique_targets.erase(blank_id_);
+        unique_targets.erase(-100);
+
+        for (int phoneme_idx : unique_targets) {
+            if (phoneme_idx >= 0 && phoneme_idx < C) {
+                for (int t = 0; t < T; t++) {
+                    if (modified[t * C + phoneme_idx] < min_log_prob)
+                        modified[t * C + phoneme_idx] = min_log_prob;
+                }
+            }
+        }
+
+        return modified;
+    }
+
+    /**
+     * Detect segments of silence using softmax P(SIL) with sliding window.
+     * Matches Python _detect_silence_segments (bfaonnx.py line 552).
+     */
+    std::vector<std::pair<int,int>> detect_silence_segments(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        float sil_prob_threshold = 0.8f, int min_silence_frames = -1)
+    {
+        if (min_silence_frames < 0) min_silence_frames = silence_anchors_;
+        int sliding_frames = min_silence_frames;
+
+        if (silence_id_ >= C) return {};
+        if (T < sliding_frames) return {};
+
+        // Full softmax P(SIL) across all classes
+        std::vector<float> sil_prob(T);
+        for (int t = 0; t < T; t++)
+            sil_prob[t] = std::exp(log_probs_flat[t * C + silence_id_]);
+
+        // Sliding-window average
+        std::vector<float> window_avg;
+        if (sliding_frames > 1) {
+            std::vector<float> cumsum(T + 1, 0.0f);
+            for (int t = 0; t < T; t++)
+                cumsum[t + 1] = cumsum[t] + sil_prob[t];
+            int n_windows = T - sliding_frames + 1;
+            window_avg.resize(n_windows);
+            for (int i = 0; i < n_windows; i++)
+                window_avg[i] = (cumsum[i + sliding_frames] - cumsum[i]) / sliding_frames;
+        } else {
+            window_avg = sil_prob;
+        }
+
+        // Find contiguous silence regions
+        std::vector<std::pair<int,int>> silence_segments;
+        bool in_silence = false;
+        int silence_start = 0;
+
+        for (int i = 0; i < (int)window_avg.size(); i++) {
+            if (window_avg[i] >= sil_prob_threshold && !in_silence) {
+                in_silence = true;
+                silence_start = i;
+            } else if (window_avg[i] < sil_prob_threshold && in_silence) {
+                in_silence = false;
+                int seg_end = std::min(i + sliding_frames - 1, T);
+                if (seg_end - silence_start >= min_silence_frames)
+                    silence_segments.push_back({silence_start, seg_end});
+            }
+        }
+
+        if (in_silence) {
+            int seg_end = T;
+            if (seg_end - silence_start >= min_silence_frames)
+                silence_segments.push_back({silence_start, seg_end});
+        }
+
+        return silence_segments;
+    }
+
+    /**
+     * Find groups of consecutive SIL tokens in the target sequence.
+     * Matches Python _find_target_sil_groups (bfaonnx.py line 624).
+     */
+    std::vector<std::pair<int,int>> find_target_sil_groups(
+        const std::vector<int>& true_sequence)
+    {
+        std::vector<std::pair<int,int>> groups;
+        int i = 0, n = (int)true_sequence.size();
+        while (i < n) {
+            if (true_sequence[i] == silence_id_) {
+                int start = i;
+                while (i < n && true_sequence[i] == silence_id_) i++;
+                groups.push_back({start, i});
+            } else {
+                i++;
+            }
+        }
+        return groups;
+    }
+
+    /**
+     * Match target SIL groups to audio silence segments by proportional position.
+     * Matches Python _match_silences (bfaonnx.py line 647).
+     */
+    std::vector<std::pair<int,int>> match_silences(
+        const std::vector<std::pair<int,int>>& sil_groups,
+        const std::vector<std::pair<int,int>>& audio_silences,
+        int target_len, int num_frames, float best_dist_threshold = 0.3f)
+    {
+        if (sil_groups.empty() || audio_silences.empty() || target_len == 0 || num_frames == 0)
+            return {};
+
+        std::vector<std::pair<int,int>> matches;
+        int audio_idx = 0;
+
+        for (int tg_idx = 0; tg_idx < (int)sil_groups.size(); tg_idx++) {
+            float target_pos = (sil_groups[tg_idx].first + sil_groups[tg_idx].second) / 2.0f / target_len;
+
+            int best_audio = -1;
+            float best_dist = std::numeric_limits<float>::infinity();
+
+            for (int ai = audio_idx; ai < (int)audio_silences.size(); ai++) {
+                float audio_pos = (audio_silences[ai].first + audio_silences[ai].second) / 2.0f / num_frames;
+                float dist = std::abs(target_pos - audio_pos);
+
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_audio = ai;
+                } else if (dist > best_dist) {
+                    break;
+                }
+            }
+
+            if (best_audio >= 0 && best_dist < best_dist_threshold) {
+                matches.push_back({tg_idx, best_audio});
+                audio_idx = best_audio + 1;
+            }
+        }
+
+        return matches;
+    }
+
+    /**
+     * Boost blank probability at detected silence frames and re-normalize.
+     * Matches Python _anchor_silence_in_log_probs (bfaonnx.py line 689).
+     */
+    std::vector<float> anchor_silence_in_log_probs(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        const std::vector<std::pair<int,int>>& silence_segments, float boost = 10.0f)
+    {
+        std::vector<float> modified = log_probs_flat;
+        for (const auto& seg : silence_segments) {
+            for (int t = seg.first; t < seg.second && t < T; t++)
+                modified[t * C + blank_id_] += boost;
+            for (int t = seg.first; t < seg.second && t < T; t++) {
+                std::vector<float> frame(modified.begin() + t * C, modified.begin() + (t + 1) * C);
+                auto normalized = log_softmax_frame(frame);
+                std::copy(normalized.begin(), normalized.end(), modified.begin() + t * C);
+            }
+        }
+        return modified;
+    }
+
+    /**
+     * Segmented Viterbi: split at matched silence points, run Viterbi per segment.
+     * Matches Python _segmented_viterbi_decode (bfaonnx.py line 709).
+     * Returns empty vectors if segmentation is not possible (caller falls back).
+     */
+    std::pair<std::vector<int>, std::vector<int>> segmented_viterbi_decode(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        const std::vector<int>& true_sequence,
+        const std::vector<int>& true_sequence_idx,
+        int boundary_pad = 3, int min_speech_frames = 20, bool debug = false)
+    {
+        int num_frames = T;
+        int target_len = (int)true_sequence.size();
+
+        // Step 1: find anchor points in both sequences
+        auto sil_groups = find_target_sil_groups(true_sequence);
+        if (sil_groups.empty()) {
+            if (debug) std::cout << "WARN: No target SIL groups detected." << std::endl;
+            return {{}, {}};
+        }
+
+        int min_sil_frames = silence_anchors_;
+        auto audio_silences = detect_silence_segments(log_probs_flat, T, C, 0.9f, min_sil_frames);
+
+        if (audio_silences.empty() && target_len > 200) {
+            float new_thresh = 1.0f - (0.09f * min_sil_frames);
+            new_thresh = std::max(0.05f, new_thresh);
+            if (debug) std::cout << "WARN: Retrying with threshold " << new_thresh << std::endl;
+            audio_silences = detect_silence_segments(log_probs_flat, T, C, new_thresh, min_sil_frames);
+        }
+
+        if (audio_silences.empty() && target_len > 200 && min_sil_frames > 3) {
+            if (debug) std::cout << "WARN: Retrying with min_silence_frames=3" << std::endl;
+            min_sil_frames = 3;
+            audio_silences = detect_silence_segments(log_probs_flat, T, C, 0.9f, min_sil_frames);
+        }
+
+        if (debug) {
+            std::cout << "Target SIL groups: " << sil_groups.size() << std::endl;
+            std::cout << "Audio silences: " << audio_silences.size() << std::endl;
+        }
+
+        if (audio_silences.empty()) {
+            if (debug) std::cout << "WARN: No audio silences detected." << std::endl;
+            return {{}, {}};
+        }
+
+        // Step 2: match target SIL groups to audio silences
+        auto matches = match_silences(sil_groups, audio_silences, target_len, num_frames);
+        if (matches.empty()) return {{}, {}};
+
+        // Step 3: build segments (audio_start, audio_end, tgt_start, tgt_end, is_silence)
+        struct Segment {
+            int audio_start, audio_end, tgt_start, tgt_end;
+            bool is_silence;
+        };
+        std::vector<Segment> segments;
+        int prev_audio = 0, prev_target = 0;
+
+        for (const auto& m : matches) {
+            int tg_start = sil_groups[m.first].first;
+            int tg_end   = sil_groups[m.first].second;
+            int as_start = audio_silences[m.second].first;
+            int as_end   = audio_silences[m.second].second;
+
+            if (prev_audio < as_start && prev_target < tg_start)
+                segments.push_back({prev_audio, as_start, prev_target, tg_start, false});
+            else if (prev_audio < as_start)
+                segments.push_back({prev_audio, as_start, prev_target, prev_target, false});
+
+            segments.push_back({as_start, as_end, tg_start, tg_end, true});
+            prev_audio = as_end;
+            prev_target = tg_end;
+        }
+
+        if (prev_audio < num_frames && prev_target < target_len)
+            segments.push_back({prev_audio, num_frames, prev_target, target_len, false});
+        else if (prev_audio < num_frames)
+            segments.push_back({prev_audio, num_frames, prev_target, prev_target, false});
+
+        // Step 3b: merge short speech segments
+        std::vector<Segment> merged;
+        for (const auto& seg : segments) {
+            int n_frames_seg = seg.audio_end - seg.audio_start;
+            int n_phonemes = seg.tgt_end - seg.tgt_start;
+
+            if (!seg.is_silence && n_phonemes > 0 && n_frames_seg < min_speech_frames && !merged.empty()) {
+                auto& prev = merged.back();
+                prev.audio_end = seg.audio_end;
+                prev.tgt_end = seg.tgt_end;
+                prev.is_silence = false;
+            } else {
+                merged.push_back(seg);
+            }
+        }
+        segments = merged;
+
+        if (debug) std::cout << "Segments after silence anchoring: " << segments.size() << std::endl;
+
+        // Step 4: process each segment
+        std::vector<int> all_frame_phonemes;
+        std::vector<int> all_frame_phonemes_idx;
+
+        for (const auto& seg : segments) {
+            int n_frames_seg = seg.audio_end - seg.audio_start;
+            if (n_frames_seg <= 0) continue;
+
+            if (seg.is_silence) {
+                int n_sils = seg.tgt_end - seg.tgt_start;
+                std::vector<int> sil_phonemes(n_frames_seg, silence_id_);
+                std::vector<int> sil_idx(n_frames_seg, -1);
+
+                if (n_sils > 0) {
+                    float frames_per_sil = (float)n_frames_seg / n_sils;
+                    for (int k = 0; k < n_sils; k++) {
+                        int f_start = (int)(k * frames_per_sil);
+                        int f_end = (int)((k + 1) * frames_per_sil);
+                        for (int f = f_start; f < f_end && f < n_frames_seg; f++)
+                            sil_idx[f] = seg.tgt_start + k;
+                    }
+                }
+
+                all_frame_phonemes.insert(all_frame_phonemes.end(), sil_phonemes.begin(), sil_phonemes.end());
+                all_frame_phonemes_idx.insert(all_frame_phonemes_idx.end(), sil_idx.begin(), sil_idx.end());
+            } else {
+                // Boundary padding
+                int padded_start = std::max(0, seg.audio_start - boundary_pad);
+                int padded_end = std::min(num_frames, seg.audio_end + boundary_pad);
+                int pad_left = seg.audio_start - padded_start;
+
+                std::vector<int> seg_target(true_sequence.begin() + seg.tgt_start,
+                                            true_sequence.begin() + seg.tgt_end);
+                std::vector<int> seg_target_idx(true_sequence_idx.begin() + seg.tgt_start,
+                                                true_sequence_idx.begin() + seg.tgt_end);
+
+                int seg_T = padded_end - padded_start;
+                std::vector<float> seg_lp(seg_T * C);
+                for (int t = 0; t < seg_T; t++)
+                    for (int c = 0; c < C; c++)
+                        seg_lp[t * C + c] = log_probs_flat[(padded_start + t) * C + c];
+
+                if (seg_target.empty()) {
+                    std::vector<int> blank_ph(n_frames_seg, blank_id_);
+                    std::vector<int> blank_idx(n_frames_seg, -1);
+                    all_frame_phonemes.insert(all_frame_phonemes.end(), blank_ph.begin(), blank_ph.end());
+                    all_frame_phonemes_idx.insert(all_frame_phonemes_idx.end(), blank_idx.begin(), blank_idx.end());
+                } else {
+                    // Anchor sub-silences
+                    auto sub_sil = detect_silence_segments(seg_lp, seg_T, C, 0.8f, min_sil_frames);
+                    seg_lp = anchor_silence_in_log_probs(seg_lp, seg_T, C, sub_sil, 5.0f);
+
+                    // Build CTC path
+                    int seg_seq_len = (int)seg_target.size();
+                    int stride = 4;
+                    if ((stride * seg_seq_len + 1) > (int)(seg_T * 0.9)) stride = 3;
+                    if ((stride * seg_seq_len + 1) > (int)(seg_T * 0.8)) stride = 2;
+                    int expanded_len = stride * seg_seq_len + 1;
+
+                    if (expanded_len > (int)(seg_T * 1.2))
+                        return {{}, {}};  // trigger fallback
+
+                    std::vector<int> ctc_path(expanded_len, blank_id_);
+                    std::vector<int> ctc_path_idx(expanded_len, -1);
+                    for (int j = 0; j < seg_seq_len; j++) {
+                        int pos = 1 + j * stride;
+                        if (pos < expanded_len) {
+                            ctc_path[pos] = seg_target[j];
+                            ctc_path_idx[pos] = seg_target_idx[j];
+                        }
+                    }
+
+                    int band_width = (expanded_len > 60) ? std::max(expanded_len / 3, 30) : 0;
+                    auto [seg_frames, seg_frames_idx] = viterbi_decode(
+                        seg_lp, seg_T, C, ctc_path, expanded_len, ctc_path_idx, band_width);
+
+                    // Trim padding
+                    int trim_end = std::min(pad_left + n_frames_seg, (int)seg_frames.size());
+                    all_frame_phonemes.insert(all_frame_phonemes.end(),
+                        seg_frames.begin() + pad_left, seg_frames.begin() + trim_end);
+                    all_frame_phonemes_idx.insert(all_frame_phonemes_idx.end(),
+                        seg_frames_idx.begin() + pad_left, seg_frames_idx.begin() + trim_end);
+                }
+            }
+        }
+
+        // Step 5: concatenate and pad/trim to T frames
+        if (all_frame_phonemes.empty()) return {{}, {}};
+
+        if ((int)all_frame_phonemes.size() < num_frames) {
+            all_frame_phonemes.resize(num_frames, blank_id_);
+            all_frame_phonemes_idx.resize(num_frames, -1);
+        } else if ((int)all_frame_phonemes.size() > num_frames) {
+            all_frame_phonemes.resize(num_frames);
+            all_frame_phonemes_idx.resize(num_frames);
+        }
+
+        return {all_frame_phonemes, all_frame_phonemes_idx};
+    }
+
+    /**
+     * Full forced alignment with boosting, minimum enforcement, and segmented Viterbi.
+     * Matches Python decode_with_forced_alignment (bfaonnx.py line 905).
+     */
+    ViterbiResult decode_with_forced_alignment(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        const std::vector<int>& true_sequence,
+        bool return_scores = false, bool boost_targets = true,
+        bool enforce_minimum = true, bool anchor_pauses = true, bool debug = false)
+    {
+        int seq_len = (int)true_sequence.size();
+
+        std::vector<int> true_sequence_idx(seq_len);
+        std::iota(true_sequence_idx.begin(), true_sequence_idx.end(), 0);
+
+        if (seq_len == 0) {
+            std::vector<int> frame_ph(T, blank_id_);
+            std::vector<int> frame_idx(T, -1);
+            float score = 0.0f;
+            if (return_scores) {
+                for (int t = 0; t < T; t++)
+                    score += log_probs_flat[t * C + blank_id_];
+            }
+            return {frame_ph, frame_idx, score};
+        }
+
+        std::vector<float> modified = log_probs_flat;
+
+        if (boost_targets) {
+            modified = boost_target_phonemes(modified, T, C, true_sequence);
+            if (debug) std::cout << "Applied target phoneme boosting." << std::endl;
+        }
+
+        if (enforce_minimum) {
+            modified = enforce_minimum_probabilities(modified, T, C, true_sequence);
+            if (debug) std::cout << "Applied minimum probability enforcement." << std::endl;
+        }
+
+        // Try segmented alignment
+        if (anchor_pauses) {
+            if (debug) std::cout << "Attempting segmented Viterbi alignment..." << std::endl;
+            auto [seg_frames, seg_idx] = segmented_viterbi_decode(
+                modified, T, C, true_sequence, true_sequence_idx, 3, 20, debug);
+
+            if (!seg_frames.empty() && (int)seg_frames.size() == T) {
+                if (debug) std::cout << "Segmented Viterbi alignment successful." << std::endl;
+                float score = 0.0f;
+                if (return_scores)
+                    score = calculate_alignment_score(log_probs_flat, T, C, seg_frames);
+                return {seg_frames, seg_idx, score};
+            }
+        }
+
+        if (debug) std::cout << "Running standard Viterbi..." << std::endl;
+
+        // Fallback: standard Viterbi
+        int stride = 4;
+        if (stride * seq_len + 1 > (int)(T * 0.9)) stride = 3;
+        if (stride * seq_len + 1 > (int)(T * 0.8)) stride = 2;
+        int expanded_len = stride * seq_len + 1;
+
+        if (expanded_len > T) {
+            std::cerr << "ERROR: Target sequence too long to align: expanded "
+                      << expanded_len << " > frames " << T << std::endl;
+            return {{}, {}, 0.0f};
+        }
+
+        std::vector<int> ctc_path(expanded_len, blank_id_);
+        std::vector<int> ctc_path_idx(expanded_len, -1);
+        for (int j = 0; j < seq_len; j++) {
+            int pos = 1 + j * stride;
+            if (pos < expanded_len) {
+                ctc_path[pos] = true_sequence[j];
+                ctc_path_idx[pos] = true_sequence_idx[j];
+            }
+        }
+
+        int band_width = (expanded_len > 60) ? std::max(expanded_len / 4, 20) : 0;
+        auto [frame_phonemes, frame_phonemes_idx] = viterbi_decode(
+            modified, T, C, ctc_path, expanded_len, ctc_path_idx, band_width);
+
+        float score = 0.0f;
+        if (return_scores)
+            score = calculate_alignment_score(log_probs_flat, T, C, frame_phonemes);
+
+        return {frame_phonemes, frame_phonemes_idx, score};
+    }
+
+    /**
+     * Calculate total alignment score.
+     * Matches Python _calculate_alignment_score (bfaonnx.py line 992).
+     */
+    float calculate_alignment_score(
+        const std::vector<float>& log_probs_flat, int T, int C,
+        const std::vector<int>& frame_phonemes)
+    {
+        float total_score = 0.0f;
+        for (int t = 0; t < T && t < (int)frame_phonemes.size(); t++) {
+            int phoneme_idx = frame_phonemes[t];
+            if (phoneme_idx >= 0 && phoneme_idx < C)
+                total_score += log_probs_flat[t * C + phoneme_idx];
+        }
+        return total_score;
+    }
 };
 
 // ============================================================
@@ -735,11 +1248,74 @@ public:
 
         return assorted;
     }
-};
 
-// ============================================================
-// ONNX predictor
-// ============================================================
+    /**
+     * Full forced alignment with boosting, silence anchoring, and segmented Viterbi.
+     * Matches Python decode_alignments (bfaonnx.py line 1137).
+     */
+    std::vector<std::vector<FrameStamp>> decode_alignments(
+        const std::vector<float>& log_probs_flat,
+        int batch_size, int T_max, int C,
+        const std::vector<std::vector<int>>& true_seqs,
+        const std::vector<int>& pred_lens,
+        const std::vector<int>& true_seqs_lens,
+        bool forced_alignment = true,
+        bool boost_targets = true,
+        bool enforce_minimum = true,
+        bool debug = false)
+    {
+        std::vector<std::vector<FrameStamp>> assorted;
+
+        if (forced_alignment) {
+            for (int i = 0; i < batch_size; i++) {
+                int T = pred_lens[i];
+                int S = true_seqs_lens[i];
+
+                // Extract per-sample log probs [T * C]
+                std::vector<float> lp(T * C);
+                for (int t = 0; t < T; t++)
+                    for (int c = 0; c < C; c++)
+                        lp[t * C + c] = log_probs_flat[(i * T_max + t) * C + c];
+
+                if (S == 0) {
+                    assorted.push_back({});
+                    continue;
+                }
+
+                std::vector<int> true_seq(true_seqs[i].begin(), true_seqs[i].begin() + S);
+                bool anchor_pauses = (silence_anchors_ > 0);
+
+                auto result = viterbi_decoder_.decode_with_forced_alignment(
+                    lp, T, C, true_seq, false,
+                    boost_targets, enforce_minimum, anchor_pauses, debug);
+
+                auto frames = viterbi_decoder_.assort_frames(
+                    result.frame_phonemes, result.frame_phonemes_idx);
+                assorted.push_back(frames);
+            }
+        } else {
+            // Free decoding (argmax)
+            for (int i = 0; i < batch_size; i++) {
+                int T = pred_lens[i];
+                std::vector<int> pred_phonemes(T);
+                for (int t = 0; t < T; t++) {
+                    int best_c = 0;
+                    float best_val = log_probs_flat[(i * T_max + t) * C];
+                    for (int c = 1; c < C; c++) {
+                        float val = log_probs_flat[(i * T_max + t) * C + c];
+                        if (val > best_val) { best_val = val; best_c = c; }
+                    }
+                    pred_phonemes[t] = best_c;
+                }
+                std::vector<int> neg_ones(T, -1);
+                auto frames = viterbi_decoder_.assort_frames(pred_phonemes, neg_ones);
+                assorted.push_back(frames);
+            }
+        }
+
+        return assorted;
+    }
+};
 
 class CUPEONNXPredictor
 {
@@ -911,8 +1487,87 @@ std::vector<Timestamp> convert_to_ms(
 }
 
 // ============================================================
-// PhonemeResult for phonemize_sentence output
+// Confidence calculation (matches Python _calculate_confidences)
 // ============================================================
+
+std::vector<FrameStamp> calculate_confidences(
+    const std::vector<float>& log_probs_flat, int T, int C,
+    const std::vector<FrameStamp>& framestamps)
+{
+    std::vector<FrameStamp> updated;
+
+    for (const auto& fs : framestamps) {
+        int start_frame = std::max(0, fs.start_frame);
+        int end_frame = std::min(T, fs.end_frame);
+        int phoneme_idx = fs.phoneme_id;
+
+        float avg_confidence = std::exp(log_probs_flat[start_frame * C + phoneme_idx]);
+        int new_end_frame = end_frame;
+
+        if (start_frame < end_frame && phoneme_idx >= 0 && phoneme_idx < C) {
+            float half_confidence = avg_confidence / 2.0f;
+            int last_good_frame = start_frame;
+            int total_good_frames = 1;
+
+            for (int f = start_frame + 1; f < end_frame; f++) {
+                float frame_prob = std::exp(log_probs_flat[f * C + phoneme_idx]);
+                if (frame_prob > half_confidence || frame_prob > 0.1f) {
+                    avg_confidence += frame_prob;
+                    last_good_frame = f;
+                    total_good_frames++;
+                }
+            }
+
+            if (total_good_frames > 1) {
+                avg_confidence /= total_good_frames;
+                new_end_frame = std::min(T, last_good_frame + 1);
+
+                // Check max confidence in adjusted range
+                float max_confidence = 0.0f;
+                for (int f = start_frame; f < new_end_frame; f++) {
+                    float p = std::exp(log_probs_flat[f * C + phoneme_idx]);
+                    if (p > max_confidence) max_confidence = p;
+                }
+                if (avg_confidence < max_confidence / 2.0f)
+                    avg_confidence = max_confidence;
+            }
+        }
+
+        FrameStamp updated_fs = {phoneme_idx, start_frame, new_end_frame,
+                                 fs.target_seq_idx, avg_confidence};
+        updated.push_back(updated_fs);
+    }
+
+    return updated;
+}
+
+/**
+ * Frame-to-ms conversion using FrameStamp.confidence instead of target_seq_idx.
+ * For use in the advanced pipeline after calculate_confidences.
+ */
+std::vector<Timestamp> convert_to_ms_with_confidence(
+    const std::vector<FrameStamp>& framestamps,
+    int spectral_length,
+    float start_offset_time,
+    int wav_len,
+    int sample_rate)
+{
+    float duration_in_seconds = static_cast<float>(wav_len) / sample_rate;
+    float duration_per_frame = (spectral_length > 0)
+        ? duration_in_seconds / spectral_length : 0.0f;
+
+    std::vector<Timestamp> updated;
+    for (const auto& fs : framestamps) {
+        float start_sec = start_offset_time + (fs.start_frame * duration_per_frame);
+        float end_sec = start_offset_time + (fs.end_frame * duration_per_frame);
+        float start_ms = start_sec * 1000.0f;
+        float end_ms = end_sec * 1000.0f;
+
+        updated.emplace_back(fs.phoneme_id, fs.start_frame, fs.end_frame,
+                             fs.confidence, start_ms, end_ms);
+    }
+    return updated;
+}
 
 struct PhonemeResult {
     std::vector<int> ph66;
@@ -950,6 +1605,8 @@ private:
 
     int silence_anchors_;
     bool ignore_noise_;
+    bool boost_targets_ = true;
+    bool enforce_minimum_ = true;
 
     // Windowing config
     int window_size_ms_;
@@ -977,7 +1634,9 @@ public:
                             double duration_max = 10.0,
                             const std::string &output_frames_key = "phoneme_idx",
                             int silence_anchors = 10,
-                            bool ignore_noise = true);
+                            bool ignore_noise = true,
+                            bool boost_targets = true,
+                            bool enforce_minimum = true);
 
     std::pair<std::vector<float>, int> chop_wav(
         const std::vector<float>& wav, int start_frame, int end_frame);
@@ -990,6 +1649,12 @@ public:
     PhonemeResult phonemize_sentence(const std::string &text);
 
     std::vector<int> map_phonemes_to_groups(const std::vector<int>& phoneme_sequence);
+
+    TimestampResult extract_timestamps_from_segment_advanced(
+        const std::vector<float>& wav, int wav_len,
+        const std::vector<int>& phoneme_sequence,
+        float start_offset_time = 0.0f,
+        bool debug = false);
 
 private:
     void _setup_config(int window_size_ms = 120, int stride_ms = 80);
@@ -1012,11 +1677,15 @@ PhonemeTimestampAligner::PhonemeTimestampAligner(
     double duration_max,
     const std::string &output_frames_key,
     int silence_anchors,
-    bool ignore_noise)
+    bool ignore_noise,
+    bool boost_targets,
+    bool enforce_minimum)
     : selected_mapper_(mapper),
       seg_duration_max_(duration_max),
       silence_anchors_(silence_anchors),
-      ignore_noise_(ignore_noise)
+      ignore_noise_(ignore_noise),
+      boost_targets_(boost_targets),
+      enforce_minimum_(enforce_minimum)
 {
     if (cupe_ckpt_path.empty()) {
         throw std::runtime_error("cupe_ckpt_path must be provided.");
@@ -1273,6 +1942,67 @@ TimestampResult PhonemeTimestampAligner::extract_timestamps_from_segment_simplif
     return result;
 }
 
+/**
+ * Advanced timestamp extraction — matches Python extract_timestamps_from_segment_advanced.
+ * Uses full forced alignment with boosting, silence anchoring, and confidence scoring.
+ */
+TimestampResult PhonemeTimestampAligner::extract_timestamps_from_segment_advanced(
+    const std::vector<float>& wav,
+    int wav_len,
+    const std::vector<int>& phoneme_sequence,
+    float start_offset_time,
+    bool debug)
+{
+    TimestampResult result;
+    int ph_seq_len = (int)phoneme_sequence.size();
+
+    // CUPE forward pass
+    std::vector<std::vector<float>> audio_batch = {wav};
+    auto [logits_class, logits_group, embeddings, spectral_len,
+          total_frames, num_phonemes, num_groups] = cupe_prediction(audio_batch, wav_len);
+
+    if (spectral_len <= 0) {
+        std::cerr << "ERROR: Invalid spectral_len = " << spectral_len << std::endl;
+        return result;
+    }
+
+    // Log softmax over class dimension
+    auto log_probs_p = log_softmax_batch(logits_class, 1, total_frames, num_phonemes);
+
+    // Full alignment with boosting and silence anchoring
+    std::vector<std::vector<int>> true_seqs = {phoneme_sequence};
+    std::vector<int> pred_lens = {spectral_len};
+    std::vector<int> true_seqs_lens = {ph_seq_len};
+
+    auto frame_phonemes = alignment_utils_p_->decode_alignments(
+        log_probs_p, 1, total_frames, num_phonemes,
+        true_seqs, pred_lens, true_seqs_lens,
+        true, boost_targets_, enforce_minimum_, debug);
+
+    if (!frame_phonemes.empty() && !frame_phonemes[0].empty()) {
+        // Extract per-sample log probs for confidence calculation [spectral_len * C]
+        std::vector<float> lp(spectral_len * num_phonemes);
+        for (int t = 0; t < spectral_len; t++)
+            for (int c = 0; c < num_phonemes; c++)
+                lp[t * num_phonemes + c] = log_probs_p[t * num_phonemes + c];
+
+        // Calculate confidence scores
+        auto with_confidence = calculate_confidences(lp, spectral_len, num_phonemes,
+                                                     frame_phonemes[0]);
+
+        // Convert to ms timestamps (using confidence field)
+        result.phoneme_timestamps = convert_to_ms_with_confidence(
+            with_confidence, spectral_len, start_offset_time,
+            wav_len, resampler_sample_rate_);
+
+        // Sort by start_ms
+        std::sort(result.phoneme_timestamps.begin(), result.phoneme_timestamps.end(),
+                  [](const Timestamp& a, const Timestamp& b) { return a.start_ms < b.start_ms; });
+    }
+
+    return result;
+}
+
 // ============================================================
 // Main — matches Python __main__ in bfaonnx.py
 // ============================================================
@@ -1345,6 +2075,35 @@ int main()
                   << std::setw(6) << std::right << label
                   << " (" << std::setw(3) << std::right << ipa << ")  "
                   << std::fixed << std::setprecision(1)
+                  << std::setw(7) << ts.start_ms << " - "
+                  << std::setw(7) << ts.end_ms << " ms" << std::endl;
+    }
+
+    // ---- Advanced pipeline (with boosting, silence anchoring, confidence) ----
+    std::cout << "\n===== ADVANCED PIPELINE =====" << std::endl;
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto result_adv = extractor.extract_timestamps_from_segment_advanced(
+        wav, wav_len, phoneme_seq, 0.0f, false);
+    auto t3 = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_adv = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count();
+
+    const auto& adv_ts = result_adv.phoneme_timestamps;
+    std::cout << "\nAligned " << adv_ts.size()
+              << " phonemes (advanced) in " << elapsed_adv << " ms:\n" << std::endl;
+
+    for (size_t i = 0; i < adv_ts.size(); i++) {
+        const auto& ts = adv_ts[i];
+        std::string label = "?";
+        auto it = index_to_plabel.find(ts.phoneme_idx);
+        if (it != index_to_plabel.end()) label = it->second;
+
+        std::cout << "  " << std::setw(2) << (i + 1) << ": "
+                  << std::setw(6) << std::right << label
+                  << "  conf=" << std::fixed << std::setprecision(3)
+                  << std::setw(6) << ts.confidence << "  "
+                  << std::setprecision(1)
                   << std::setw(7) << ts.start_ms << " - "
                   << std::setw(7) << ts.end_ms << " ms" << std::endl;
     }
