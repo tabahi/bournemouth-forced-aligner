@@ -9,7 +9,9 @@
 
 # compile it with:
  cd bournemouth_aligner/cpp_onix
- g++ -std=c++17 main.cpp   -Ionnxruntime-linux-x64-gpu-1.24.1/include   -Lonnxruntime-linux-x64-gpu-1.24.1/lib   -lonnxruntime -lpthread   -o compiled_binary_x64_linux
+ g++ -std=c++17 main.cpp   -Ionnxruntime-linux-x64-gpu-1.24.1/include   -Lonnxruntime-linux-x64-gpu-1.24.1/lib   -lonnxruntime -lpthread   -o compiled_binary_x64_linux_gpu
+
+ g++ -std=c++17 main.cpp  -Ionnxruntime-linux-x64-1.24.1/include   -Lonnxruntime-linux-x64-1.24.1/lib   -lonnxruntime -lpthread  -o compiled_binary_x64_linux
 # run it :
  ./compiled_binary_x64_linux
 
@@ -1355,7 +1357,7 @@ private:
 
 
 public:
-    CUPEONNXPredictor(const std::string &onnx_path,
+    CUPEONNXPredictor(const std::string &onnx_path, int use_cuda_device = -1,
                   const std::vector<std::string> &providers = {"CUDAExecutionProvider", "CPUExecutionProvider"})
     {
         auto mem_before = get_memory_usage();
@@ -1366,12 +1368,15 @@ public:
         env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "CUPEONNX");
         
         Ort::SessionOptions session_options;
-        OrtCUDAProviderOptions cuda_options{};
-        memset(&cuda_options, 0, sizeof(cuda_options));
-        cuda_options.device_id = 0;
         session_options.SetIntraOpNumThreads(1);
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        session_options.AppendExecutionProvider_CUDA(cuda_options);
+
+        if (use_cuda_device >= 0) {
+            OrtCUDAProviderOptions cuda_options{};
+            memset(&cuda_options, 0, sizeof(cuda_options));
+            cuda_options.device_id = use_cuda_device;
+            session_options.AppendExecutionProvider_CUDA(cuda_options);
+        }
 
         memory_info_ = std::make_unique<Ort::MemoryInfo>(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault));
         session_ = std::make_unique<Ort::Session>(*env_, onnx_path.c_str(), session_options);
@@ -1692,7 +1697,7 @@ PhonemeTimestampAligner::PhonemeTimestampAligner(
     }
     std::cout << "Using CUPE checkpoint: " << cupe_ckpt_path << std::endl;
 
-    extractor_ = std::make_unique<CUPEONNXPredictor>(cupe_ckpt_path);
+    extractor_ = std::make_unique<CUPEONNXPredictor>(cupe_ckpt_path, -1);
 
     seg_duration_min_samples_ = static_cast<int>(seg_duration_min_ * resampler_sample_rate_);
     wav_len_max_ = static_cast<int>(seg_duration_max_ * resampler_sample_rate_);
@@ -2110,3 +2115,25 @@ int main()
 
     return 0;
 }
+
+
+'''
+
+## espeak-ng integration
+### The command structure:
+espeak-ng [options] ["<words>"]
+```bash
+espeak-ng --ipa ["hello"]
+```
+It prints the IPA phonemes for "hello". followed by a newline. Then there are a lot of error messages about "Failed to open voice data file". These can be ignored as long as the IPA output is correct. The phonemes can be mapped to ph66 indices using the `phoneme_mapped_index` table.
+
+First, for a sentence, we need to break it into words, then phonemize each word separately to get the phoneme sequence. This is because espeak-ng\'s output can differ based on word boundaries and context.
+
+
+## Notes for cli options:
+- onnx_path: path to ONNX model file (required)
+- audio_path: path to input WAV file (required)
+- mapper: phoneme mapping to use (default "ph66", currently only ph66 is supported)
+- duration_max: maximum segment duration in seconds (default 10.0)
+
+'''

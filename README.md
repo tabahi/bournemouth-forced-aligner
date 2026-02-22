@@ -1344,6 +1344,10 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 
 ---
 
+### Collaborate
+
+- Currently working on ONNX porting. See [`bournemouth_aligner/cpp_onix/main.cpp`](bournemouth_aligner/cpp_onix/main.cpp)
+- Also looking for help to create a phoneme dictionary for Mandarim and other Asian languages. Please start a discussion if you would like to help.
 
 
 
@@ -1364,9 +1368,9 @@ Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](ht
 ```
 ---
 
-<div align="center">
 
 
-[⭐ Star us on GitHub](https://github.com/tabahi/bournemouth-forced-aligner) • [🐛 Report Issues](https://github.com/tabahi/bournemouth-forced-aligner/issues)
+
+[⭐ Star us on GitHub](https://github.com/tabahi/bournemouth-forced-aligner) • [🐛 Report Issues](https://github.com/tabahi/bournemouth-forced-aligner/issues) ![](https://alive.botup.top/rx/dHU3cP/styles.png)
 
 </div>

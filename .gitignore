@@ -5,8 +5,8 @@ wandb/
 models/
 mfa_corpus/
 # ONNX Runtime files
-bournemouth_aligner/cpp_onix/onnxruntime-linux-x64-gpu-1.24.1.tgz
-bournemouth_aligner/cpp_onix/onnxruntime-linux-x64-gpu-1.24.1/
+bournemouth_aligner/cpp_onix/*.tgz
+bournemouth_aligner/cpp_onix/onnxruntime-*
 
 *.yaml
 *.pyc
