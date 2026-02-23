@@ -78,11 +78,11 @@ sudo apt-get install espeak-ng ffmpeg
 
 **macOS:**
 ```bash
-brew install espeak ffmpeg
+brew install espeak-ng ffmpeg
 ```
 
 **Windows:**  
-Download and install [eSpeak NG](https://github.com/espeak-ng/espeak-ng/releases) and [ffmpeg](https://ffmpeg.org/download.html), then add both to your system PATH.
+Download and install [eSpeak NG](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md) and [ffmpeg](https://ffmpeg.org/download.html), then add both to your system PATH.
 
 ### Step 2 — Install BFA
 
@@ -108,11 +108,16 @@ If you just want to try BFA on a file right away, no Python needed:
 balign butterfly.wav "butterfly" --preset=en-us --mel-path=mel_spectrum.png
 ```
 
-This aligns the word *butterfly* in `butterfly.wav`, saves the phoneme timestamps to `butterfly.vs.json` (same folder as the audio), and also saves a mel-spectrogram image to `mel_spectrum.png`.
+This aligns the word *butterfly* in [`butterfly.wav`](examples/samples/audio/109867__timkahn__butterfly.wav), saves the phoneme timestamps to `butterfly.vs.json` (same folder as the audio), and also saves a mel-spectrogram image to [`mel_spectrum.png`](mel_spectrum_butterfly.png).
 
-> **Tip:** Replace `"butterfly"` with any sentence spoken in the audio, and `--preset=en-us` with your language code (`de`, `fr`, `hi`, `ar`, …).
 
 ---
+
+
+![Butterfly mel-spectrum plot](mel_spectrum_butterfly.png)
+
+> **Tip:** Replace `"butterfly"` with any sentence spoken in the audio, and `--preset=en-us` with your language code (`de`, `fr`, `hi`, `ar`, …). Run `balign --help` to see more options.
+
 
 ### Python example
 
@@ -124,7 +129,7 @@ from bournemouth_aligner import PhonemeTimestampAligner
 aligner = PhonemeTimestampAligner(preset="en-us")
 
 # 2. Load your audio file (WAV, MP3, FLAC, etc.)
-audio = aligner.load_audio("my_recording.wav")
+audio = aligner.load_audio("butterfly.wav")
 
 # 3. Run alignment
 #    Provide the transcript exactly as spoken in the audio
