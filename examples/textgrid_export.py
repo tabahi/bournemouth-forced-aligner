@@ -1,5 +1,4 @@
 
-from sqlalchemy import false
 from bournemouth_aligner.utils import dict_to_textgrid
 
 
@@ -91,7 +90,7 @@ if __name__ == "__main__":
                     "start_ms": 117.48916625976562,
                     "end_ms": 151.0574951171875,
                     "confidence": 0.039361510425806046,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 2,
                     "index": 2
                 },
@@ -102,7 +101,7 @@ if __name__ == "__main__":
                     "start_ms": 151.0574951171875,
                     "end_ms": 302.114990234375,
                     "confidence": 0.18375618755817413,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 3,
                     "index": 3
                 },
@@ -113,7 +112,7 @@ if __name__ == "__main__":
                     "start_ms": 302.114990234375,
                     "end_ms": 402.8199768066406,
                     "confidence": 0.952548086643219,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 4,
                     "index": 4
                 },
@@ -124,7 +123,7 @@ if __name__ == "__main__":
                     "start_ms": 402.8199768066406,
                     "end_ms": 553.8775024414062,
                     "confidence": 0.9266434907913208,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 5,
                     "index": 5
                 },
@@ -135,7 +134,7 @@ if __name__ == "__main__":
                     "start_ms": 553.8775024414062,
                     "end_ms": 939.913330078125,
                     "confidence": 0.11104730516672134,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 6,
                     "index": 6
                 }
@@ -147,7 +146,7 @@ if __name__ == "__main__":
                     "start_ms": 33.56833267211914,
                     "end_ms": 50.35249710083008,
                     "confidence": 0.9979244470596313,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 0,
                     "index": 0
                 },
@@ -157,7 +156,7 @@ if __name__ == "__main__":
                     "start_ms": 50.35249710083008,
                     "end_ms": 117.48916625976562,
                     "confidence": 0.4637269377708435,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 1,
                     "index": 1
                 },
@@ -167,7 +166,7 @@ if __name__ == "__main__":
                     "start_ms": 117.48916625976562,
                     "end_ms": 151.0574951171875,
                     "confidence": 0.0318431481719017,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 2,
                     "index": 2
                 },
@@ -177,7 +176,7 @@ if __name__ == "__main__":
                     "start_ms": 151.0574951171875,
                     "end_ms": 302.114990234375,
                     "confidence": 0.5893039703369141,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 3,
                     "index": 3
                 },
@@ -187,7 +186,7 @@ if __name__ == "__main__":
                     "start_ms": 302.114990234375,
                     "end_ms": 402.8199768066406,
                     "confidence": 0.9883034229278564,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 4,
                     "index": 4
                 },
@@ -197,7 +196,7 @@ if __name__ == "__main__":
                     "start_ms": 402.8199768066406,
                     "end_ms": 553.8775024414062,
                     "confidence": 0.9555268287658691,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 5,
                     "index": 5
                 },
@@ -207,7 +206,7 @@ if __name__ == "__main__":
                     "start_ms": 553.8775024414062,
                     "end_ms": 1023.834228515625,
                     "confidence": 0.42801225185394287,
-                    "is_estimated": false,
+                    "is_estimated": False,
                     "target_seq_idx": 6,
                     "index": 6
                 }

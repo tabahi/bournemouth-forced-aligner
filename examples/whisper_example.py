@@ -25,7 +25,7 @@ with open(srt_path, "w") as srt_file:
 extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
 
 # Alternative: explicit model selection
-# extractor = PhonemeTimestampAligner(model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt", lang='en-us', duration_max=10, device='cpu')
+# extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", lang='en-us', duration_max=10, device='cpu')
 timestamps_dict = extractor.process_srt_file(srt_path, audio_path, ts_out_path, extract_embeddings=False, vspt_path=None, debug=False)
 
 print(timestamps_dict)  

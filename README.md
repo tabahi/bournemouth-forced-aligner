@@ -7,166 +7,172 @@
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-yellow.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![GitHub stars](https://img.shields.io/github/stars/tabahi/bournemouth-forced-aligner.svg)](https://github.com/tabahi/bournemouth-forced-aligner/stargazers)
 
-**High-precision multi-lingual phoneme-level timestamp extraction from audio files**
-> **Find the exact time when any phoneme is spoken** - provided you have the audio and its text. Crucial for creating a text-to-speech (TTS) dataset.
+**Automatically label which phoneme is spoken at which millisecond in an audio recording.**
 
-
-[🚀 Quick Start](#-getting-started) • [📚 Documentation](#-how-does-it-work) • [🔧 Installation](#-installation) • [💻 CLI](#-command-line-interface-cli) • [🤝 Contributing](https://github.com/tabahi/bournemouth-forced-aligner/issues)
+[🚀 Quick Start](#getting-started) • [🔧 Installation](#-installation) • [🌍 Languages](#-language-presets) • [💻 CLI](#-command-line-interface-cli) • [🐛 Issues](https://github.com/tabahi/bournemouth-forced-aligner/issues)
 
 </div>
 
 ---
 
+## What does it do?
 
-## *News* v1.1.0:
-- Now the longer sentences are handled much more robustly, due to silence anchoring.
-- The silence anchors are detected using VAD-like method to fix the position of silences on the punctuation marks, given enough confidence, that helps break down long speech segments into chuncks.
-- The "coverage_analysis" now runs multiple alignment quality tests. If "bad_confidence" is true, then it's better to discard that segment to avoid bad training data for TTS.
-- There are more warnings printed and errors raised when the alignment fails due to bad confidence.
-- The "phoneme_ts" output now includes original espeak IPA labels, along with the standardized ones. It's helps to train much eloquent TTS models.
-- The latest update v1.1.0 (2026-02-13) breaks the compatibility with the previous versions. The code is refactored to support batch processing.
+**Forced alignment** is the process of automatically finding *exactly when* each word or sound occurs in an audio recording, given a transcript of what was said.
 
+BFA takes two inputs — an **audio file** and its **text transcript** — and produces a detailed output with millisecond timestamps for every phoneme (the individual sounds that make up words).
 
-## Overview
+```
+Input:  🎵 audio.wav  +  📄 "butterfly"
 
-BFA is a lightning-fast Python library that extracts **phoneme/word timestamps** from audio files with millisecond precision. Built on  [Contextless Universal Phoneme Encoder (CUPE)](https://github.com/tabahi/contexless-phonemes-CUPE), it delivers accurate forced alignment for speech analysis, linguistics research, and audio processing applications.
+Output:
+  b  →  33 ms – 50 ms   (confidence: 0.99)
+  ʌ  →  100 ms – 117 ms (confidence: 0.84)
+  ɾ  →  134 ms – 151 ms (confidence: 0.29)
+  ɚ  →  285 ms – 302 ms (confidence: 0.74)
+  f  →  352 ms – 403 ms (confidence: 0.99)
+  l  →  520 ms – 554 ms (confidence: 0.92)
+  aɪ →  604 ms – 621 ms (confidence: 0.41)
+```
 
+The output can be exported as a **Praat TextGrid** file for visual inspection, or as **JSON** for use in scripts and TTS pipelines.
 
-## Key Features
+### Key Facts
 
-<div align="center">
+| | |
+|---|---|
+| ⚡ Speed | ~0.2 seconds to align 10 seconds of audio (on CPU) |
+| 🌍 Languages | 80+ languages — English, German, French, Spanish, Hindi, Arabic, and many more |
+| 📄 Output formats | JSON timestamps, Praat TextGrid, phoneme embeddings |
+| 🖥️ Runs on | Linux, macOS, Windows — CPU or GPU |
 
-| Feature | Description | Performance |
-|---------|-------------|-------------|
-| ⚡ **Ultra-Fast** | CPU-optimized processing | 0.2s for 10s audio |
-| 🎯 **Phoneme-Level** | Millisecond-precision timestamps | High accuracy alignment |
-| 🌍 **Multi-Language** | Via espeak phonemization | 80+ Indo-European + related |
-| 🔧 **Easy Integration** | JSON & TextGrid output | Praat compatibility |
+---
 
+## *What's new in v1.1.0* (February 2026)
 
+- **Better long-sentence handling** — silence anchoring now splits long segments at pauses (like commas and full stops), making alignment significantly more accurate for full sentences.
+- **Original IPA labels preserved** — the output now includes both the standardised ph66 label and the original espeak-ng IPA form, which is useful for fine-grained phonetic analysis and TTS training.
+- **Improved quality checks** — `coverage_analysis` in the output now runs multiple alignment quality tests. If `"bad_confidence": true`, that segment is likely unreliable and should be discarded.
+- **⚠️ Breaking change** — v1.1.0 refactors the API for batch processing. Code written for v1.0.x will need minor updates (see [CHANGELOG](CHANGELOG.md)).
 
-</div>
+---
 
-
-**Words+Phonemes aligned to Mel-spectrum frames:**
+**Words and phonemes aligned to a Mel-spectrogram:**
 
 ![Aligned mel-spectrum plot](examples/samples/images/LJ02_mel_words.png)
 ![Aligned mel-spectrum plot](examples/samples/images/LJ01_mel_phonemes.png)
 
-Try [mel_spectrum_alignment.py](examples/mel_spectrum_alignment.py)
-
+*See [mel_spectrum_alignment.py](examples/mel_spectrum_alignment.py) for a full example.*
 
 ---
+
 ## 🚀 Installation
 
-### 📦 From PyPI (Recommended)
+> **Prerequisites:** Python 3.8 or newer. If you don't have Python yet, download it from [python.org](https://www.python.org/downloads/).
 
+### Step 1 — Install system dependencies
+
+**Linux (Ubuntu / Debian):**
 ```bash
-# Install the package
-pip install bournemouth-forced-aligner
-
-# Alternatively, install the latest library directly from github:
-# pip install git+https://github.com/tabahi/bournemouth-forced-aligner.git
-
-# Install system dependencies
-apt-get install espeak-ng ffmpeg
+sudo apt-get install espeak-ng ffmpeg
 ```
 
-### Verify Installation
+**macOS:**
+```bash
+brew install espeak ffmpeg
+```
+
+**Windows:**  
+Download and install [eSpeak NG](https://github.com/espeak-ng/espeak-ng/releases) and [ffmpeg](https://ffmpeg.org/download.html), then add both to your system PATH.
+
+### Step 2 — Install BFA
 
 ```bash
-# Show help
-balign --help
+pip install bournemouth-forced-aligner
+```
 
-# Check version
-balign --version
+### Step 3 — Verify it works
 
-# Test installation
-python -c "from bournemouth_aligner import PhonemeTimestampAligner; print('✅ Installation successful!')"
+```bash
+python -c "from bournemouth_aligner import PhonemeTimestampAligner; print('Installation successful!')"
 ```
 
 ---
 
 ## Getting Started
 
-### 🔥 Quick Example
+### Quickstart — command line
+
+If you just want to try BFA on a file right away, no Python needed:
+
+```bash
+balign butterfly.wav "butterfly" --preset=en-us --mel-path=mel_spectrum.png
+```
+
+This aligns the word *butterfly* in `butterfly.wav`, saves the phoneme timestamps to `butterfly.vs.json` (same folder as the audio), and also saves a mel-spectrogram image to `mel_spectrum.png`.
+
+> **Tip:** Replace `"butterfly"` with any sentence spoken in the audio, and `--preset=en-us` with your language code (`de`, `fr`, `hi`, `ar`, …).
+
+---
+
+### Python example
 
 ```python
-import torch
-import time
-import json
 from bournemouth_aligner import PhonemeTimestampAligner
 
-# Configuration
-text_sentence = "butterfly"
-audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
+# 1. Create the aligner — it will automatically download the right model
+#    Change "en-us" to your language code, e.g. "de", "fr", "es", "hi"
+aligner = PhonemeTimestampAligner(preset="en-us")
 
-# Initialize aligner using language preset (recommended)
-bfa_aligner = PhonemeTimestampAligner(
-    preset="en-us",  # Automatically selects best English model
-    duration_max=10,
-    device='auto'
-)
+# 2. Load your audio file (WAV, MP3, FLAC, etc.)
+audio = aligner.load_audio("my_recording.wav")
 
-# Alternative: explicit model selection
-# bfa_aligner = PhonemeTimestampAligner(
-#     model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt",
-#     lang='en-us',
-#     duration_max=10,
-#     device='auto'
-# )
+# 3. Run alignment
+#    Provide the transcript exactly as spoken in the audio
+result = aligner.process_sentence("butterfly", audio)
 
-# Load and process
-audio_wav = bfa_aligner.load_audio(audio_path) # use RMS normalization for preloaded wav `audio_wav = extractor._rms_normalize(audio_wav)`
-
-t0 = time.time()
-timestamps = bfa_aligner.process_sentence(
-    text_sentence,
-    audio_wav,
-    extract_embeddings=False,
-    do_groups=True,
-    debug=True
-)
-t1 = time.time()
-
-print("Timestamps:")
-print(json.dumps(timestamps, indent=4, ensure_ascii=False))
-print(f"Processing time: {t1 - t0:.2f} seconds")
-
-
-
-# view detailed debug info
-print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
-        f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
-        f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned correctly: {bfa_aligner.total_phonemes_aligned_correctly}")
-bfa_aligner.reset_counters() # reset totals
-
+# 4. Print the phoneme timestamps
+for phoneme in result["segments"][0]["phoneme_ts"]:
+    print(f"{phoneme['ipa_label']:>5}  {phoneme['start_ms']:.0f} ms – {phoneme['end_ms']:.0f} ms  (confidence: {phoneme['confidence']:.2f})")
 ```
 
+That's it. No configuration files, no dictionary downloads, no corpus setup.
 
+> **Note:** The first run will automatically download the model from HuggingFace (~50 MB). Subsequent runs use the cached copy.
 
-### 🌐 Multi-Language Examples
+### Export to Praat TextGrid
 
 ```python
-# German with MLS8 model
+# Save a TextGrid file that you can open directly in Praat
+aligner.convert_to_textgrid(result, output_file="my_recording.TextGrid")
+```
+
+### Multi-language examples
+
+```python
+# German
 aligner_de = PhonemeTimestampAligner(preset="de")
 
-# Hindi with Universal model
-aligner_hi = PhonemeTimestampAligner(preset="hi")
-
-# French with MLS8 model
+# French
 aligner_fr = PhonemeTimestampAligner(preset="fr")
 
+# Hindi
+aligner_hi = PhonemeTimestampAligner(preset="hi")
+
+# Spanish
+aligner_es = PhonemeTimestampAligner(preset="es")
 ```
+
+See the [full preset list](#-language-presets) for all 80+ supported languages.
+
+---
 
 ### 📊 Sample Output
 
 <details>
-<summary>📋 Click to see detailed JSON output</summary>
+<summary>📋 Click to see the full JSON output for "butterfly"</summary>
 
 ```json
-# version 1.1.0
-Timestamps:
+
 {
     "segments": [
         {
@@ -405,42 +411,45 @@ Timestamps:
 
 </details>
 
-### 🔑 Output Format Guide
+### Understanding the Output
 
-| Key | Description | Format |
-|-----|-------------|--------|
-| `ph66` | Standardized 66 phoneme classes (including silence) | See [ph66_mapper.py](bournemouth_aligner/ipamappers/ph66_mapper.py) |
-| `pg16` | 16 phoneme category groups (lateral, vowels, rhotics, etc.) | Grouped classifications |
-| `ipa` | IPA sequences from espeak | Unicode IPA symbols |
-| `words` | Word segmentation | Regex-based: `\b\w+\b` |
-| `phoneme_ts` | Aligned phoneme timestamps (`phoneme_id`, `ipa_label`, `is_estimated`, `confidence`) | Millisecond precision |
-| `group_ts` | Phoneme group timestamps (`group_id`, `is_estimated`, `confidence`) | Often more accurate |
-| `word_num` | Word index for each phoneme | Maps phonemes to words |
-| `words_ts` | Word-level timestamps | Derived from phonemes |
-| `coverage_analysis` | Alignment quality metrics | Target/aligned/missing counts |
+Every segment in the output contains the following keys:
+
+| Key | What it contains | Useful for |
+|-----|-----------------|------------|
+| `phoneme_ts` | Per-phoneme timestamps: `ipa_label`, `start_ms`, `end_ms`, `confidence`, `is_estimated` | Phonetic annotation, TTS training |
+| `group_ts` | Same timestamps but grouped into 16 broad phoneme categories (vowels, stops, fricatives…) | Coarser acoustic analysis |
+| `words_ts` | Word-level timestamps derived from the phonemes | Word-level annotation |
+| `ipa` | IPA sequence for the segment (from espeak-ng) | Phonemic transcription reference |
+| `ph66` | Numeric indices into BFA's 66-class phoneme set | Model-internal representation |
+| `pg16` | Numeric indices into 16 phoneme group categories | Model-internal representation |
+| `words` | List of words in the segment | Word boundary reference |
+| `word_num` | Word index for each phoneme (parallel to `ph66`) | Maps each phoneme to its parent word |
+| `coverage_analysis` | Quality report: how many phonemes were aligned, missing, or estimated | Filtering out bad segments |
+
+**Reading `confidence`:** A value close to `1.0` means the model was very sure this phoneme occurred at this time. Values below `0.2` should be treated with caution. If `is_estimated` is `true`, the phoneme was placed by the recovery mechanism (not found by the primary Viterbi pass) — filter these out for high-precision work.
 
 ---
 
-## 🛠️ Methods
+---
+
+## 🛠️ API Reference
 
 ### 🌍 Language Presets
 
-BFA supports **80+ languages** through intelligent preset selection, focusing on Indo-European and closely related language families. Simply specify a language code as `preset` parameter for automatic model and language configuration.
+BFA supports **80+ languages**. Just pass the language code as `preset` and the right model is selected automatically. Phonemisation is handled by [espeak-ng](https://github.com/espeak-ng/espeak-ng), which is free and works offline.
 
-**⚠️ Note**: Tonal languages (Chinese, Vietnamese, Thai) and distant language families (Japanese, Korean, Bantu, etc.) are not supported through presets due to CUPE model limitations.
+**Supported language families:** Indo-European (Germanic, Romance, Slavic, Indic, Iranian…), Turkic, Semitic, Dravidian, and several others.
+
+**Not supported:** Tonal languages — Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese — and isolating/agglutinative families such as Japanese and Korean, because the underlying acoustic model was not trained on them.
 
 ```python
-# Using presets (recommended)
-aligner = PhonemeTimestampAligner(preset="de")  # German with MLS8 model
-aligner = PhonemeTimestampAligner(preset="hi")  # Hindi with Universal model
-aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
+aligner = PhonemeTimestampAligner(preset="de")   # German
+aligner = PhonemeTimestampAligner(preset="hi")   # Hindi
+aligner = PhonemeTimestampAligner(preset="fr")   # French
+aligner = PhonemeTimestampAligner(preset="ar")   # Arabic
+aligner = PhonemeTimestampAligner(preset="ru")   # Russian
 ```
-
-#### 🎯 Parameter Priority
-1. **Explicit `cupe_ckpt_path`** (highest priority)
-2. **Explicit `model_name`**
-3. **Preset values** (only if no explicit model specified)
-4. **Default values**
 
 #### 📋 Complete Preset Table
 
@@ -587,286 +596,234 @@ aligner = PhonemeTimestampAligner(preset="fr")  # French with MLS8 model
 
 ```python
 PhonemeTimestampAligner(
-    preset="en-us",           # Language preset (recommended)
-    model_name=None,          # Optional: explicit model override
-    cupe_ckpt_path=None,      # Optional: direct checkpoint path
-    lang="en-us",             # Language for phonemization
-    mapper="ph66",            # Phoneme mapper
-    duration_max=10,          # Max segment duration (seconds)
-    device="auto",            # "auto", "cpu", "cuda", or "mps"
-    silence_anchors=0,        # 0 to disable silence-anchored segmentation
-    boost_targets=True,
-    enforce_minimum=True,
-    enforce_all_targets=True,
-    ignore_noise=True,
-    extend_soft_boundaries=True,
-    bad_confidence_threshold=0.6
+    preset="en-us",               # Language code — selects model and phonemiser automatically
+    model_name=None,              # Override the model by name (optional)
+    cupe_ckpt_path=None,          # Override with a local model file path (optional)
+    lang="en-us",                 # espeak-ng language code for phonemisation
+    duration_max=10,              # Max segment length in seconds (used for padding)
+    device="auto",                # "auto" | "cpu" | "cuda" | "mps"
+    silence_anchors=0,            # >0 enables silence-anchored splitting (try 3 for long sentences)
+    boost_targets=True,           # Boost acoustic probability of target phonemes before alignment
+    enforce_minimum=True,         # Prevent phonemes from being completely zeroed out
+    enforce_all_targets=True,     # Guarantee every phoneme in the transcript gets a timestamp
+    ignore_noise=True,            # Skip predicted noise frames in output
+    extend_soft_boundaries=True,  # Extend phoneme boundaries into adjacent low-confidence frames
+    boundary_softness=7,          # How far to extend (2=tight cores only, 7=generous)
+    bad_confidence_threshold=0.6  # Flag segments where >60% of phonemes are low-confidence
 )
 ```
 
-**Parameters:**
-- `preset`: Language preset for automatic model and language selection. Use language codes like `"de"`, `"fr"`, `"hi"`, etc. Supports 80+ languages with intelligent model selection.
-- `model_name`: Name of the CUPE model (see [HuggingFace models](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt)). Overrides preset selection. Downloaded automatically if available.
-- `cupe_ckpt_path`: Local path to model checkpoint. Highest priority - overrides both preset and model_name.
-- `lang`: Language code for phonemization ([espeak lang codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)). Only overridden by preset if using default.
-- `mapper`: Phoneme mapper to use. Currently only `"ph66"` is supported.
-- `duration_max`: Maximum segment duration in seconds, used for batch padding. Best to keep <30 seconds.
-- `device`: Inference device. `"auto"` (default) auto-detects the best available device. Also accepts `"cpu"`, `"cuda"`, or `"mps"`.
-- `silence_anchors`: Sliding window size for silence-anchored segmented alignment. When >0, enables splitting long segments at detected silence regions matched to SIL tokens in the target sequence. Set `0` (default) to disable and use pure Viterbi. Set a lower value (e.g. 3) to increase sensitivity to silences. Recommended with `enforce_all_targets=True`.
-- `boost_targets`: Boost target phoneme probabilities for better alignment.
-- `enforce_minimum`: Enforce minimum probability threshold for target phonemes.
-- `enforce_all_targets`: Postprocessing step that inserts phonemes missed by Viterbi decoding at their expected positions based on target sequence positions.
-- `ignore_noise`: Whether to ignore predicted "noise" in the alignment. If `True`, noise is skipped. If `False`, long noisy/silent segments are included as "noise" timestamps.
-- `extend_soft_boundaries`: Enable the extension of the phoeneme start/end boundaries beyond the core of the phoneme. Use `boundary_softness` to control the leniency of the extension. This can help capture more of the phoneme duration, especially for softer phonemes or in cases where the model's confidence extends beyond the core frames.
-- `boundary_softness`: Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 7, which corresponds to a threshold of 0.0000001. Set it to 2 or 3 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
-- `bad_confidence_threshold`: Ratio threshold for flagging low-confidence alignments (set to `1` to disable). Default `0.6` means a warning is issued if 60% of phonemes have low confidence. When triggered, `segments[i]["coverage_analysis"]["bad_alignment"]` is set to `True`.
+**For most users, only `preset` and `duration_max` need to be changed.** The alignment defaults are tuned for clean read speech.
+
+<details>
+<summary>Parameter details</summary>
+
+| Parameter | Default | What it does |
+|-----------|---------|-------------|
+| `preset` | `"en-us"` | Language code. Automatically picks the right model and espeak-ng language. |
+| `model_name` | `None` | Name of a specific CUPE model. Overrides `preset`. Downloaded from HuggingFace if not cached. |
+| `cupe_ckpt_path` | `None` | Path to a local model `.ckpt` file. Highest priority. |
+| `lang` | `"en-us"` | espeak-ng language code for phonemisation. See [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
+| `duration_max` | `10` | Maximum segment duration in seconds. Longer audio is truncated. Keep ≤30 s for best results. |
+| `device` | `"auto"` | `"auto"` detects CUDA/MPS/CPU automatically. |
+| `silence_anchors` | `0` | When >0, uses detected silences as anchor points to improve long-segment alignment. Try `3`. |
+| `boost_targets` | `True` | Increases the acoustic probability of expected phonemes before Viterbi decoding. |
+| `enforce_minimum` | `True` | Prevents any target phoneme from being completely zeroed out by the model. |
+| `enforce_all_targets` | `True` | After decoding, inserts any missing phonemes at their best estimated position. Set `False` for strictly probabilistic output. |
+| `ignore_noise` | `True` | Drops predicted noise/silence frames from output. Set `False` to include them as `"noise"` entries. |
+| `extend_soft_boundaries` | `True` | Extends phoneme boundaries into adjacent frames that still carry some acoustic evidence. |
+| `boundary_softness` | `7` | Controls how far boundaries extend. `2`–`3` = tight phoneme cores; `7` = generous boundaries. |
+| `bad_confidence_threshold` | `0.6` | Ratio of low-confidence phonemes that triggers a `bad_alignment` warning on a segment. |
+
+**Model priority (highest → lowest):** `cupe_ckpt_path` → `model_name` → `preset` → defaults.
+
+</details>
 
 ---
 
-**Models:**
-- `model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"` (NEW) for best performance on English. This model is trained on 1000 hours LibriSpeech.
-- `model_name="en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"` for best performance on English. This model is trained on 1000 hours LibriSpeech.
-- `model_name="en_libri1000_uj01d_e62_val_GER=0.2438.ckpt"` for best performance on heavy accented English speech. This is the same as above, just unsettled weights.
-- `model_name="multi_MLS8_uh02_e36_val_GER=0.2334.ckpt"` for best performance on 8 european languages including English, German, French, Dutch, Italian, Spanish, Italian, Portuguese, Polish. This model's accuracy on English (buckeye corpus) is on par with the above (main) English model. We can only assume that the performance will be the same on the rest of the 7 languages.
-- `model_name="large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"` Large universal model for all non-tonal languages.
-- `model_name="multi_mswc38_ug20_e59_val_GER=0.5611.ckpt"` Small universal model for all non-tonal languages.
-- Models for tonal languages (Mandarin, Vietnamese, Thai) will have to wait.
+**Available models** (downloaded automatically on first use):
 
-Do not forget to set `lang="en-us"` parameter based on your model and [Language Identifier](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
+| Model name | Best for |
+|------------|----------|
+| `en_libri1000_ua01c_e4_val_GER=0.2186.ckpt` | English (recommended) |
+| `multi_MLS8_uh02_e36_val_GER=0.2334.ckpt` | German, French, Spanish, Italian, Portuguese, Polish, Dutch |
+| `large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt` | All other supported languages (large) |
+| `multi_mswc38_ug20_e59_val_GER=0.5611.ckpt` | All other supported languages (faster/smaller) |
+
+All models are hosted on [HuggingFace → Tabahi/CUPE-2i](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt).
 
 
-### Process SRT File
+### `process_srt_file` — align a whole recording from a transcript file
+
+**When to use:** You have a full audio file and a Whisper-style JSON transcript (segments with `start`, `end`, `text`). This is the most common entry point for corpus annotation.
 
 ```python
-PhonemeTimestampAligner.process_srt_file(
-    srt_path,
-    audio_path,
-    ts_out_path=None,
+timestamps = aligner.process_srt_file(
+    srt_path,           # path to transcript JSON (Whisper output format)
+    audio_path,         # path to audio file
+    ts_out_path=None,   # optional: save results to this JSON file
     extract_embeddings=False,
-    vspt_path=None,
-    do_groups=False,
+    vspt_path=None,     # optional: save phoneme embeddings to this .pt file
+    do_groups=False,    # set True to also return phoneme group timestamps
     debug=True
 )
 ```
 
-**Parameters:**
-- `srt_path`: Path to input SRT file (whisper JSON format).
-- `audio_path`: Path to audio file.
-- `ts_out_path`: Output path for timestamps (vs2 JSON format).
-- `extract_embeddings`: Extract embeddings.
-- `vspt_path`: Path to save embeddings (`.pt` file).
-- `do_groups`: Extract group timestamps.
-- `debug`: Enable debug output.
-
-**Returns:**
-- `timestamps_dict`: Dictionary with extracted timestamps.
+Returns a dict with a `"segments"` key. See [example_advanced.py](examples/example_advanced.py).
 
 ---
 
-### Process text sentences
+### `process_sentence` — align one sentence
+
+**When to use:** You have a single sentence and its audio clip (already loaded).
 
 ```python
-PhonemeTimestampAligner.process_sentence(
-    text,
-    audio_wav,
+result = aligner.process_sentence(
+    text,               # transcript of the audio
+    audio_wav,          # audio waveform tensor from load_audio()
     extract_embeddings=False,
+    do_groups=False,    # set True to also return phoneme group timestamps
+    debug=False
+)
+# Returns a dict with "segments" key (one segment)
+# If extract_embeddings=True, returns (result, phoneme_embeddings, group_embeddings)
+```
+
+See [basic_usage.py](examples/basic_usage.py).
+
+---
+
+### `process_sentences_batch` — align many sentences at once
+
+**When to use:** You have a list of sentences and corresponding audio clips and want to process them all efficiently in one call.
+
+```python
+results = aligner.process_sentences_batch(
+    texts,       # list of transcript strings
+    audio_wavs,  # list of audio waveform tensors (one per text)
     do_groups=False,
     debug=False
 )
+# Returns a list of result dicts, one per input
 ```
 
-**Parameters:**
-- `text`: Sentence/text.
-- `audio_wav`: Audio waveform tensor (`torch.Tensor`).
-- `extract_embeddings`: Extract embeddings (optional).
-- `do_groups`: Extract group timestamps (optional).
-- `debug`: Enable debug output (optional).
-
-**Returns:**
-- If `extract_embeddings=False`: `timestamps_dict` with extracted timestamps.
-- If `extract_embeddings=True`: Tuple of `(timestamps_dict, phoneme_embeddings, group_embeddings)`.
+See [batch_aligment.py](examples/batch_aligment.py).
 
 ---
 
-### Batch Processing
+---
 
-For processing multiple audio clips efficiently, use `process_segments`. Each batch item pairs one audio waveform with one or more time-bounded segments:
+### `process_segments` — batch alignment from segmented transcripts
+
+**When to use:** You have multiple audio files each with multiple time-stamped segments (e.g. output from Whisper over a corpus). This is the most efficient entry point for large-scale annotation.
 
 ```python
-# Batch processing — multiple clips, each with their own segments
+# Each item in srt_data corresponds to one audio file
 srt_data = [
-    {"segments": [{"start": 0.0, "end": 3.5, "text": "hello world"}, ...]},  # clip 1
-    {"segments": [{"start": 0.0, "end": 5.0, "text": "another clip"}, ...]},  # clip 2
+    {"segments": [{"start": 0.0, "end": 3.5, "text": "hello world"}, ...]},  # file 1
+    {"segments": [{"start": 0.0, "end": 5.0, "text": "another recording"}, ...]},  # file 2
 ]
-audio_wavs = [audio_wav1, audio_wav2]  # one waveform per clip
+audio_wavs = [wav1, wav2]  # one waveform per file
 
 batch_results = aligner.process_segments(
     srt_data,
     audio_wavs,
-    extract_embeddings=False,
     do_groups=False,
     debug=True
 )
-# Returns: list of dicts, one per clip, each with "segments" key
+# Returns a list of dicts (one per file), each with a "segments" key
 
-# With embeddings — returns tuple with per-clip nested lists
-batch_results, batch_p_embds, batch_g_embds = aligner.process_segments(
+# With phoneme embeddings:
+batch_results, phoneme_embds, group_embds = aligner.process_segments(
     srt_data, audio_wavs, extract_embeddings=True
 )
-# batch_p_embds[clip_idx][segment_idx] = embedding tensor
+# phoneme_embds[file_idx][segment_idx] = embedding tensor
 ```
 
-See [batch_aligment.py](examples/batch_aligment.py) for complete examples.
+See [batch_aligment.py](examples/batch_aligment.py) for a complete working example.
 
 ---
-### 🗣️ Convert Text to Phonemes
+### `phonemize_sentence` — convert text to IPA and phoneme indices
 
-Phonemization in BFA is powered by the [phonemizer](https://github.com/bootphon/phonemizer) package, using the [espeak-ng](https://github.com/espeak-ng/espeak-ng) backend for robust multi-language support.
+Useful for inspecting how BFA will interpret your text before running alignment.
 
 ```python
-PhonemeTimestampAligner.phonemize_sentence(text)
+result = aligner.phonemize_sentence("butterfly")
+
+print(result["eipa"])     # ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']  — original espeak-ng IPA
+print(result["mipa"])     # ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']  — mapped IPA (after ph66 reduction)
+print(result["ph66"])     # [29, 10, 58, 9, 43, 56, 23]             — numeric indices for the model
+print(result["pg16"])     # [7, 2, 14, 2, 8, 13, 5]                 — phoneme group indices
+print(result["words"])    # ['butterfly']
+print(result["word_num"]) # [0, 0, 0, 0, 0, 0, 0]  — which word each phoneme belongs to
 ```
 
-**Optional:** Change the espeak language after initialization:
+To change the espeak-ng language after initialisation:
 ```python
-PhonemeTimestampAligner.phonemizer.set_backend(language='en')
+aligner.phonemizer.set_backend(language='de')  # switch to German phonemisation
 ```
 
-**Method Description:**
+#### About ph66 and the phoneme alphabet
 
-Phonemizes a sentence and returns a detailed mapping:
+BFA uses a reduced alphabet of **66 phoneme classes (ph66)** that maps the full IPA inventory of any supported language onto a shared set of symbols. This is what the acoustic model was trained on.
 
-- `text`: Original input sentence
-- `ipa`: List of phonemes in IPA format, original phonemes from espeak-ng without mapped reductions.
-- `ph66`: List of phoneme class indices (mapped to 66-class set)
-- `pg16`: List of phoneme group indices (16 broad categories)
-- `words`: List of words corresponding to phonemes
-- `word_num`: Word indices for each phoneme
+- `phoneme_label` in the output is the ph66 symbol (e.g. `"a:"`, `"b"`).
+- `ipa_label` is the original espeak-ng IPA for that position (e.g. `"ɑː"`, `"b"`).
+- For compound phonemes like /ɑːɹ/, BFA splits them into two entries. The second half gets `ipa_label: "-"` to indicate continuation.
 
+<details>
+<summary>Example: how a compound phoneme (ɑːɹ) appears in the output JSON</summary>
 
-**Example Usage:**
-```python
-result = PhonemeTimestampAligner.phonemize_sentence("butterfly")
-print(result["ipa"])    # ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']
-print(result["ph66"])  # [29, 10, 58, 9, 43, 56, 23]
-print(result["pg16"])  # [7, 2, 14, 2, 8, 13, 5]
-```
-
-#### Phoneme dictionaries
-BFA uses a reduced phoneme dictionary of 66 phonemes (ph66) during alignment. But all the phonemes can be mapped back to their original IPA phonemes derived from espeak-ng. 
-In the timestamps dict `output["segments][si]["phoneme_ts"]` there are both lables. For example:
 ```json
-[
-    {
-        "segments": [{
-                ...,
-            "phoneme_ts": [
-                    {
-                        "phoneme_id": 28,
-                        "phoneme_label": "p",
-                        "ipa_label": "p",
-                        "start_ms": 0.0,
-                        "end_ms": 32.18333435058594,
-                        "confidence": 0.7316462993621826,
-                        "is_estimated": false,
-                        "target_seq_idx": 0,
-                        "index": 0
-                    },
-                    
-                    {
-                        "phoneme_id": 2,
-                        "phoneme_label": "i:",
-                        "ipa_label": "i\u02d0",
-                        "start_ms": 2445.933349609375,
-                        "end_ms": 2478.11669921875,
-                        "confidence": 0.43211930990219116,
-                        "is_estimated": false,
-                        "target_seq_idx": 27,
-                        "index": 27
-                    },
-                    {
-                        "phoneme_id": 19,
-                        "phoneme_label": "a:",
-                        "ipa_label": "\u0251\u02d0\u0279",
-                        "start_ms": 2478.11669921875,
-                        "end_ms": 2606.85009765625,
-                        "confidence": 0.93682461977005,
-                        "is_estimated": false,
-                        "target_seq_idx": 28,
-                        "index": 28
-                    },
-                    {
-                        "phoneme_id": 59,
-                        "phoneme_label": "\u0279",
-                        "ipa_label": "-", // indictes the continuation of the compound phoneme "\u0251\u02d0\u0279"
-                        "start_ms": 2606.85009765625,
-                        "end_ms": 2639.033203125,
-                        "confidence": 0.664559543132782,
-                        "is_estimated": false,  // if 'true', it means it was not aligned by viterbi algorithm, but was estimated, if enforce_all_targets=True
-                        "target_seq_idx": 29,
-                        "index": 29
-                    },
-            ]
-            
-        }]
-    }
-]
-```
-BFA also break down long compound phonemes, for example /'ɑːɹ'/ into ['a:', 'ɹ']. In the timestamps, the 'a:' and 'ɹ' would have their own timestamps. The original IPA label of is assigned only to the first half of the compound timestamps ("ipa_label": "ɑːɹ"), while the second phoneme has "ipa_label": "-" indicating the continuation of the compound.
-
-
-### Extract Timestamps from Segment
-
-```python
-PhonemeTimestampAligner.extract_timestamps_from_segment(
-    wav,
-    wav_len,
-    phoneme_sequence,
-    start_offset_time=0,
-    group_sequence=None,
-    extract_embeddings=True,
-    do_groups=True,
-    debug=True
-)
+{
+    "phoneme_id": 19,
+    "phoneme_label": "a:",
+    "ipa_label": "ɑːɹ",
+    "start_ms": 2478.1,
+    "end_ms": 2606.8,
+    "confidence": 0.937,
+    "is_estimated": false
+},
+{
+    "phoneme_id": 59,
+    "phoneme_label": "ɹ",
+    "ipa_label": "-",
+    "start_ms": 2606.8,
+    "end_ms": 2639.0,
+    "confidence": 0.665,
+    "is_estimated": false
+}
 ```
 
-**Parameters:**
-- `wav`: Audio tensor for the segment. Shape: [1, samples]
-- `wav_len`: Length of the audio segment (samples).
-- `phoneme_sequence`: List/tensor of phoneme indices (ph66)
-- `start_offset_time`: Segment start offset (seconds).
-- `group_sequence`: Optional group indices (pg16).
-- `extract_embeddings`: Extract pooled phoneme embeddings.
-- `do_groups`: Extract phoneme group timestamps.
-- `debug`: Enable debug output.
+The original IPA /ɑːɹ/ is assigned to the first part; the second part carries `"-"` to signal it is a continuation.
 
-**Returns:**
-- `timestamp_dict`: Contains phoneme and group timestamps.
-- `pooled_embeddings_phonemes`: Pooled phoneme embeddings or `None`.
-- `pooled_embeddings_groups`: Pooled group embeddings or `None`.
+</details>
+
 
 ---
 
-### Convert to TextGrid
+### `extract_timestamps_from_segment_batch` — low-level batch inference
+
+This is the internal method that `process_segments` calls. Most users will not need it directly. It takes raw audio tensors and phoneme index sequences and runs the CUPE model + Viterbi decoder.
+
+See [run_simplipied_pipeline.py](examples/run_simplipied_pipeline.py) for a working example of the simplified variant (`extract_timestamps_from_segment_simplified`).
+
+---
+
+### `convert_to_textgrid` — export to Praat
+
+Converts the alignment result to a [Praat TextGrid](https://www.fon.hum.uva.nl/praat/manual/TextGrid_file_format.html) file with separate tiers for phonemes, phoneme groups, and words.
 
 ```python
-PhonemeTimestampAligner.convert_to_textgrid(
-    timestamps_dict,
-    output_file=None,
-    include_confidence=False
-)
+# Save to file
+aligner.convert_to_textgrid(result, output_file="recording.TextGrid")
+
+# Or get the TextGrid content as a string (e.g. to embed in your own pipeline)
+textgrid_str = aligner.convert_to_textgrid(result, output_file=None)
+
+# Include confidence scores in the tier labels
+aligner.convert_to_textgrid(result, output_file="recording.TextGrid", include_confidence=True)
 ```
-
-**Description:**  
-Converts VS2 timestamp data to [Praat TextGrid](https://www.fon.hum.uva.nl/praat/manual/TextGrid_file_format.html) format.
-
-**Parameters:**
-- `timestamps_dict`: Timestamp dictionary (from alignment).
-- `output_file`: Path to save TextGrid file (optional).
-- `include_confidence`: Include confidence values in output (optional).
-
-**Returns:**  
-- `textgrid_content`: TextGrid file content as string.
 
 
 
@@ -877,11 +834,11 @@ Converts VS2 timestamp data to [Praat TextGrid](https://www.fon.hum.uva.nl/praat
 ## 🔧 Advanced Usage
 
 
-### 🎙️ Mel-Spectrum Alignment
+### 🎙️ Mel-Spectrogram Alignment
 
-BFA provides advanced mel-spectrogram compatibility methods for audio synthesis workflows. These methods enable seamless integration with [HiFi-GAN](https://github.com/jik876/hifi-gan) and [BigVGAN vocoder](https://github.com/NVIDIA/BigVGAN) and other mel-based audio processing pipelines.
+For TTS and speech synthesis workflows, BFA can produce **frame-wise phoneme labels** aligned to a mel-spectrogram. This makes it straightforward to create duration labels for [HiFi-GAN](https://github.com/jik876/hifi-gan) and [BigVGAN](https://github.com/NVIDIA/BigVGAN) vocoders.
 
-See full [example here](examples/mel_spectrum_alignment.py).
+See the full working example: [mel_spectrum_alignment.py](examples/mel_spectrum_alignment.py).
 
 #### Extract Mel Spectrogram
 
@@ -1002,7 +959,7 @@ compress_framesed = extractor.compress_frames(frames_assorted)
 
 
 
-### 🔗 Integration Examples
+### Integration Examples
 
 <details>
 <summary>🎙️ Whisper Integration</summary>
@@ -1026,7 +983,7 @@ timestamps = extractor.process_srt_file("whisper_output.srt.json", "audio.wav", 
 </details>
 
 <details>
-<summary>🔬 Manual Processing Pipeline</summary>
+<summary>🔬 Manual pipeline — load audio and align in a few lines</summary>
 
 ```python
 import torch
@@ -1043,164 +1000,103 @@ extractor.convert_to_textgrid(timestamps, "output.TextGrid")
 
 </details>
 
-### 🤖 Machine Learning Integration
+### 🤖 Machine Learning: Phoneme Embeddings
 
-For phoneme embeddings in ML pipelines, check out our [embeddings example](examples/read_embeddings.py).
+BFA can optionally return **per-phoneme embeddings** (512-dimensional vectors) from the CUPE model. These can be used as phoneme-level acoustic features in downstream ML models. See [read_embeddings.py](examples/read_embeddings.py) for how to load and use them.
 
 ---
 
 ## 💻 Command Line Interface (CLI)
 
-### 🚀 Quick CLI Usage
+BFA installs a `balign` command so you can align audio without writing any Python.
 
-```bash
-# Basic alignment
-balign audio.wav transcription.srt.json output.json
+### Syntax
 
-# With debug output
-balign audio.wav transcription.srt.json output.json --debug
-
-# Extract embeddings
-balign audio.wav transcription.srt.json output.json --embeddings embeddings.pt
+```
+balign AUDIO_PATH TEXT_OR_SRT [OUTPUT_PATH] [OPTIONS]
 ```
 
-### ⚙️ Command Syntax
+`TEXT_OR_SRT` is either:
+- A **quoted sentence** — the text spoken in the audio (text mode, the default)
+- A **path to a JSON transcript file** — auto-detected when the argument points to an existing file (SRT mode)
+
+`OUTPUT_PATH` is optional. When omitted, the result is saved next to the audio as `<name>.vs.json`.
+
+---
+
+### Examples
 
 ```bash
-balign [OPTIONS] AUDIO_PATH SRT_PATH OUTPUT_PATH
+# Align a single word — text mode (simplest)
+balign butterfly.wav "butterfly" --preset=en-us
+
+# Save a mel-spectrogram image at the same time
+balign butterfly.wav "butterfly" --preset=en-us --mel-path=mel_spectrum.png
+
+# Align a full sentence, save TextGrid for Praat
+balign speech.wav "hello world" result.json --preset=en-us --textgrid=result.TextGrid
+
+# Align from a Whisper transcript file (SRT mode)
+balign interview.wav transcript.srt.json aligned.json --preset=en-us
+
+# German
+balign speech.wav "hallo welt" --preset=de
+
+# Hindi with GPU
+balign speech.wav "नमस्ते" out.json --preset=hi --device=cuda
+
+# Save phoneme embeddings
+balign speech.wav "hello world" out.json --preset=en-us --embeddings=emb.pt
+
+# Batch-align all wav files in a folder (SRT mode)
+for f in *.wav; do balign "$f" "${f%.wav}.srt.json" "${f%.wav}.vs.json" --preset=en-us; done
 ```
 
-### 📝 Arguments & Options
+---
 
-<div align="center">
+### Options
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `AUDIO_PATH` | **Required** | - | Audio file path (.wav, .mp3, .flac) |
-| `SRT_PATH` | **Required** | - | SRT JSON file path |
-| `OUTPUT_PATH` | **Required** | - | Output timestamps (.json) |
-
-</div>
-
-<details>
-<summary>🔧 Advanced Options</summary>
-
-| Option | Default | Description |
+| Option | Default | What it does |
 |--------|---------|-------------|
-| `--model TEXT` | `en_libri1000_ua01c_e4_val_GER=0.2186.ckpt` | CUPE model from [HuggingFace](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt) |
-| `--lang TEXT` | `en-us` | Language code ([espeak codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)) |
-| `--device TEXT` | `cpu` | Processing device (`cpu` or `cuda`) |
-| `--embeddings PATH` | None | Save phoneme embeddings (.pt file) |
-| `--duration-max FLOAT` | `10.0` | Max segment duration (seconds) |
-| `--debug / --no-debug` | `False` | Enable detailed output |
-| `--boost-targets / --no-boost-targets` | `True` | Enable target phoneme boosting |
-| `--help` | | Show help message |
-| `--version` | | Show version info |
+| `--preset LANG` | `en-us` | Language code — picks the right model automatically. Use `--list-presets` to see all. |
+| `--mel-path PATH` | — | Save mel spectrogram as `.png` (image) or `.pt` (raw tensor). |
+| `--textgrid PATH` | — | Save a Praat TextGrid file with phoneme, group, and word tiers. |
+| `--embeddings PATH` | — | Save per-phoneme CUPE embeddings as a `.pt` tensor. |
+| `--device auto\|cpu\|cuda` | `auto` | Inference device. |
+| `--lang CODE` | *(from preset)* | Override the espeak-ng language code only. |
+| `--model NAME` | *(from preset)* | Override the CUPE model name (advanced). |
+| `--duration-max FLOAT` | `10.0` | Max segment length in seconds for windowed processing. |
+| `--boost-targets / --no-boost-targets` | on | Boost expected phoneme probabilities before Viterbi. |
+| `--debug` | off | Print segment-by-segment progress. |
+| `--list-presets` | — | Print all supported language codes and exit. |
+| `--version` | — | Print version and exit. |
 
-</details>
+---
 
-### 🌟 CLI Examples
+### Transcript file format (SRT mode)
 
-```bash
-# Basic usage
-balign audio.wav transcription.srt.json output.json
-
-# With GPU and embeddings  
-balign audio.wav transcription.srt.json output.json --device cuda --embeddings embeddings.pt
-
-# Multi-language (English + 8 european langauges model available)
-balign audio.wav transcription.srt.json output.json --lang es
-
-# Batch processing
-for audio in *.wav; do balign "$audio" "${audio%.wav}.srt" "${audio%.wav}.json"; done
-```
-
-### 📊 Input Format
-
-SRT files must be in JSON format:
+When aligning a full recording, provide a JSON file in Whisper's output format:
 
 ```json
 {
   "segments": [
-    {
-      "start": 0.0,
-      "end": 3.5,
-      "text": "hello world this is a test"
-    },
-    {
-      "start": 3.5,
-      "end": 7.2,  
-      "text": "another segment of speech"
-    }
+    {"start": 0.0, "end": 3.5, "text": "hello world this is a test"},
+    {"start": 3.5, "end": 7.2, "text": "another segment of speech"}
   ]
 }
 ```
 
-### 🎯 Creating Input Files
-
-Use Whisper for transcription (see [Integration Examples](#-integration-examples)) or create SRT JSON manually with the format shown above.
-
-### 🔍 Debug Mode
-
-Enable comprehensive processing information:
-
-```bash
-balign audio.wav transcription.srt.json output.json --debug
-```
-
-<details>
-<summary>📊 Sample debug output</summary>
-
-```
-🚀 Bournemouth Forced Aligner
-🎵 Audio: audio.wav
-📄 SRT: transcription.srt.json  
-💾 Output: output.json
-🏷️  Language: en-us
-🖥️  Device: cpu
-🎯 Model: en_libri1000_ua01c_e4_val_GER=0.2186.ckpt
---------------------------------------------------
-🔧 Initializing aligner...
-Setting backend for language: en-us
-✅ Aligner initialized successfully
-🎵 Processing audio...
-Loaded SRT file with 1 segments from transcription.srt.json
-Resampling audio.wav from 22050Hz to 16000Hz
-Expected phonemes: ['p', 'ɹ', 'ɪ', ...'ʃ', 'ə', 'n']
-Target phonemes: 108, Expected: ['p', 'ɹ', 'ɪ', ..., 'ʃ', 'ə', 'n']
-Spectral length: 600
-Forced alignment took 135.305 ms
-Aligned phonemes: 108
-Target phonemes: 108
-SUCCESS: All target phonemes were aligned!
-
-============================================================
-PROCESSING SUMMARY
-============================================================
-Total segments processed: 1
-Perfect sequence matches: 1/1 (100.0%)
-Total phonemes aligned: 108
-Overall average confidence: 0.502
-============================================================
-Results saved to: output.json
-✅ Timestamps extracted to output.json
-📊 Processed 1 segments with 108 phonemes
-🎉 Processing completed successfully!
-```
-
-</details>
+Generate this automatically with [Whisper](#integration-examples) or write it by hand for small files.
 
 ---
 
+## 🧠 How It Works
 
+BFA is built on the **CUPE (Contextless Universal Phoneme Encoder)** model. Unlike HMM-based aligners like MFA, CUPE is a neural network that processes audio frame-by-frame independently (no context window), which is what makes it fast.
 
----
+Read the full paper: [BFA: Real-Time Multilingual Text-to-Speech Forced Alignment (arXiv 2509.23147)](https://arxiv.org/pdf/2509.23147)
 
-## 🧠 How Does It Work?
-
-Read full paper: [BFA: REAL-TIME MULTILINGUAL TEXT-TO-SPEECH FORCED ALIGNMENT](https://arxiv.org/pdf/2509.23147)
-
-### 🔄 Processing Pipeline
+### Alignment pipeline
 
 ```mermaid
 graph TD
@@ -1217,25 +1113,25 @@ graph TD
     K --> L[Output Generation]
 ```
 
-**CTC Transition Rules:**
-- **Stay**: Remain in current state (repeat phoneme or blank)
-- **Advance**: Move to next state in sequence
-- **Skip**: Jump over blank to next phoneme (when consecutive phonemes differ)
+**Step by step:**
 
-**Core Components:**
+1. **Audio preprocessing** — RMS normalisation + sliding window (120 ms windows, 80 ms stride)
+2. **CUPE inference** — neural network assigns a probability to each of 66 phoneme classes for every 10 ms frame
+3. **Text phonemisation** — espeak-ng converts the transcript to a sequence of ph66 indices
+4. **Target boosting** — optionally increases the probability of phonemes that are expected to appear
+5. **Viterbi forced alignment** — CTC-style decoding finds the globally optimal path through the phoneme sequence
+6. **Recovery** — any phoneme missing from the Viterbi output is inserted at its most probable position
+7. **Confidence scoring** — each phoneme receives a score based on the average frame probability over its duration
+8. **Timestamp conversion** — frame indices are converted to milliseconds, accounting for any segment offset
 
-1. **🎵 Audio Preprocessing**: RMS normalization and windowing (120ms windows, 80ms stride)
-2. **🧠 CUPE Model**: Contextless Universal Phoneme Encoder extracts frame-level phoneme probabilities
-3. **📝 Phonemization**: espeak-ng converts text to 66-class phoneme indices (ph66) and 16 phoneme groups (pg16)
-4. **🎯 Target Boosting**: Enhances probabilities of expected phonemes for better alignment
-5. **🔍 CTC style Viterbi**: CTC-based forced alignment with minimum probability enforcement
-6. **🛠️ Recovery Mechanism**: Ensures all target phonemes appear in alignment, even with low confidence
-7. **📊 Confidence Scoring**: Frame-level probability averaging with adaptive thresholding
-8. **⏱️ Timestamp Conversion**: Frame indices to millisecond timestamps with segment offset
+**CTC transition rules (for reference):**
+- *Stay* — repeat the current phoneme (or blank frame)
+- *Advance* — move to the next phoneme in the sequence
+- *Skip* — jump over a blank to the next phoneme (when adjacent phonemes differ)
 
-### 🎛️ Key Alignment Parameters
+### Key alignment parameters
 
-BFA provides several unique control parameters not available in traditional aligners like MFA:
+BFA exposes several parameters not available in traditional aligners like MFA:
 
 #### 🎯 `boost_targets` (Default: `True`)
 Increases log-probabilities of expected phonemes by a fixed boost factor (typically +5.0) before Viterbi decoding. If the sentence is very long or contains every possible phoneme, then boosting them all equally doesn't have much effect—because no phoneme stands out more than the others.
@@ -1294,66 +1190,76 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 
 
 
-### 📊 Alignment Error Analysis
+### Accuracy benchmark
 
-**Alignment error histogram on [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1):**
+**Alignment error on [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1):**
 
 <div align="center">
-    <img src="examples/samples/images/BFA_vs_MFA_errors_on_TIMIT.png" alt="Alignment Error Histogram - TIMIT Dataset" width="600"/>
+    <img src="examples/samples/images/BFA_vs_MFA_errors_on_TIMIT.png" alt="Alignment error histogram comparing BFA and MFA on the TIMIT dataset" width="600"/>
 </div>
 
-- Most phoneme boundaries are aligned within **±30ms** of ground truth.
-- Errors above **100ms** are rare and typically due to ambiguous or noisy segments.
+- Most phoneme boundaries are within **±30 ms** of the hand-annotated ground truth.
+- Errors above **100 ms** are rare and typically caused by noisy or ambiguous segments.
 
-**For comparison:**  
-See [Montreal Forced Aligner](https://www.isca-archive.org/interspeech_2017/mcauliffe17_interspeech.pdf) for benchmark results on similar datasets.
-
-
-
-
-
-> ⚠️ **Best Performance**: For optimal results, use audio segments **under 30 seconds**. For longer audio, segment first using Whisper or VAD. Audio duration above 60 seconds creates too many possibilities for the Viterbi algorithm to handle properly.
+> ⚠️ **Recommended maximum segment length: 30 seconds.** For longer recordings, segment the audio first using Whisper or a VAD tool. Segments above 60 seconds can degrade Viterbi accuracy.
 
 ---
 
-## 🔬 Comparison with MFA
+## 🔬 Comparison with MFA (Montreal Forced Aligner)
 
-Our alignment quality compared to Montreal Forced Aligner (MFA) using [Praat](https://www.fon.hum.uva.nl/praat/) TextGrid visualization:
+BFA and [MFA](https://montreal-forced-aligner.readthedocs.io/) are both forced aligners, but they work very differently and have complementary strengths.
 
 <div align="center">
 
 | Metric | BFA | MFA |
 |--------|-----|-----|
-| **Speed** | 0.2s per 10s audio | 10s per 2s audio |
-| **Real-time potential** | ✅ Yes (contextless) | ❌ No |
-| **Stop consonants** | ✅ Better (t,d,p,k) | ⚠️ Extends too much |
-| **Tail endings** | ⚠️ Sometimes missed | ❌ Onset only |
-| **Breathy sounds** | ⚠️ Misses h# | ✅ Captures |
-| **Punctuation** | ✅ Silence aware | ❌ No punctuation |
+| **Speed** | ~0.2 s per 10 s of audio | ~10 s per 2 s of audio |
+| **No dictionary needed** | ✅ espeak-ng generates phonemes on the fly | ❌ Requires a pronunciation dictionary |
+| **Real-time capable** | ✅ Yes (contextless frame processing) | ❌ No |
+| **Stop consonants (t, d, p, k)** | ✅ More precise boundaries | ⚠️ Tends to extend too far |
+| **Tail endings** | ⚠️ Occasionally misses | ❌ Often missed |
+| **Breathy sounds (h)** | ⚠️ Sometimes misses | ✅ Usually captures |
+| **Pause/silence handling** | ✅ Silence-aware (punctuation) | ❌ No punctuation awareness |
+| **Language coverage** | 80+ languages via espeak-ng | Limited to available dictionaries |
 
 </div>
 
-### 📊 Sample Visualizations in Praat
+### Praat TextGrid visualisation
 
-**"In being comparatively modern..."** - LJ Speech Dataset  
-[🎵 Audio Sample](examples/samples/LJSpeech/LJ001-0002.wav)
+**"In being comparatively modern"** — LJ Speech sample
 
-![Praat Alignment Example](examples/samples/images/LJ02_praat.png)
-
-
+![Praat TextGrid alignment visualisation for LJ Speech sample](examples/samples/images/LJ02_praat.png)
 
 ---
 
-### Collaborate
+## Contribute
 
-- Currently working on ONNX porting. See [`bournemouth_aligner/cpp_onix/main.cpp`](bournemouth_aligner/cpp_onix/main.cpp)
-- Also looking for help to create a phoneme dictionary for Mandarim and other Asian languages. Please start a discussion if you would like to help.
+- **ONNX port** is in progress — see [`bournemouth_aligner/cpp_onnx/main.cpp`](bournemouth_aligner/cpp_onnx/main.cpp) if you want to help.
+- **Mandarin and other tonal languages** — a new phoneme dictionary would be needed. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you’d like to help.
 
+## Frequently Asked Questions
 
+**Q: Do I need a pronunciation dictionary?**  
+No. BFA uses [espeak-ng](https://github.com/espeak-ng/espeak-ng) to generate IPA phonemisations automatically for all supported languages.
 
-### Citation
+**Q: Does it work on noisy or spontaneous speech?**  
+Yes, but accuracy is lower than on clean read speech. Use `silence_anchors=3` and check `coverage_analysis["bad_confidence"]` to filter out unreliable segments.
 
-[Rehman, A., Cai, J., Zhang, J.-J., & Yang, X. (2025). BFA: Real-time multilingual text-to-speech forced alignment. *arXiv*. https://arxiv.org/abs/2509.23147](https://arxiv.org/pdf/2509.23147)
+**Q: What is the difference between `phoneme_label` and `ipa_label`?**  
+`phoneme_label` is BFA’s internal ph66 symbol (e.g. `"a:"`); `ipa_label` is the original espeak-ng IPA (e.g. `"ˈɑːɹ"`). Use `ipa_label` for phonetic analysis and `phoneme_label` for model-internal comparisons.
+
+**Q: Why is confidence low for some phonemes?**  
+The CUPE model assigns low probability when the acoustic evidence is weak — common for short stops, reduced vowels, and phonemes at segment boundaries. Low confidence does not necessarily mean the timestamp is wrong; check visually in Praat if needed.
+
+**Q: Can I align a language that is not in the preset list?**  
+You can try using `model_name` with the Universal model and a custom `lang` code. Results will vary. See [espeak-ng language codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
+
+**Q: What audio format does it accept?**  
+Any format supported by `torchaudio` / ffmpeg — WAV, MP3, FLAC, OGG, M4A, and others.
+
+## Citation
+
+If you use BFA in research, please cite:
 
 ```bibtex
 @misc{rehman2025bfa,

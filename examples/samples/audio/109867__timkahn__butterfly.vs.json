@@ -1,0 +1,155 @@
+{
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 1.2588125,
+      "text": "butterfly",
+      "ph66": [
+        29,
+        10,
+        58,
+        9,
+        43,
+        56,
+        23
+      ],
+      "pg16": null,
+      "coverage_analysis": {
+        "target_count": 7,
+        "aligned_count": 7,
+        "missing_count": 0,
+        "extra_count": 0,
+        "coverage_ratio": 1.0,
+        "missing_phonemes": [],
+        "extra_phonemes": [],
+        "bad_alignment": false
+      },
+      "ipa": [
+        "b",
+        "ʌ",
+        "ɾ",
+        "ɚ",
+        "f",
+        "l",
+        "aɪ"
+      ],
+      "word_num": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "words": [
+        "butterfly"
+      ],
+      "phoneme_ts": [
+        {
+          "phoneme_id": 29,
+          "phoneme_label": "b",
+          "ipa_label": "b",
+          "start_ms": 0.0,
+          "end_ms": 50.35249710083008,
+          "confidence": 0.10776396840810776,
+          "is_estimated": false,
+          "target_seq_idx": 0,
+          "index": 0
+        },
+        {
+          "phoneme_id": 10,
+          "phoneme_label": "ʌ",
+          "ipa_label": "ʌ",
+          "start_ms": 50.35249710083008,
+          "end_ms": 117.48916625976562,
+          "confidence": 0.3822444677352905,
+          "is_estimated": false,
+          "target_seq_idx": 1,
+          "index": 1
+        },
+        {
+          "phoneme_id": 58,
+          "phoneme_label": "ɾ",
+          "ipa_label": "ɾ",
+          "start_ms": 117.48916625976562,
+          "end_ms": 151.0574951171875,
+          "confidence": 0.003469435963779688,
+          "is_estimated": false,
+          "target_seq_idx": 2,
+          "index": 2
+        },
+        {
+          "phoneme_id": 9,
+          "phoneme_label": "ɚ",
+          "ipa_label": "ɚ",
+          "start_ms": 151.0574951171875,
+          "end_ms": 302.114990234375,
+          "confidence": 0.018616287037730217,
+          "is_estimated": false,
+          "target_seq_idx": 3,
+          "index": 3
+        },
+        {
+          "phoneme_id": 43,
+          "phoneme_label": "f",
+          "ipa_label": "f",
+          "start_ms": 302.114990234375,
+          "end_ms": 386.03582763671875,
+          "confidence": 0.8882813453674316,
+          "is_estimated": false,
+          "target_seq_idx": 4,
+          "index": 4
+        },
+        {
+          "phoneme_id": 56,
+          "phoneme_label": "l",
+          "ipa_label": "l",
+          "start_ms": 386.03582763671875,
+          "end_ms": 570.6616821289062,
+          "confidence": 0.5533192157745361,
+          "is_estimated": false,
+          "target_seq_idx": 5,
+          "index": 5
+        },
+        {
+          "phoneme_id": 23,
+          "phoneme_label": "aɪ",
+          "ipa_label": "aɪ",
+          "start_ms": 570.6616821289062,
+          "end_ms": 1107.7550048828125,
+          "confidence": 0.4252778887748718,
+          "is_estimated": false,
+          "target_seq_idx": 6,
+          "index": 6
+        }
+      ],
+      "words_ts": [
+        {
+          "word": "butterfly",
+          "start_ms": 0.0,
+          "end_ms": 1107.7550048828125,
+          "confidence": 0.33985322986596395,
+          "ph66": [
+            29,
+            10,
+            58,
+            9,
+            43,
+            56,
+            23
+          ],
+          "ipa": [
+            "b",
+            "ʌ",
+            "ɾ",
+            "ɚ",
+            "f",
+            "l",
+            "aɪ"
+          ]
+        }
+      ]
+    }
+  ]
+}

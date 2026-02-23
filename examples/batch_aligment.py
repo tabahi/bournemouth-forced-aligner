@@ -48,7 +48,7 @@ def example_batch_sentence_processing():
     # view detailed debug info
     print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
             f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
-            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned correctly: {bfa_aligner.total_phonemes_aligned_correctly}")
+            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned easily: {bfa_aligner.total_phonemes_aligned_easily}")
 
 def example_batch_SRT_processing():
     """Example of batch processing with process_segments_batch.
@@ -105,7 +105,7 @@ def example_batch_SRT_processing():
     # view detailed debug info
     print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
             f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
-            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned correctly: {bfa_aligner.total_phonemes_aligned_correctly}")
+            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned easily: {bfa_aligner.total_phonemes_aligned_easily}")
     
     print ("\n\nBatch processing complete. Output saved to:", ts_out_path)
 

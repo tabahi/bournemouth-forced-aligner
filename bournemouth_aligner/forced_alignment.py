@@ -151,7 +151,7 @@ class ViterbiDecoder:
         if (stride * seq_len + 1) > seq_len*0.9: stride = 3
         if (stride * seq_len + 1) > seq_len*0.8: stride = 2
         expanded_len = stride * seq_len + 1
-        if expanded_len > num_frames: raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length.")
+        if expanded_len > num_frames: raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length. Ensure duration_max is set appropriately for the length of the audio and target sequence. And silent_anchors is set above 2 if the segment is too long..")
 
         
         

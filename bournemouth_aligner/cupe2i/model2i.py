@@ -176,8 +176,8 @@ class ContextFreePhonemeRecognizer(nn.Module):
         self.noise_level = noise_level
         self.input_wav_length = int(self.config['input_wav_length'])
         # Sanity checks
-        
-        assert(self.input_wav_length > (0.005*16000))
+        self.sample_rate = 16000 # hardcoded for now, as CUPE is trained on 16kHz audio, and the resampler will convert to this sample rate if needed. In the future, we could consider making this configurable if we want to support models trained on different sample rates, but for now it's simpler to keep it fixed.
+        assert(self.input_wav_length > (0.005*self.sample_rate))
         assert(window_layers_dim <= last_cnn_output_dim)
         assert(self.classes_dim > 1)
         assert(self.classes_dim <= window_layers_dim)

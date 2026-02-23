@@ -5,8 +5,8 @@ wandb/
 models/
 mfa_corpus/
 # ONNX Runtime files
-bournemouth_aligner/cpp_onix/*.tgz
-bournemouth_aligner/cpp_onix/onnxruntime-*
+bournemouth_aligner/cpp_onnx/*.tgz
+bournemouth_aligner/cpp_onnx/onnxruntime-*
 
 *.yaml
 *.pyc
@@ -215,11 +215,12 @@ cython_debug/
 .cursorindexingignore
 
 # Marimo
+.claude/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
 notes.txt
 examples/x_basic_usage__.py
 mel_phonemes_ref.png
-.gitignore
-mel_phonemes.png_codeql_detected_source_root
+output_timestamps.TextGrid
+examples/samples/LJSpeech/batch_output.vs.json

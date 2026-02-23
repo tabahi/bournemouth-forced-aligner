@@ -76,7 +76,7 @@ def example_audio_timestamps():
     extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu', enforce_all_targets=True)
 
     # Alternative: explicit model selection
-    # model_name = "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt"
+    # model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"
     # extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu', enforce_all_targets=False)
 
     full_clip_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
@@ -93,7 +93,7 @@ def example_audio_timestamps():
     # we just need to extract the mel-spectrogram for the segment 0
     segment_start_frame = int(timestamps['segments'][0]['start'] * extractor.resampler_sample_rate)
     segment_end_frame = int(timestamps['segments'][0]['end'] * extractor.resampler_sample_rate)
-    segment_wav = full_clip_wav[segment_start_frame:segment_end_frame]
+    segment_wav = full_clip_wav[:, segment_start_frame:segment_end_frame]
     mel_spec = extractor.extract_mel_spectrum(segment_wav, wav_sample_rate=extractor.resampler_sample_rate, vocoder_config=vocoder_config)
 
 

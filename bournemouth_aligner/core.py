@@ -15,7 +15,6 @@ import torchaudio
 import torch.nn.functional as F
 import os
 import json
-import time
 import traceback
 
 # repo modules
@@ -25,7 +24,7 @@ from .forced_alignment import AlignmentUtils
 #from .ipamappers.ph66_mapper import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
 from .ipamappers import ph66_phonemeizer
 from .presets import get_preset
-from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences, convert_to_ms, detect_device_automatically
+from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences, convert_to_ms, detect_device_automatically, plot_mel_alignment as _plot_mel_alignment
 # Create reverse mappings for interpretability
 #index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
 #index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
@@ -39,12 +38,13 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, device="auto", silence_anchors=0, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, boundary_softness=7, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=4, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, boundary_softness=7, bad_confidence_threshold=0.6):
         """
         Initialize the BFA phoneme timestamp extractor.
 
         Args:
-            preset (str): Language preset for automatic model and language selection.
+            preset (str or None): Language preset for automatic model and language selection.
+                If None, No model will be loaded by default, you must use load_model() with explicit parameters before using the alignment functionality.
                 Supports 80+ languages including English variants, European languages,
                 Indo-European families, and closely related languages. Examples: "en-us", "de", "fr", "hi", "ar", etc.
                 Note: Tonal languages (Chinese, Vietnamese, Thai) and distant language families are not supported.
@@ -123,27 +123,8 @@ class PhonemeTimestampAligner:
         if device == "auto":
             device = detect_device_automatically()
         self.device = device
-
-        # Parameter priority handling:
-        # 1st priority: Explicit cupe_ckpt_path (highest)
-        # 2nd priority: Explicit model_name
-        # 3rd priority: Preset values (only if no explicit model specified)
-        # 4th priority: Default values
-
-        # Only apply preset logic if no explicit checkpoint path or model name provided
-        if cupe_ckpt_path is None and model_name is None:
-            # Language preset mappings based on available models
-            model_name, lang = get_preset(preset=preset, lang=lang)
-        if cupe_ckpt_path is not None:
-            pass  # use explicit path as-is
-        elif model_name is not None:
-            cupe_ckpt_path = self.download_model(model_name=model_name)
-        else:
-            raise ValueError("Either cupe_ckpt_path or model_name must be provided.")
-        if cupe_ckpt_path is None or not os.path.exists(cupe_ckpt_path):
-            raise ValueError("CUPE model checkpoint not found.", cupe_ckpt_path)
-        self.extractor = CUPEEmbeddingsExtractor(cupe_ckpt_path, device=self.device)
-        
+        self.extractor = None # will be loaded in load_model()
+        self.lang = lang
         self.resampler_sample_rate = 16000
         self.padding_ph_label = -100
         self.ph_seq_min = 1
@@ -159,7 +140,8 @@ class PhonemeTimestampAligner:
             raise ValueError("Currently only 'ph66' mapper is supported.")
 
         if (self.selected_mapper == "ph66"):
-            self.phonemizer = ph66_phonemeizer.Phonemizer(language=lang,remove_noise_phonemes=True)
+            self.phonemizer = ph66_phonemeizer.Phonemizer(language=self.lang, remove_noise_phonemes=True)
+
 
         self.phonemes_key = self.phonemizer.phonemes_key
         self.phoneme_groups_key = self.phonemizer.phoneme_groups_key
@@ -169,6 +151,11 @@ class PhonemeTimestampAligner:
         self.group_id_to_label = self.phonemizer.index_to_glabel
         self.group_label_to_id = {label: idx for idx, label in self.group_id_to_label.items()}
         self.phoneme_id_to_group_id = self.phonemizer.phoneme_id_to_group_id
+
+        
+        self._setup_config()
+        if preset is not None or model_name is not None or cupe_ckpt_path is not None:
+            self.load_model(preset=preset, model_name=model_name, cupe_ckpt_path=cupe_ckpt_path)
 
 
         self.silence_anchors = silence_anchors
@@ -180,7 +167,7 @@ class PhonemeTimestampAligner:
         self.boundary_softness = boundary_softness
         self.bad_confidence_threshold = bad_confidence_threshold
         self.break_at_low_confidence = False # under construction, not fully implemented yet
-        self._setup_config()
+        
         self._setup_decoders()
 
         # Initialize audio processing
@@ -198,6 +185,7 @@ class PhonemeTimestampAligner:
         """Reset internal counters for tracking alignment statistics. Purely for debugging and analysis purposes."""
         self.total_segments_processed = 0
         self.total_segments_bad = 0
+        self.total_segments_failed = 0
         self.total_phonemes_aligned = 0
         self.total_phonemes_target = 0
         self.total_phonemes_aligned_easily = 0
@@ -205,16 +193,47 @@ class PhonemeTimestampAligner:
         self.total_phonemes_extra = 0
         self.perfect_matches = 0
 
+    def load_model(self, preset="en-us", model_name=None, cupe_ckpt_path=None):  
+        
+        # Parameter priority handling:
+        # 1st priority: Explicit cupe_ckpt_path (highest)
+        # 2nd priority: Explicit model_name
+        # 3rd priority: Preset values (only if no explicit model specified)
+        # 4th priority: Default values
+
+        # Only apply preset logic if no explicit checkpoint path or model name provided
+        if cupe_ckpt_path is None and model_name is None:
+            # Language preset mappings based on available models
+            model_name, lang = get_preset(preset=preset, lang=self.lang)
+            if self.lang != lang:
+                self.phonemizer.set_backend(language=lang)
+            self.lang = lang  # Update language based on preset
+        if cupe_ckpt_path is not None:
+            pass  # use explicit path as-is
+        elif model_name is not None:
+            cupe_ckpt_path = self.download_model(model_name=model_name)
+        else:
+            raise ValueError("Either cupe_ckpt_path or model_name must be provided.")
+        if cupe_ckpt_path is None or not os.path.exists(cupe_ckpt_path):
+            raise ValueError("CUPE model checkpoint not found.", cupe_ckpt_path)
+        torch.random.manual_seed(42)
+        self.extractor = CUPEEmbeddingsExtractor(cupe_ckpt_path, device=self.device)
+
+        assert self.window_size_wav is not None, "Window size in samples must be calculated before loading the model. call _setup_config() before load_model()."
+        assert self.extractor.model.frames_per_window is not None, "Extractor model must have frames_per_window defined."
+        self.frames_per_window = self.extractor.model.update_frames_per_window(self.window_size_wav)
+
     def _setup_config(self, window_size_ms=120, stride_ms=80):
+        
         """Setup configuration parameters."""
         self.window_size_ms = window_size_ms
         self.stride_ms = stride_ms
-        self.sample_rate = 16000
+        self.sample_rate = 16000 # hardcoded for now, as CUPE is trained on 16kHz audio, and the resampler will convert to this sample rate if needed. In the future, we could consider making this configurable if we want to support models trained on different sample rates, but for now it's simpler to keep it fixed.
         
         # Calculate window parameters
         self.window_size_wav = int(window_size_ms * self.sample_rate / 1000)
         self.stride_size_wav = int(stride_ms * self.sample_rate / 1000)
-        self.frames_per_window = self.extractor.model.update_frames_per_window(self.window_size_wav)
+        
         
         # Phoneme class configuration
         self.phoneme_classes = len(self.phoneme_id_to_label)-1  # exclude padding 'noise' = 66
@@ -234,8 +253,14 @@ class PhonemeTimestampAligner:
         self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class, silence_id=self.silence_class, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise)
 
 
-    def download_model(self, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", model_dir="./models"):
-        """Download the specified model from hugging face using huggingface_hub."""
+    def download_model(self, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", local_dir=None):
+        """Download the specified model from hugging face using huggingface_hub.
+
+
+        -   `model_name (str)`: Name of the model checkpoint to download. Must be one of the available models in the Tabahi/CUPE-2i repository.
+        -   `local_dir (str or Path, optional)`: If provided, the downloaded file will be placed under this directory.
+
+        """
         from huggingface_hub import hf_hub_download
         
         repo_id = "Tabahi/CUPE-2i"
@@ -246,6 +271,7 @@ class PhonemeTimestampAligner:
             model_path = hf_hub_download(
                 repo_id=repo_id,
                 filename=filename,
+                local_dir=local_dir,
                 local_files_only=False
             )
             print(f"Model available at: {model_path}")
@@ -334,97 +360,6 @@ class PhonemeTimestampAligner:
         return wav
 
 
-    def _cupe_prediction(self, audio_batch, wav_len, extract_embeddings=False):
-        """
-        Process audio through the CUPE model to get logits.
-        
-        Args:
-            audio_batch: Audio tensor [1, samples]
-            wav_len: Length of audio in samples
-            extract_embeddings: Whether to extract embeddings
-            
-        Returns:
-            Tuple of (logits_class, logits_group, embeddings, spectral_len)
-        """
-        if audio_batch.dim() == 1:
-            audio_batch = audio_batch.unsqueeze(0)
-        
-        # Window the audio
-        windowed_audio = slice_windows(
-            audio_batch.to(self.device), 
-            self.sample_rate, 
-            self.window_size_ms, 
-            self.stride_ms
-        )
-        
-        batch_size, num_windows, window_size = windowed_audio.shape
-        windows_flat = windowed_audio.reshape(-1, window_size)
-        
-        # Get predictions
-        if extract_embeddings:
-            logits_class, logits_group, embeddings = self.extractor.predict(
-                windows_flat, 
-                return_embeddings=True, 
-                groups_only=False
-            )
-        else:
-            logits_class, logits_group = self.extractor.predict(
-                windows_flat, 
-                return_embeddings=False, 
-                groups_only=False
-            )
-            embeddings = None
-        
-        frames_per_window = logits_group.shape[1]
-        
-        # Reshape outputs
-        logits_class = logits_class.reshape(batch_size, num_windows, frames_per_window, -1)
-        logits_group = logits_group.reshape(batch_size, num_windows, frames_per_window, -1)
-        
-        # Get original audio length
-        original_audio_length = audio_batch.size(-1)
-        
-        # Stitch window predictions
-        logits_class = stich_window_predictions(
-            logits_class, 
-            original_audio_length=original_audio_length,
-            cnn_output_size=frames_per_window, 
-            sample_rate=self.sample_rate, 
-            window_size_ms=self.window_size_ms, 
-            stride_ms=self.stride_ms
-        )
-        
-        logits_group = stich_window_predictions(
-            logits_group, 
-            original_audio_length=original_audio_length,
-            cnn_output_size=frames_per_window, 
-            sample_rate=self.sample_rate, 
-            window_size_ms=self.window_size_ms, 
-            stride_ms=self.stride_ms
-        )
-        
-        if extract_embeddings and embeddings is not None:
-            embeddings = embeddings.reshape(batch_size, num_windows, frames_per_window, -1)
-            embeddings = stich_window_predictions(
-                embeddings, 
-                original_audio_length=original_audio_length,
-                cnn_output_size=frames_per_window, 
-                sample_rate=self.sample_rate, 
-                window_size_ms=self.window_size_ms, 
-                stride_ms=self.stride_ms
-            )
-        
-        # Calculate spectral length
-        spectral_len = calc_spec_len_ext(
-            torch.tensor([wav_len]), 
-            self.window_size_ms, 
-            self.stride_ms, 
-            self.sample_rate, 
-            torch.tensor(frames_per_window, dtype=torch.long)
-        )[0].item()
-        
-        return logits_class, logits_group, embeddings, spectral_len
-    
     
     def _cupe_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
         """
@@ -942,6 +877,7 @@ class PhonemeTimestampAligner:
                 ]
                 group_sequences = torch.stack(padded, dim=0)
 
+        assert self.extractor is not None, "CUPE extractor model is not loaded. Use load_model() to load the model before calling this method."
 
         logits_class, logits_group, embeddings, spectral_lens = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings)
 
@@ -1184,12 +1120,14 @@ class PhonemeTimestampAligner:
         Return
             - segment_out dict with keys:
                 - text: original sentence
-                - ipa: list of phonemes in IPA format
+                - eipa: list of original espeak phonemes in IPA format (one-to-one with mapped phonemes)
+                - mipa: list of mapped phonemes in IPA format (after ph66 reduction)
                 - ph66: list of phoneme class indices (mapped to phoneme_mapped_index)
                 - pg16: list of phoneme group indices (mapped to phoneme_groups_mapper)
                 - words: list of words corresponding to the phonemes
                 - word_num: list of word indices corresponding to the phonemes
         """
+        
         return self.phonemizer.phonemize_sentence(text)
 
 
@@ -1608,6 +1546,73 @@ class PhonemeTimestampAligner:
 
         return textgrid_content
 
+    def plot_mel_alignment(self, timestamps_dict, audio_wav, save_path,
+                           segment_idx=0, vocoder_config=None):
+        """
+        Generate and save a mel spectrogram with phoneme boundary markers.
+
+        Combines mel extraction, frame-wise assortment, and plotting in one call.
+
+        Args:
+            timestamps_dict (dict): Output from process_sentence / process_srt_file,
+                containing a ``"segments"`` key.
+            audio_wav (Tensor): Waveform tensor of shape (1, T) at the aligner's
+                internal sample rate (``self.resampler_sample_rate``).
+            save_path (str): Destination path for the image (.png) or tensor (.pt).
+                When the extension is ``.pt`` the raw mel tensor is saved instead
+                of a plot.
+            segment_idx (int): Which segment to plot (default 0).
+            vocoder_config (dict | None): Vocoder config forwarded to
+                ``extract_mel_spectrum``.  Defaults to the BigVGAN 22 kHz preset.
+
+        Returns:
+            str: The path the file was saved to.
+        """
+        import os, torch
+
+        if vocoder_config is None:
+            vocoder_config = {
+                'num_mels': 80, 'num_freq': 1025, 'n_fft': 1024,
+                'hop_size': 256, 'win_size': 1024, 'sampling_rate': 22050,
+                'fmin': 0, 'fmax': 8000,
+                'model': 'nvidia/bigvgan_v2_22khz_80band_fmax8k_256x'
+            }
+
+        segments = timestamps_dict.get('segments', [])
+        if not segments:
+            raise ValueError("timestamps_dict has no segments")
+
+        segment = segments[min(segment_idx, len(segments) - 1)]
+        seg_start = segment.get('start', 0.0)
+        seg_end   = segment.get('end', audio_wav.shape[1] / self.resampler_sample_rate)
+        phoneme_ts = segment.get('phoneme_ts', [])
+
+        # Crop audio to this segment
+        s = int(seg_start * self.resampler_sample_rate)
+        e = int(seg_end   * self.resampler_sample_rate)
+        segment_wav = audio_wav[:, s:e]
+
+        mel = self.extract_mel_spectrum(segment_wav, self.resampler_sample_rate, vocoder_config)
+
+        os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+
+        if save_path.lower().endswith('.pt'):
+            torch.save(mel, save_path)
+            return save_path
+
+        # Build a title from the segment text if available
+        text_snippet = segment.get('text', '')
+        title = f'"{text_snippet}"' if text_snippet else None
+
+        _plot_mel_alignment(
+            mel=mel,
+            phoneme_ts=phoneme_ts,
+            save_path=save_path,
+            segment_start_ms=seg_start * 1000.0,
+            title=title,
+        )
+        return save_path
+
     # Additional helper function for analysis
     def analyze_alignment_coverage(self, target_sequence, aligned_timestamps, index_to_label):
         """
@@ -1660,7 +1665,7 @@ class PhonemeTimestampAligner:
         assert (wav.dim() == 2) and (wav.shape[0] == 1), f"Expected input shape (1, T), got {wav.shape}"
 
         if wav_sample_rate != vocoder_config['sampling_rate']:
-            print ("Resampling waveform from {} to {} for vocoder compatibility".format(wav_sample_rate, vocoder_config['sampling_rate']))
+            print ("extract_mel_spectrum: Resampling waveform from {} to {} for vocoder_config compatibility".format(wav_sample_rate, vocoder_config['sampling_rate']))
             # use librosa resampling:
             import librosa
             wav = librosa.resample(wav.numpy(), orig_sr=wav_sample_rate, target_sr=vocoder_config['sampling_rate'])

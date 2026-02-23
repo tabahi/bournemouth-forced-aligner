@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2] - 2026-02-23
+- Added `load_model()` so that the models can be loaded after `__init__`, while the class `PhonemeTimestampAligner(lang ='en-us') can be initialized without specifying a model.`
+- Added more CLI functionality. Direct text input. Generate mel-spectrum directly from blaign cli command.
+- Readme reorganization.
+- ONNX porting still in progress.
+
 ## [1.1.0] - 2026-02-13
 
 This version breaks compatibility with the previous versions (<=0.1.7)
@@ -85,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
+[1.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.2
 [1.1.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.0
 [0.1.7]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.7
 [0.1.6]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.6

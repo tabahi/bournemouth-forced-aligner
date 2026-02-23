@@ -133,5 +133,7 @@ def get_preset(preset="en-us", lang='en-us'):
         if lang == 'en-us':  # Only override if using default lang
             lang = preset
         model_name = "large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt"  # Universal model as fallback
+        print("Warning: Unrecognized preset '{}'. Defaulting to universal model with best effort language match.".format(preset))
+    
 
     return model_name, lang

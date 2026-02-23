@@ -419,3 +419,136 @@ def detect_device_automatically():
         return 'mps'
     else:
         return 'cpu'
+
+
+# ---------------------------------------------------------------------------
+# Mel-spectrogram + phoneme alignment visualisation
+# ---------------------------------------------------------------------------
+
+def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
+                       segment_start_ms=0.0, title=None, width=20, height=5):
+    """
+    Plot a mel spectrogram with phoneme boundary markers and IPA labels.
+
+    Args:
+        mel (Tensor): Mel spectrogram of shape (T, mel_bins).
+        phoneme_ts (list[dict]): Phoneme timestamp list from the alignment output,
+            each dict having at least ``ipa_label``, ``start_ms``, ``end_ms``,
+            and ``confidence``.
+        save_path (str): Destination file path (.png or any matplotlib-supported format).
+        segment_start_ms (float): Offset in ms to subtract from timestamps so they
+            are relative to the mel tensor start.  Pass
+            ``segment['start'] * 1000`` when the timestamps are absolute.
+        title (str | None): Optional figure title.  Auto-generated when None.
+
+    Returns:
+        str: The path the figure was saved to.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    assert mel.dim() == 2, f"Expected 2D mel tensor (T, mel_bins), got shape {tuple(mel.shape)}"
+
+    T, mel_bins = mel.shape
+    mel_np = mel.cpu().numpy().T  # (mel_bins, T) — imshow convention
+
+    # Derive frames-per-ms from the tensor length and the timestamp span
+    if phoneme_ts:
+        span_ms = phoneme_ts[-1]['end_ms'] - segment_start_ms
+        if span_ms > 0:
+            frames_per_ms = T / span_ms
+        else:
+            frames_per_ms = T / max(phoneme_ts[-1]['end_ms'], 1.0)
+    else:
+        frames_per_ms = 1.0
+
+    def ms_to_frame(ms):
+        return (ms - segment_start_ms) * frames_per_ms
+
+    fig, ax = plt.subplots(figsize=(max(width, T // 40), height))
+
+    im = ax.imshow(mel_np, aspect='auto', origin='lower',
+                   cmap='Spectral', interpolation='nearest')
+    plt.colorbar(im, ax=ax, label='Log magnitude')
+    ax.set_ylabel('Mel bin')
+    ax.set_xlabel('Frame')
+
+    if title is None:
+        n_ph = len(phoneme_ts)
+        title = f"Mel spectrogram with phoneme alignment  ({n_ph} phonemes)"
+    ax.set_title(title)
+
+    # ---- draw boundaries and labels ----------------------------------------
+    prev_end_frame = None
+    for ph in phoneme_ts:
+        start_frame = ms_to_frame(ph['start_ms'])
+        end_frame   = ms_to_frame(ph['end_ms'])
+        label       = ph.get('ipa_label') or ph.get('phoneme_label', '?')
+        confidence  = ph.get('confidence', 1.0)
+        estimated   = ph.get('is_estimated', False)
+
+        # Boundary line at phoneme start (skip very first)
+        if prev_end_frame is not None:
+            ax.axvline(x=start_frame, color="#b10000", linewidth=1.2, alpha=0.85)
+
+        # Width of this phoneme in frames
+        width = max(end_frame - start_frame, 1)
+        centre = start_frame + width / 2
+
+        # Confidence-based background / font colour
+        if confidence > 0.9:
+            facecolor = '#000000'   # black
+            fontcolor = 'white'
+        elif confidence > 0.6:
+            facecolor = '#404040'   # dark gray
+            fontcolor = 'white'
+        elif confidence > 0.1:
+            facecolor = '#c0c0c0'   # light gray
+            fontcolor = 'black'
+        else:
+            facecolor = '#ffffff'   # white
+            fontcolor = 'black'
+
+        # Only annotate if the segment is at least 3 frames wide
+        if width >= 3:
+            ax.text(centre, mel_bins * 0.9, label,
+                    ha='center', va='top', fontsize=9, fontweight='bold',
+                    color=fontcolor,
+                    bbox=dict(boxstyle='round,pad=0.2',
+                              facecolor=facecolor, alpha=0.9, linewidth=0))
+            # Mark estimated phonemes with a small asterisk above the label
+            if estimated:
+                ax.text(centre, mel_bins * 0.95, '*',
+                        ha='center', va='bottom', fontsize=10, fontweight='bold',
+                        color='#ff6600', alpha=0.95)
+        else:
+            # Narrow phoneme — place label above the top of the plot
+            ax.text(centre, mel_bins * 0.92, label,
+                    ha='center', va='bottom', fontsize=7, fontweight='bold',
+                    color=fontcolor,
+                    bbox=dict(boxstyle='round,pad=0.2',
+                              facecolor=facecolor, alpha=0.9, linewidth=0))
+            if estimated:
+                ax.text(centre, mel_bins * 0.96, '*',
+                        ha='center', va='bottom', fontsize=8, fontweight='bold',
+                        color='#ff6600', alpha=0.95)
+
+        prev_end_frame = end_frame
+
+    # ---- legend ------------------------------------------------------------
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#000000', label='>0.9 confidence'),
+        Patch(facecolor='#404040', label='>0.6 confidence'),
+        Patch(facecolor='#c0c0c0', label='>0.1 confidence', edgecolor='gray'),
+        Patch(facecolor='#ffffff', label='≤0.1 confidence', edgecolor='gray'),
+    ]
+    ax.legend(handles=legend_elements, loc='lower right', fontsize=8,
+              framealpha=0.75, title='* = estimated')
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+    return save_path

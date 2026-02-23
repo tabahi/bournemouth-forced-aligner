@@ -112,7 +112,7 @@ class Phonemizer:
         self.index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
         self.phoneme_id_to_group_id = phoneme_groups_mapper
         
-        self.language = language
+        self.language = None
         if (language is not None):
             self.set_backend(language=language)
 
@@ -146,14 +146,14 @@ class Phonemizer:
     
                                  
     def set_backend(self, language='en'):
-        
+        self.language = language
         alt_codes = {'zh-CN': 'cmn', 'fr': 'fr-fr', 'en': 'en-us', 'uk': 'zle', 'sv-SE': 'sv', 'ga-IE': 'ga', 'cv': 'cu'}
 
         if (language in alt_codes):
             language = alt_codes[language]
         print(f"Setting espeak backend for language: {language}")
         self.backend = EspeakBackend(language=language, preserve_punctuation=False, tie=False, with_stress=False)
-        self.language = language
+        
 
         # unicode_enable for languages with non-Latin scripts
         # Check if the language code matches any in specical_unicode_langs
@@ -355,7 +355,10 @@ class Phonemizer:
 
         if self.language is None:
             raise ValueError("Phonemizer backend language is not set. Call set_backend(language) before phonemizing sentences.")
-    
+
+        #if self.language == 'en-us':
+        #    sentence = sentence.replace("'", "") # remove apostrophes for English as they can cause issues with phonemization (e.g., contractions like "don't" -> "do not")
+
         if self.language in specical_unicode_langs or self.unicode_enable:
             # For languages like Chinese, Japanese, Korean, Hindi, etc., treat the entire sentence as one word
             words = self.break_words_special(sentence)
