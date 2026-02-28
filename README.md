@@ -81,6 +81,16 @@ sudo apt-get install espeak-ng ffmpeg
 brew install espeak-ng ffmpeg
 ```
 
+Or install everything in the conda environment
+```bash
+conda create -n bfa
+conda activate bfa
+conda install pip
+conda install "ffmpeg"
+# or
+conda install "ffmpeg" -c conda-forge
+```
+
 **Windows:**  
 Download and install [eSpeak NG](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md) and [ffmpeg](https://ffmpeg.org/download.html), then add both to your system PATH.
 
@@ -93,7 +103,7 @@ pip install bournemouth-forced-aligner
 ### Step 3 — Verify it works
 
 ```bash
-python -c "from bournemouth_aligner import PhonemeTimestampAligner; print('Installation successful!')"
+python -c "from bournemouth_aligner import PhonemeTimestampAligner; print('Installation successful')"
 ```
 
 ---
@@ -634,7 +644,8 @@ PhonemeTimestampAligner(
 | `silence_anchors` | `0` | When >0, uses detected silences as anchor points to improve long-segment alignment. Try `3`. |
 | `boost_targets` | `True` | Increases the acoustic probability of expected phonemes before Viterbi decoding. |
 | `enforce_minimum` | `True` | Prevents any target phoneme from being completely zeroed out by the model. |
-| `enforce_all_targets` | `True` | After decoding, inserts any missing phonemes at their best estimated position. Set `False` for strictly probabilistic output. |
+| `enforce_all_targets` | `True` | Enable "forced" alignment (according to the given true phoneme sequence) instead of most probable alignment (when `False`) according to the predicted phoneme probabilties. |
+| `ensure_completeness` | `False` | After decoding, inserts any missing phonemes at their best estimated position. Set `True` for extra completeness gaurantee. |
 | `ignore_noise` | `True` | Drops predicted noise/silence frames from output. Set `False` to include them as `"noise"` entries. |
 | `extend_soft_boundaries` | `True` | Extends phoneme boundaries into adjacent frames that still carry some acoustic evidence. |
 | `boundary_softness` | `7` | Controls how far boundaries extend. `2`–`3` = tight phoneme cores; `7` = generous boundaries. |
@@ -1097,9 +1108,9 @@ Generate this automatically with [Whisper](#integration-examples) or write it by
 
 ## 🧠 How It Works
 
-BFA is built on the **CUPE (Contextless Universal Phoneme Encoder)** model. Unlike HMM-based aligners like MFA, CUPE is a neural network that processes audio frame-by-frame independently (no context window), which is what makes it fast.
+BFA is built on the **CUPE (Contextless Universal Phoneme Encoder)** model. Unlike HMM-based aligners like MFA, CUPE is a neural network that processes audio frame-by-frame independently (no context window), which is what makes it multilingual.
 
-Read the full paper: [BFA: Real-Time Multilingual Text-to-Speech Forced Alignment (arXiv 2509.23147)](https://arxiv.org/pdf/2509.23147)
+[BFA: Multilingual Text-to-Speech Forced Alignment](https://arxiv.org/pdf/2509.23147)
 
 ### Alignment pipeline
 
@@ -1138,7 +1149,7 @@ graph TD
 
 BFA exposes several parameters not available in traditional aligners like MFA:
 
-#### 🎯 `boost_targets` (Default: `True`)
+#### `boost_targets` (Default: `True`)
 Increases log-probabilities of expected phonemes by a fixed boost factor (typically +5.0) before Viterbi decoding. If the sentence is very long or contains every possible phoneme, then boosting them all equally doesn't have much effect—because no phoneme stands out more than the others.
 
 **When it helps:**
@@ -1148,7 +1159,7 @@ Increases log-probabilities of expected phonemes by a fixed boost factor (typica
 
 **Important caveat:** For monolingual sentences, boosting affects ALL phonemes in the target sequence equally, making it equivalent to no boosting. The real benefit comes when using multilingual models or when certain phonemes are systematically underrepresented.
 
-#### 🛡️ `enforce_minimum` (Default: `True`) 
+#### `enforce_minimum` (Default: `True`) 
 Ensures every target phoneme has at least a minimum probability (default: 1e-8) at each frame, preventing complete elimination during alignment.
 
 **Why this matters:**
@@ -1156,8 +1167,12 @@ Ensures every target phoneme has at least a minimum probability (default: 1e-8) 
 - Guarantees that even very quiet or unclear phonemes can be aligned
 - Helps for highly noisy audio in which all phonemes, not just targets, have extremely low probabilities.
 
-#### 🔒 `enforce_all_targets` (Default: `True`)
-**This is BFA's key differentiator from MFA.** After Viterbi decoding, BFA applies post-processing to guarantee that every target phoneme is present in the final alignment—even those with low acoustic probability. However, **downstream tasks can filter out these "forced" phonemes using their confidence scores**. For practical use, consider setting a confidence threshold  e.g., `timestamps["phoneme_ts"][p]["confidence"] <0.05`) to exclude phonemes that were aligned with little to no acoustic evidence.
+
+#### `enforce_all_targets` (Default: `True`)
+Force the (viterbi) algorithm to take the path via target phonemes regardless of their probabilities, this is what "forced" alignment means in the context of Viterbi decoding. If `False`, it can miss some phonemes if their probabilities are too low, but if true, it WILL have 100% coverage of the target phonemes.
+
+#### `ensure_completeness` (Default: `False`)
+This enables a post-processing step for extra completeness checks. It tries to insert missing phonemes in their most likely positions based on the surrounding aligned phonemes and the original target sequence. Can be used in conjunction with enforce_all_targets for extra safety, or can be used on its own to try to recover missed phonemes without forcing the alignment path.. However, **downstream tasks can filter out these "forced" phonemes using their confidence scores**. For practical use, consider setting a confidence threshold  e.g., `timestamps["phoneme_ts"][p]["confidence"] <0.05`) to exclude phonemes that were aligned with little to no acoustic evidence.  
 
 **Recovery mechanism:**
 1. Identifies any missing target phonemes after initial alignment
@@ -1220,7 +1235,6 @@ BFA and [MFA](https://montreal-forced-aligner.readthedocs.io/) are both forced a
 |--------|-----|-----|
 | **Speed** | ~0.2 s per 10 s of audio | ~10 s per 2 s of audio |
 | **No dictionary needed** | ✅ espeak-ng generates phonemes on the fly | ❌ Requires a pronunciation dictionary |
-| **Real-time capable** | ✅ Yes (contextless frame processing) | ❌ No |
 | **Stop consonants (t, d, p, k)** | ✅ More precise boundaries | ⚠️ Tends to extend too far |
 | **Tail endings** | ⚠️ Occasionally misses | ❌ Often missed |
 | **Breathy sounds (h)** | ⚠️ Sometimes misses | ✅ Usually captures |

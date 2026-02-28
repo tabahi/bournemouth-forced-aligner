@@ -224,3 +224,4 @@ examples/x_basic_usage__.py
 mel_phonemes_ref.png
 output_timestamps.TextGrid
 examples/samples/LJSpeech/batch_output.vs.json
+30s.vs.json

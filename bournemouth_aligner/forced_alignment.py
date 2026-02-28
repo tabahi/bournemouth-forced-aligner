@@ -13,12 +13,13 @@ class ViterbiDecoder:
     Viterbi decoder that ensures all phonemes in the target sequence are aligned,
     even when they have very low probabilities.
     """
-    def __init__(self, blank_id, silence_id, silence_anchors=3,  min_phoneme_prob=1e-8, ignore_noise=True):
+    def __init__(self, blank_id, silence_id, silence_anchors=3,  min_phoneme_prob=1e-8, ignore_noise=True, truly_forced=False):
         self.blank_id = blank_id
         self.silence_id = silence_id
         self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
         self.min_phoneme_prob = min_phoneme_prob  # Minimum probability floor for phonemes
         self.ignore_noise = ignore_noise
+        self.truly_forced = truly_forced
         self._neg_inf = -1000.0
         
     def set_blank_id(self, blank_id):
@@ -630,19 +631,41 @@ class ViterbiDecoder:
                 outside_band = (state_indices < center - band_width) | (state_indices > center + band_width)
                 dp[t, outside_band] = self._neg_inf
         
-    
-        # Find best final state
-        final_scores = dp[num_frames-1]
-        valid_mask = final_scores > self._neg_inf
-        if valid_mask.any():
-            valid_indices = torch.where(valid_mask)[0]
-            final_state = valid_indices[torch.argmax(final_scores[valid_indices])]
+
+        if not self.truly_forced:
+            
+
+            # Find best final state
+            final_scores = dp[num_frames-1]
+            valid_mask = final_scores > self._neg_inf
+            if valid_mask.any():
+                valid_indices = torch.where(valid_mask)[0]
+                final_state = valid_indices[torch.argmax(final_scores[valid_indices])]
+            else:
+                final_state = torch.argmax(final_scores)
+
         else:
-            final_state = torch.argmax(final_scores)
+            # Truly forced alignment: path must terminate at the last CTC state so
+            # that every target phoneme is guaranteed to have been visited in order.
+            # ctc_path always ends with a blank, so ctc_len-1 is a valid terminal.
+            final_state = ctc_len - 1
+            if dp[num_frames - 1, final_state] <= self._neg_inf and ctc_len >= 2:
+                # Trailing blank unreachable — accept last-phoneme state as fallback
+                final_state = ctc_len - 2
+            if dp[num_frames - 1, final_state] <= self._neg_inf:
+                # Shouldn't happen with a valid CTC path — use rightmost reachable state
+                valid_mask = dp[num_frames - 1] > self._neg_inf
+                if valid_mask.any():
+                    final_state = torch.where(valid_mask)[0][-1]  # rightmost = closest to end
+                else:
+                    final_state = torch.tensor(ctc_len - 1, device=device)
+
         
         # Backtrack
         path_states = torch.zeros(num_frames, dtype=torch.long, device=device)
         path_states[num_frames-1] = final_state
+
+
         
         for t in range(num_frames-2, -1, -1):
             path_states[t] = backpointers[t+1, path_states[t+1]]
@@ -794,7 +817,7 @@ class AlignmentUtils: # 2025-09-10
     Alignment utilities with forced alignment fixes.
     """
     
-    def __init__(self, blank_id, silence_id, silence_anchors=10, ignore_noise=True):
+    def __init__(self, blank_id, silence_id, silence_anchors=10, ignore_noise=True, truly_forced=True):
         '''
         Initialize AlignmentUtils.
         Args:
@@ -805,7 +828,8 @@ class AlignmentUtils: # 2025-09-10
         self.blank_id = blank_id
         self.silence_id = silence_id
         self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
-        self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise)
+        self.truly_forced = truly_forced
+        self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise, truly_forced=self.truly_forced)
     
     
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 

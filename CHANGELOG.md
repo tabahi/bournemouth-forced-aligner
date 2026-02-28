@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.3] - 2026-02-28
+- Fixed the bug: The viterbi algorithm didn't really do "forced" alignment before since v1.1.0. Now it does as long as `enforce_all_targets=True` is set.
+- Added another layer for completeness. `ensure_completeness=True` (default: False). This is a post-processing hack for completeness. It tries to insert missing phonemes in their most likely positions based on the surrounding aligned phonemes and the original target sequence.
+- [torchcodec](https://github.com/meta-pytorch/torchcodec) dependency.  
+
 ## [1.1.2] - 2026-02-23
 - Added `load_model()` so that the models can be loaded after `__init__`, while the class `PhonemeTimestampAligner(lang ='en-us') can be initialized without specifying a model.`
 - Added more CLI functionality. Direct text input. Generate mel-spectrum directly from blaign cli command.

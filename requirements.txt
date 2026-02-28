@@ -4,3 +4,5 @@ huggingface_hub>=0.8.0
 numpy>=1.19.0
 phonemizer>=3.3.0
 librosa>=0.8.0
+torchcodec>=0.9.1
+matplotlib>=3.10.0

@@ -4,7 +4,7 @@ import os
 from .core import PhonemeTimestampAligner
 from .presets import get_preset
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,7 +58,7 @@ def _resolve_model_lang(preset, model, lang):
               help='Maximum segment duration in seconds (for windowed processing).')
 @click.option('--boost-targets/--no-boost-targets', default=True,
               help='Boost expected phoneme probabilities before Viterbi alignment.')
-@click.option('--silence-anchors', default=4, type=int, show_default=True,
+@click.option('--silence-anchors', default=10, type=int, show_default=True,
               help='Number of silent frames to anchor at silences (punctuations) to help break the long segments. ')
 # ---- misc ----
 @click.option('--debug/--no-debug', default=False,

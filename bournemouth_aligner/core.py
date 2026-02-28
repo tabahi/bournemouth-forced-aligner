@@ -38,7 +38,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=4, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True, extend_soft_boundaries=True, boundary_softness=7, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=7, bad_confidence_threshold=0.6):
         """
         Initialize the BFA phoneme timestamp extractor.
 
@@ -69,12 +69,12 @@ class PhonemeTimestampAligner:
             silence_anchors (int): Silent frames threshold for segment splitting (0 to disable).
             boost_targets (bool): Enhance target phoneme probabilities for better alignment.
             enforce_minimum (bool): Ensure minimum probability threshold for target phonemes.
-            enforce_all_targets (bool): Force all target phonemes to appear in alignment.
+            enforce_all_targets (bool): Force the (viterbi) algorithm to take the path via target phonemes regardless of their probabilities, this is what "forced" alignment means in the context of Viterbi decoding. If false, it can miss some phonemes if their probabilities are too low, but if true, it WILL have 100% coverage of the target phonemes.
+            ensure_completeness (bool): This is a post-processing hack for completeness. It tries to insert missing phonemes in their most likely positions based on the surrounding aligned phonemes and the original target sequence. Can be used in conjunction with enforce_all_targets for extra safety, or can be used on its own to try to recover missed phonemes without forcing the alignment path.
             ignore_noise (bool): Skip predicted noise in alignment output.
             extend_soft_boundaries (bool): Enable the extension of the phoeneme start/end boundaries beyond the core of the phoneme. Use `boundary_softness` to control the leniency of the extension. This can help capture more of the phoneme duration, especially for softer phonemes or in cases where the model's confidence extends beyond the core frames.
             boundary_softness (int): Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 7, which corresponds to a threshold of 0.0000001. Set it to 2 or 3 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
             bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true. It's recommended to avoid bad-confidence segments for the downstream tasks.
-
         Parameter Priority (highest to lowest):
             1. Explicit cupe_ckpt_path
             2. Explicit model_name
@@ -162,6 +162,7 @@ class PhonemeTimestampAligner:
         self.boost_targets = boost_targets
         self.enforce_minimum = enforce_minimum
         self.enforce_all_targets = enforce_all_targets
+        self.ensure_completeness = ensure_completeness
         self.ignore_noise = ignore_noise
         self.extend_soft_boundaries = extend_soft_boundaries
         self.boundary_softness = boundary_softness
@@ -249,8 +250,8 @@ class PhonemeTimestampAligner:
         """Setup Viterbi decoders for phoneme classes and groups."""
         
         # Alignment utilities
-        self.alignment_utils_g = AlignmentUtils(blank_id=self.blank_group, silence_id=self.silence_group, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise)
-        self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class, silence_id=self.silence_class, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise)
+        self.alignment_utils_g = AlignmentUtils(blank_id=self.blank_group, silence_id=self.silence_group, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise, truly_forced=self.enforce_all_targets)
+        self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class, silence_id=self.silence_class, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise, truly_forced=self.enforce_all_targets)
 
 
     def download_model(self, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", local_dir=None):
@@ -324,12 +325,12 @@ class PhonemeTimestampAligner:
 
 
 
-    def load_audio(self, audio, backend = "ffmpeg", sr=None):
+    def load_audio(self, audio, sr=None):
         """Load and preprocess audio file."""
         
         if isinstance(audio, str):
             audio_path = audio
-            wav, sr = torchaudio.load(audio_path,  frame_offset=0,  normalize=True, backend=backend)
+            wav, sr = torchaudio.load(audio_path,  frame_offset=0,  normalize=True)
 
         elif isinstance(audio, torch.Tensor):
             if sr is None:
@@ -507,7 +508,7 @@ class PhonemeTimestampAligner:
                 if debug: print(f"Removed aligned phonemes with invalid target indices {invalid_target_indices} from batch {batch_idx}.")
 
             # Deduplicate repeated target phonemes: merge consecutive, else keep longest
-            if repeated_targets and self.enforce_all_targets:
+            if repeated_targets and self.ensure_completeness:
                 repeated_frames = {}
                 new_aligned_frames = []
                 for frame in aligned_frames[batch_idx]:
@@ -535,7 +536,7 @@ class PhonemeTimestampAligner:
 
             # Insert missing target phonemes with estimated frame positions
             skipped_sil_indices = set()
-            if missing_targets and self.enforce_all_targets:
+            if missing_targets and self.ensure_completeness:
                 # Build target_idx -> aligned frame lookup
                 target_to_frame = {}
                 for frame in aligned_frames[batch_idx]:
@@ -659,7 +660,7 @@ class PhonemeTimestampAligner:
                     aligned_frames[batch_idx][i] = (*aligned_frames[batch_idx][i], False)
                     self.total_phonemes_aligned_easily += 1
 
-            if self.enforce_all_targets:
+            if self.ensure_completeness:
                 expected_count = len(target_phoneme_ids) - len(skipped_sil_indices)
                 targets_found2 = [0] * len(target_phoneme_ids)
                 for api in range(len(aligned_frames[batch_idx])):
