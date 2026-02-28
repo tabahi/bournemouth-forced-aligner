@@ -1204,7 +1204,7 @@ class PhonemeTimestampAligner:
         )
         return ts_out_segment
     
-    def process_segments(self, srt_data, audio_wavs, extract_embeddings=False, do_groups=False, debug=False):
+    def process_segments(self, srt_data, audio_wavs, extract_embeddings=False, do_groups=False, batch_size=16, debug=False):
         """
         Process multiple audio clips in a batch, each with multiple time-bounded segments.
 
@@ -1216,6 +1216,7 @@ class PhonemeTimestampAligner:
                 is shared across all its segments. Can also be a single (C, T) or batched (B, C, T) tensor.
             extract_embeddings: Whether to extract pooled embeddings.
             do_groups: Whether to extract phoneme group timestamps.
+            batch_size: Number of segments to process in a single batch for model inference. Set to 1 if out of memory issues arise.
             debug: Enable debug output.
 
         Returns:
@@ -1310,14 +1311,34 @@ class PhonemeTimestampAligner:
         start_times = [seg["start"] for _, seg, _ in flat_items_f]
 
         # --- Model inference (single batched call across all segments) ---
-        results, pooled_emb_p_list, pooled_emb_g_list = self.extract_timestamps_from_segment_batch(
-            wavs, wav_lens, ph_seqs_f,
-            start_offset_times=start_times,
-            group_sequences=grp_seqs_f if do_groups else None,
-            extract_embeddings=extract_embeddings,
-            do_groups=do_groups,
-            debug=debug
-        )
+        if batch_size < len(flat_items):
+            if debug: print(f"Processing {len(flat_items_f)} segments in batches of {batch_size}...")
+            results = []
+            pooled_emb_p_list = []
+            pooled_emb_g_list = []
+            for i in range(0, len(flat_items_f), batch_size):
+                batch_slice = slice(i, i + batch_size)
+                batch_results_slice, batch_p_embds_slice, batch_g_embds_slice = self.extract_timestamps_from_segment_batch(
+                    wavs[batch_slice], [wav_lens[j] for j in range(*batch_slice.indices(len(wavs)))], ph_seqs_f[batch_slice],
+                    start_offset_times=[start_times[j] for j in range(*batch_slice.indices(len(start_times)))],
+                    group_sequences=grp_seqs_f[batch_slice] if do_groups else None,
+                    extract_embeddings=extract_embeddings,
+                    do_groups=do_groups,
+                    debug=debug
+                )
+                results.extend(batch_results_slice)
+                pooled_emb_p_list.extend(batch_p_embds_slice)
+                pooled_emb_g_list.extend(batch_g_embds_slice)
+
+        else:
+            results, pooled_emb_p_list, pooled_emb_g_list = self.extract_timestamps_from_segment_batch(
+                wavs, wav_lens, ph_seqs_f,
+                start_offset_times=start_times,
+                group_sequences=grp_seqs_f if do_groups else None,
+                extract_embeddings=extract_embeddings,
+                do_groups=do_groups,
+                debug=debug
+            )
 
         # --- Post-process and regroup results by batch item ---
         for idx, ((bi, seg, _), result, ts) in enumerate(zip(flat_items_f, results, ts_outs_f)):
@@ -1403,7 +1424,7 @@ class PhonemeTimestampAligner:
         return batch_results
 
 
-    def process_srt_file(self, srt_path, audio_path, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=False, debug=True):
+    def process_srt_file(self, srt_path, audio_path, ts_out_path=None, extract_embeddings=False, vspt_path=None, do_groups=False, batch_size=16, debug=False):
         """
         Read sentences from SRT file and process them.
         Process entire srt file and generate vs2 output with timestamps.
@@ -1414,6 +1435,8 @@ class PhonemeTimestampAligner:
             ts_out_path: Path to output vs2 file
             extract_embeddings: Whether to extract embeddings
             vspt_path: Path to save embeddings (.pt file)
+            do_groups: Whether to extract phoneme group timestamps
+            batch_size: Batch size for processing segments (default: 16). Set to 1 if out of memory issues arise.
             debug: Whether to print debug information
         """
         # Read srt data
@@ -1445,7 +1468,7 @@ class PhonemeTimestampAligner:
 
 
         srt_batch = [{"segments": srt_data["segments"]}]
-        result = self.process_segments(srt_batch, [audio_wav], extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+        result = self.process_segments(srt_batch, [audio_wav], extract_embeddings=extract_embeddings, do_groups=do_groups, batch_size=batch_size, debug=debug)
 
         if extract_embeddings:
             batch_results, batch_p_embds, batch_g_embds = result

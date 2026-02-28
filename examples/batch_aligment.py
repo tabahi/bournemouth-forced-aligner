@@ -83,6 +83,7 @@ def example_batch_SRT_processing():
         all_texts_srts,
         all_audio_wavs,
         do_groups=True,
+        batch_size=16,  # Process 16 segments in a single batch if they are short enough (duration_max=10s), otherwise use batch_size=1 to process segments one by one
         debug=True,
     )
     ts_out_path="examples/samples/LJSpeech/batch_output.vs.json"

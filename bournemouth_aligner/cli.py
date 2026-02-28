@@ -4,7 +4,7 @@ import os
 from .core import PhonemeTimestampAligner
 from .presets import get_preset
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -186,6 +186,7 @@ def main(audio_path, text_or_srt, output_path,
                 ts_out_path=output_path,
                 vspt_path=embeddings,
                 extract_embeddings=bool(embeddings),
+                batch_size=1,
                 debug=debug
             )
         else:

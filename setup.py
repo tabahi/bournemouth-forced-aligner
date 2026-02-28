@@ -12,7 +12,7 @@ def read_readme():
 
 setup(
     name="bournemouth-forced-aligner",
-    version="1.1.3",
+    version="1.1.4",
     packages=find_packages(exclude=["tests*", "docs*", "examples*"]),
     python_requires=">=3.8",
     

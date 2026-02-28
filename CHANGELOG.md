@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.1.4] - 2026-02-28
+- `batch_size=16` parameter in `process_srt_file()` and `process_segments()`. Reduce it to prevent out-of-memory errors when processing large audio segments.
+
 ## [1.1.3] - 2026-02-28
 - Fixed the bug: The viterbi algorithm didn't really do "forced" alignment before since v1.1.0. Now it does as long as `enforce_all_targets=True` is set.
 - Added another layer for completeness. `ensure_completeness=True` (default: False). This is a post-processing hack for completeness. It tries to insert missing phonemes in their most likely positions based on the surrounding aligned phonemes and the original target sequence.
@@ -96,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
+[1.1.3]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.3
 [1.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.2
 [1.1.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.0
 [0.1.7]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v0.1.7

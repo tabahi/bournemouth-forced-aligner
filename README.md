@@ -681,6 +681,7 @@ timestamps = aligner.process_srt_file(
     extract_embeddings=False,
     vspt_path=None,     # optional: save phoneme embeddings to this .pt file
     do_groups=False,    # set True to also return phoneme group timestamps
+    batch_size=4, # reduce if out-of-memory
     debug=True
 )
 ```
@@ -745,6 +746,7 @@ batch_results = aligner.process_segments(
     srt_data,
     audio_wavs,
     do_groups=False,
+    batch_size=4, # reduce if out-of-memory
     debug=True
 )
 # Returns a list of dicts (one per file), each with a "segments" key
