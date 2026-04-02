@@ -219,6 +219,7 @@ class PhonemeTimestampAligner:
             raise ValueError("CUPE model checkpoint not found.", cupe_ckpt_path)
         torch.random.manual_seed(42)
         self.extractor = CUPEEmbeddingsExtractor(cupe_ckpt_path, device=self.device)
+        self.extractor.eval()
 
         assert self.window_size_wav is not None, "Window size in samples must be calculated before loading the model. call _setup_config() before load_model()."
         assert self.extractor.model.frames_per_window is not None, "Extractor model must have frames_per_window defined."
