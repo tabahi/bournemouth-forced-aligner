@@ -148,11 +148,32 @@ class ViterbiDecoder:
 
         # Fallback: standard Viterbi (with band constraint for long sequences)
 
+        # Reduce stride until the CTC path fits within the available frames.
+        # (was incorrectly comparing against seq_len instead of num_frames before)
         stride = 4
-        if (stride * seq_len + 1) > seq_len*0.9: stride = 3
-        if (stride * seq_len + 1) > seq_len*0.8: stride = 2
+        if (stride * seq_len + 1) > num_frames: stride = 3
+        if (stride * seq_len + 1) > num_frames: stride = 2
+        if (stride * seq_len + 1) > num_frames: stride = 1
         expanded_len = stride * seq_len + 1
-        if expanded_len > num_frames: raise ValueError(f"Target sequence too long to align: expanded CTC path length {expanded_len} (for {seq_len} phonemes) exceeds number of frames {num_frames}. Consider reducing the target sequence or increasing the audio length. Ensure duration_max is set appropriately for the length of the audio and target sequence. And silent_anchors is set above 2 if the segment is too long..")
+
+        if expanded_len > num_frames:
+            # Truly impossible: fewer frames than phonemes.
+            if num_frames < seq_len:
+                raise ValueError(
+                    f"Audio too short to align: {seq_len} phonemes cannot be fit into "
+                    f"{num_frames} frames (need at least 1 frame per phoneme)."
+                )
+            # Edge case: num_frames == seq_len — no room for any blank tokens.
+            # Use a direct 1-to-1 proportional assignment as a last resort.
+            if debug:
+                print(f"WARN: {num_frames} frames for {seq_len} phonemes — using proportional fallback (no Viterbi).")
+            frame_idx = torch.arange(num_frames, device=device) * seq_len // num_frames
+            frame_phonemes = true_sequence[frame_idx]
+            frame_phonemes_idx = true_sequence_idx[frame_idx]
+            if return_scores:
+                alignment_score = self._calculate_alignment_score(log_probs, frame_phonemes)
+                return frame_phonemes, frame_phonemes_idx, alignment_score
+            return frame_phonemes, frame_phonemes_idx, None
 
         
         

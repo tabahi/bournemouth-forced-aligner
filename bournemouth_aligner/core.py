@@ -120,6 +120,8 @@ class PhonemeTimestampAligner:
                 lang="zh"
             )
         """
+
+        self.warn_level = 1  # 0 = no warnings, 1 = important warnings (more critical for downstream tasks), 2 = all warnings (including low-confidence phonemes and bad confidence patterns). Critical errors will be raised as exceptions regardless of warn_level
         if device == "auto":
             device = detect_device_automatically()
         self.device = device
@@ -219,7 +221,6 @@ class PhonemeTimestampAligner:
             raise ValueError("CUPE model checkpoint not found.", cupe_ckpt_path)
         torch.random.manual_seed(42)
         self.extractor = CUPEEmbeddingsExtractor(cupe_ckpt_path, device=self.device)
-        self.extractor.eval()
 
         assert self.window_size_wav is not None, "Window size in samples must be calculated before loading the model. call _setup_config() before load_model()."
         assert self.extractor.model.frames_per_window is not None, "Extractor model must have frames_per_window defined."
@@ -288,14 +289,16 @@ class PhonemeTimestampAligner:
         num_frames = (end_frame - start_frame) if (end_frame != -1) else -1
 
         if (num_frames < self.seg_duration_min_samples):
-            raise ValueError(f"Segment too short: {num_frames} frames, minimum required is {self.seg_duration_min_samples} frames.")
+            print(f"ERROR: Segment too short: {num_frames} frames, minimum required is {self.seg_duration_min_samples} frames.")
+            return None, None, -1
          
         wav = wav[:, start_frame:end_frame]
             
         assert (wav.shape[1] <= num_frames) or (num_frames == -1)
         if wav.shape[1] < self.seg_duration_min_samples:
-            raise Exception("Wav shape is too small:", wav.shape, start_frame, end_frame)
-        
+            print(f"Wav shape is too small: {wav.shape}, start_frame: {start_frame}, end_frame: {end_frame}")
+            return None, None, -2
+
         # Process wav
         wav = wav.mean(dim=0)
         wav = self._rms_normalize(wav)
@@ -313,7 +316,7 @@ class PhonemeTimestampAligner:
                 0
             )
         
-        return wav, wav_len
+        return wav, wav_len, 0
     
     @staticmethod
     def _rms_normalize(audio): # it's important -- CUPE is trained with RMS normalized audio
@@ -493,20 +496,20 @@ class PhonemeTimestampAligner:
             repeated_targets = {idx for idx, count in enumerate(targets_found) if count > 1}
             if repeated_targets:
                 repeated_labels = [self.phonemizer.index_to_plabel.get(target_phoneme_ids[idx], f'UNK_{target_phoneme_ids[idx]}') for idx in sorted(repeated_targets)]
-                if debug: print(f"WARNING: Repeated target phonemes found at positions {sorted(repeated_targets)}: {repeated_labels}")
+                if self.warn_level>=2 or debug: print(f"WARNING: Repeated target phonemes found at positions {sorted(repeated_targets)}: {repeated_labels}")
                 self.total_phonemes_extra += sum(targets_found[idx] - 1 for idx in repeated_targets)
 
             missing_targets = [idx for idx, count in enumerate(targets_found) if count == 0]
             if missing_targets:
                 missing_labels = [self.phonemizer.index_to_plabel.get(target_phoneme_ids[idx], f'UNK_{target_phoneme_ids[idx]}') for idx in missing_targets]
-                if debug: print(f"WARNING: {len(missing_targets)} target phonemes not found in alignment at positions {missing_targets}: {missing_labels}")
+                if self.warn_level>=2 or debug: print(f"WARNING: {len(missing_targets)} target phonemes not found in alignment at positions {missing_targets}: {missing_labels}")
                 self.total_phonemes_missed += len(missing_targets)  
 
             # Remove aligned phonemes with invalid target indices
             if invalid_target_indices:
-                if debug: print(f"WARNING: Found {len(invalid_target_indices)} aligned phonemes with invalid target indices in batch {batch_idx}.")
+                if self.warn_level>=2 or debug: print(f"WARNING: Found {len(invalid_target_indices)} aligned phonemes with invalid target indices in batch {batch_idx}.")
                 aligned_frames[batch_idx] = [frame for frame in aligned_frames[batch_idx] if int(frame[3]) not in invalid_target_indices]
-                if debug: print(f"Removed aligned phonemes with invalid target indices {invalid_target_indices} from batch {batch_idx}.")
+                if self.warn_level>=2 or debug: print(f"WARNING: Removed aligned phonemes with invalid target indices {invalid_target_indices} from batch {batch_idx}.")
 
             # Deduplicate repeated target phonemes: merge consecutive, else keep longest
             if repeated_targets and self.ensure_completeness:
@@ -894,7 +897,7 @@ class PhonemeTimestampAligner:
         log_probs_g = F.log_softmax(logits_group, dim=2)
         log_probs_p = F.log_softmax(logits_class, dim=2)
 
-
+        
         frame_phonemes = self.alignment_utils_p.decode_alignments(
                     log_probs_p,
                     true_seqs=ph_seqs,
@@ -1277,7 +1280,7 @@ class PhonemeTimestampAligner:
         valid_indices = []
         for i, ((bi, seg, _), ph_seq) in enumerate(zip(flat_items, phoneme_sequences)):
             if not ph_seq or len(ph_seq) < self.ph_seq_min:
-                if debug:
+                if debug or self.warn_level >= 1:
                     print(f"Skipping clip {bi}, segment '{seg.get('text', '')[:30]}': insufficient phoneme sequence ({len(ph_seq) if ph_seq else 0})")
                 continue
             valid_indices.append(i)
@@ -1307,7 +1310,36 @@ class PhonemeTimestampAligner:
             )
             for _, seg, clip_wav in flat_items_f
         ]
-        wavs, wav_lens = zip(*wavs_and_lens)
+        wavs, wav_lens, error_codes = zip(*wavs_and_lens)
+
+        # analyze errors and filter out segments with audio issues
+        valid_indices = [i for i, code in enumerate(error_codes) if code == 0]
+        if len(valid_indices) < len(flat_items_f):
+        
+            available_wav_duration = clip_wav.size(1) / self.resampler_sample_rate
+            
+            for i, code in enumerate(error_codes):
+                if code != 0:
+                    bi, seg, _ = flat_items_f[i]
+                    if debug or self.warn_level >= 1:
+                        print(f"Skipping clip {bi}, segment start: {seg['start']}, end: {seg['end']} due to chopping error ({code})",)
+            # print totals:
+            if debug or self.warn_level >= 1:
+                print(f"Chopping errors detected in {len(flat_items_f) - len(valid_indices)} segments. Clip total audio duration: {available_wav_duration:.2f} seconds.")
+                print(f"Total segments: {len(flat_items_f)}, valid: {len(valid_indices)}, skipped: {len(flat_items_f) - len(valid_indices)}")
+                    
+            # Filter lists to only include valid segments
+            flat_items_f = [flat_items_f[i] for i in valid_indices]
+            ph_seqs_f = [ph_seqs_f[i] for i in valid_indices]
+            grp_seqs_f = [grp_seqs_f[i] for i in valid_indices]
+            ts_outs_f = [ts_outs_f[i] for i in valid_indices]
+            wavs = [wavs[i] for i in valid_indices]
+            wav_lens = [wav_lens[i] for i in valid_indices]
+
+        # raise error if all wavs are invalid
+        if not wavs:
+            raise ValueError("All segments have audio chopping errors. Cannot proceed with timestamp extraction.")
+        
         wavs = torch.stack(wavs, dim=0)
         start_times = [seg["start"] for _, seg, _ in flat_items_f]
 
@@ -1319,17 +1351,41 @@ class PhonemeTimestampAligner:
             pooled_emb_g_list = []
             for i in range(0, len(flat_items_f), batch_size):
                 batch_slice = slice(i, i + batch_size)
-                batch_results_slice, batch_p_embds_slice, batch_g_embds_slice = self.extract_timestamps_from_segment_batch(
-                    wavs[batch_slice], [wav_lens[j] for j in range(*batch_slice.indices(len(wavs)))], ph_seqs_f[batch_slice],
-                    start_offset_times=[start_times[j] for j in range(*batch_slice.indices(len(start_times)))],
-                    group_sequences=grp_seqs_f[batch_slice] if do_groups else None,
-                    extract_embeddings=extract_embeddings,
-                    do_groups=do_groups,
-                    debug=debug
-                )
-                results.extend(batch_results_slice)
-                pooled_emb_p_list.extend(batch_p_embds_slice)
-                pooled_emb_g_list.extend(batch_g_embds_slice)
+                try:
+                    batch_results_slice, batch_p_embds_slice, batch_g_embds_slice = self.extract_timestamps_from_segment_batch(
+                        wavs[batch_slice], [wav_lens[j] for j in range(*batch_slice.indices(len(wavs)))], ph_seqs_f[batch_slice],
+                        start_offset_times=[start_times[j] for j in range(*batch_slice.indices(len(start_times)))],
+                        group_sequences=grp_seqs_f[batch_slice] if do_groups else None,
+                        extract_embeddings=extract_embeddings,
+                        do_groups=do_groups,
+                        debug=debug
+                    )
+                    results.extend(batch_results_slice)
+                    pooled_emb_p_list.extend(batch_p_embds_slice)
+                    pooled_emb_g_list.extend(batch_g_embds_slice)
+                except ValueError as ex:
+                    if debug or self.warn_level >= 1:
+                        print(f"ValueError processing batch {batch_slice}: {ex}. This may be due to audio duration too short for the phoneme sequence. Check the segment durations and phoneme counts. Expected at least 2 frames per phone.")
+                        # print audio duration and phoneme sequences for each segment in the batch slice
+                        for j in range(*batch_slice.indices(len(flat_items_f))):
+                            bi, seg, _ = flat_items_f[j]
+                            ph_seq = ph_seqs_f[j]
+                            grp_seq = grp_seqs_f[j] if do_groups else None
+                            seg_duration = wav_lens[j] / self.resampler_sample_rate
+                            print(f"  Clip {bi}, segment '{seg['text'][:30]}...', duration: {seg_duration:.2f}s, phoneme count: {len(ph_seq)}, group count: {len(grp_seq) if grp_seq is not None else 'N/A'}")
+                        
+                    results.extend([
+                        {
+                            'phoneme_timestamps': [],
+                            'group_timestamps': [],
+                        }
+                        for b in range(batch_size)
+                    ])
+                    pooled_emb_p_list.extend([None] * batch_size)
+                    pooled_emb_g_list.extend([None] * batch_size)
+                except Exception as e:
+                    print(f"Error processing batch slice {batch_slice}: {e}")
+                    raise e
 
         else:
             results, pooled_emb_p_list, pooled_emb_g_list = self.extract_timestamps_from_segment_batch(
@@ -1393,7 +1449,8 @@ class PhonemeTimestampAligner:
                     low_confidence_ratio = low_confidence_count / len(confidences)
 
                     if low_confidence_ratio > self.bad_confidence_threshold:
-                        print(f"  WARNING: Clip {bi}, segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) avg={avg_confidence:.3f}")
+                        if debug or self.warn_level >= 2:
+                            print(f"  WARNING: Clip {bi}, segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) avg={avg_confidence:.3f}")
                         batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
                         self.total_segments_bad += 1
                     first_20_confidences = sum(confidences[10:30]) / 20
@@ -1403,7 +1460,8 @@ class PhonemeTimestampAligner:
                         if self.silence_anchors == 0:
                             raise Exception(f"Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider setting `silence_anchors=3`.")
                         else:
-                            print(f"  WARNING: Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider adjusting `silence_anchors`.")
+                            if debug or self.warn_level >= 2:
+                                print(f"  WARNING: Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider adjusting `silence_anchors`.")
                             batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
                             self.total_segments_bad += 1
 
@@ -1789,10 +1847,12 @@ class PhonemeTimestampAligner:
             framewise_end_index = min(self.ceil((ts_item["end_ms"]-offset_ms) / ms_per_frame), total_frames)
 
             if framewise_end_index-framewise_start_index > total_frames:
-                print(f"Warning: Timestamp start frame {framewise_start_index} exceeds total frames {total_frames}, skipping.")
+                if self.warn_level >= 2:
+                    print(f"Warning: Timestamp start frame {framewise_start_index} exceeds total frames {total_frames}, skipping.")
                 continue
             elif framewise_end_index > total_frames:
-                print(f"Warning: Timestamp ending frame {framewise_end_index} exceeds total frames {total_frames}, adjusting end index.")
+                if self.warn_level >= 2:
+                    print(f"Warning: Timestamp ending frame {framewise_end_index} exceeds total frames {total_frames}, adjusting end index.")
                 framewise_end_index = total_frames
 
             # Simple assignment - fill the exact range
