@@ -38,7 +38,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=7, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=3, bad_confidence_threshold=0.6):
         """
         Initialize the BFA phoneme timestamp extractor.
 
@@ -73,7 +73,7 @@ class PhonemeTimestampAligner:
             ensure_completeness (bool): This is a post-processing hack for completeness. It tries to insert missing phonemes in their most likely positions based on the surrounding aligned phonemes and the original target sequence. Can be used in conjunction with enforce_all_targets for extra safety, or can be used on its own to try to recover missed phonemes without forcing the alignment path.
             ignore_noise (bool): Skip predicted noise in alignment output.
             extend_soft_boundaries (bool): Enable the extension of the phoeneme start/end boundaries beyond the core of the phoneme. Use `boundary_softness` to control the leniency of the extension. This can help capture more of the phoneme duration, especially for softer phonemes or in cases where the model's confidence extends beyond the core frames.
-            boundary_softness (int): Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 7, which corresponds to a threshold of 0.0000001. Set it to 2 or 3 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
+            boundary_softness (int): Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 3, which corresponds to a threshold of 0.0000001. Set it to 0 or 1 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
             bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true. It's recommended to avoid bad-confidence segments for the downstream tasks.
         Parameter Priority (highest to lowest):
             1. Explicit cupe_ckpt_path
@@ -679,7 +679,7 @@ class PhonemeTimestampAligner:
         return aligned_frames
     
 
-    def extend_soft_boundaries_func(self, log_probs, framestamps, boundary_softness=7, debug=False):
+    def extend_soft_boundaries_func(self, log_probs, framestamps, boundary_softness=3, debug=False):
         '''
         Extend start and end boundaries of aligned phonemes based on confidence scores from log probabilities.
         Three passes:
@@ -690,7 +690,7 @@ class PhonemeTimestampAligner:
         Args:
             log_probs: Tensor of shape [B, T, C] containing log probabilities.
             framestamps: List of lists of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated).
-            boundary_softness: Hyperparameter controlling leniency of boundary extension. Higher means more lenient (allows extension with lower confidence). Default is 7, which corresponds to a threshold of 0.0000001.
+            boundary_softness: Hyperparameter controlling leniency of boundary extension. Higher means more lenient (allows extension with lower confidence). Default is 3, which corresponds to a threshold of 0.0000001.
 
         Returns:
             Updated framestamps with extended boundaries (same structure as input).
@@ -698,7 +698,7 @@ class PhonemeTimestampAligner:
         max_extension_factor = 10.0
         boundary_softness_initial = max(2, 7 - 4)  # initial pass is stricter, then we relax it in subsequent passes
         _thresh_1 = 10.0 ** (-1*boundary_softness_initial)  # e.g. 0.00001 for boundary_softness_initial of 5
-        _thresh_2 = 10.0 ** (-1*boundary_softness)  # e.g. 0.0000001 for boundary_softness of 7
+        _thresh_2 = 10.0 ** (-1*boundary_softness)  # e.g. 0.001 for boundary_softness of 3
         updated_batch = []
         for b in range(len(framestamps)):
             probs = torch.exp(log_probs[b])  # [T, C]
