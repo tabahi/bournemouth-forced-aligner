@@ -1,5 +1,13 @@
 # Changelog
 
+
+## [1.1.5] - 2026-06-05
+- Default `boundary_softness=3` is changed from 7 to 3 because at 3 it performs the best on TIMIT and buckeye dataset. 
+- Added warnings and parameter `self.warn_level` for verbose level. Use `PhonemeTimestampAligner.warn_level=3` for high verbosity.
+- Fixed small segments alignment. Previously one-word or half-words ("umm or oh") raised error of not enough phonemes for the given duration. That is patched up here: https://github.com/tabahi/bournemouth-forced-aligner/commit/e58757b5ff9c3cb71303067a8050b06d01f80097#diff-c530cc1a536c371d38e233b3192f5f7935f97342d6460e039edc8107fbdf0348
+
+
+
 ## [1.1.4] - 2026-02-28
 - `batch_size=16` parameter in `process_srt_file()` and `process_segments()`. Reduce it to prevent out-of-memory errors when processing large audio segments.
 
@@ -99,6 +107,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
+
+[1.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.5
 [1.1.3]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.3
 [1.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.2
 [1.1.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.0

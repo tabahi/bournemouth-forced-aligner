@@ -623,7 +623,7 @@ PhonemeTimestampAligner(
     enforce_all_targets=True,     # Guarantee every phoneme in the transcript gets a timestamp
     ignore_noise=True,            # Skip predicted noise frames in output
     extend_soft_boundaries=True,  # Extend phoneme boundaries into adjacent low-confidence frames
-    boundary_softness=7,          # How far to extend (2=tight cores only, 7=generous)
+    boundary_softness=3,          # How far to extend (0=tight cores only, 7=generous)
     bad_confidence_threshold=0.6  # Flag segments where >60% of phonemes are low-confidence
 )
 ```
@@ -648,7 +648,7 @@ PhonemeTimestampAligner(
 | `ensure_completeness` | `False` | After decoding, inserts any missing phonemes at their best estimated position. Set `True` for extra completeness gaurantee. |
 | `ignore_noise` | `True` | Drops predicted noise/silence frames from output. Set `False` to include them as `"noise"` entries. |
 | `extend_soft_boundaries` | `True` | Extends phoneme boundaries into adjacent frames that still carry some acoustic evidence. |
-| `boundary_softness` | `7` | Controls how far boundaries extend. `2`–`3` = tight phoneme cores; `7` = generous boundaries. |
+| `boundary_softness` | `3` | Controls how far boundaries extend. `0`–`1` = tight phoneme cores; `7` = generous boundaries. `3` gives the best result on TIMIT|
 | `bad_confidence_threshold` | `0.6` | Ratio of low-confidence phonemes that triggers a `bad_alignment` warning on a segment. |
 
 **Model priority (highest → lowest):** `cupe_ckpt_path` → `model_name` → `preset` → defaults.
@@ -684,6 +684,9 @@ timestamps = aligner.process_srt_file(
     batch_size=4, # reduce if out-of-memory
     debug=True
 )
+
+
+aligner.warn_level = 3 # 0 = no warnings, 1 = important warnings (more critical for downstream tasks), 2 = all warnings (including low-confidence phonemes and bad confidence patterns). Critical errors will be raised as exceptions regardless of warn_level
 ```
 
 Returns a dict with a `"segments"` key. See [example_advanced.py](examples/example_advanced.py).
@@ -842,6 +845,8 @@ textgrid_str = aligner.convert_to_textgrid(result, output_file=None)
 # Include confidence scores in the tier labels
 aligner.convert_to_textgrid(result, output_file="recording.TextGrid", include_confidence=True)
 ```
+
+
 
 
 
