@@ -125,22 +125,22 @@ class WindowwiseTransformer(nn.Module):
 
 
 class ContextFreePhonemeRecognizer(nn.Module):
-    def __init__(self, input_wav_length=None, CNN_n_channels=None, CNN_dropout_rate=None, window_layers_dim=None, window_layers_num=None, window_layers_heads=None, window_dropout=None, noise_level=None, phoneme_classes=None, phoneme_groups=None):
+    def __init__(self, input_wav_length=None, CNN_n_channels=None, CNN_dropout_rate=None, window_layers_dim=None, window_layers_num=None, window_layers_heads=None, window_dropout=None, noise_level=None, phoneme_classes=None, phoneme_groups=None, cnn_last_stride=2):
         '''
         Initialize the empty model
         '''
         super().__init__()
 
         if input_wav_length is not None:
-            self.config_model(input_wav_length, CNN_n_channels, CNN_dropout_rate, window_layers_dim, window_layers_num, window_layers_heads, window_dropout, noise_level, phoneme_classes, phoneme_groups)
+            self.config_model(input_wav_length, CNN_n_channels, CNN_dropout_rate, window_layers_dim, window_layers_num, window_layers_heads, window_dropout, noise_level, phoneme_classes, phoneme_groups, cnn_last_stride)
             self.make_model()
     
-    def config_model(self, input_wav_length, CNN_n_channels, CNN_dropout_rate, window_layers_dim, window_layers_num, window_layers_heads, window_dropout, noise_level, phoneme_classes, phoneme_groups):
+    def config_model(self, input_wav_length, CNN_n_channels, CNN_dropout_rate, window_layers_dim, window_layers_num, window_layers_heads, window_dropout, noise_level, phoneme_classes, phoneme_groups, cnn_last_stride=2):
         '''
         requires hp.CNN_n_channels, hp.CNN_dropout_rate, hp.window_layers_dim, hp.window_layers_num, hp.window_layers_heads, hp.window_dropout, hp.noise_level, hp.phoneme_classesm, input_wav_length
         '''
         
-        self.config = {'n_channels': CNN_n_channels, 'dropout_rate': CNN_dropout_rate, 'window_layers_dim': window_layers_dim, 'window_layers_num': window_layers_num, 'window_layers_heads': window_layers_heads, 'window_dropout': window_dropout, 'noise_level': noise_level, 'phoneme_classes': phoneme_classes, 'phoneme_groups': phoneme_groups, 'input_wav_length': input_wav_length}
+        self.config = {'n_channels': CNN_n_channels, 'dropout_rate': CNN_dropout_rate, 'window_layers_dim': window_layers_dim, 'window_layers_num': window_layers_num, 'window_layers_heads': window_layers_heads, 'window_dropout': window_dropout, 'noise_level': noise_level, 'phoneme_classes': phoneme_classes, 'phoneme_groups': phoneme_groups, 'input_wav_length': input_wav_length, 'cnn_last_stride': cnn_last_stride}
 
     def load_config_state_dict(self, config_dict):
         self.config = config_dict
@@ -150,6 +150,37 @@ class ContextFreePhonemeRecognizer(nn.Module):
     def save_config_state_dict(self):
         #print("Saving model with input_wav_length:", self.input_wav_length)
         return self.config
+
+    def frame_stride_samples(self):
+        '''
+        Samples advanced per output frame: the product of the feature extractor's conv strides.
+
+        This is the *true* frame spacing and the only correct basis for a frames->ms conversion.
+        It is NOT `input_wav_length / frames_per_window`, which is the average frame density
+        including the padding-compressed edge frames (§7.1), and it is not the clip duration
+        divided by the frame count, which drifts (+182 ms over 10 s, §8.3).
+        '''
+        stride = 1
+        for module in self.feature_extractor.modules():
+            if isinstance(module, nn.Conv1d):
+                stride *= int(module.stride[0])
+        return stride
+
+    def receptive_field_ms(self, sample_rate=16000):
+        '''
+        Time-mixing receptive field in ms, over feature_extractor + temporal_stream.
+
+        Recorded because halving `cnn_last_stride` halves it as a side effect: `temporal_stream`
+        mixes over *frames*, so at twice the frame rate its kernels span half the time
+        (149.7 -> ~75 ms). Door 3 drove the RF to exact MFA parity (44.7 ms) and it bought
+        nothing, so this is expected to be inert - but it is a confound and belongs on the record.
+        '''
+        rf, stride = 1, 1
+        for module in list(self.feature_extractor.modules()) + list(self.temporal_stream.modules()):
+            if isinstance(module, nn.Conv1d):
+                rf += (int(module.kernel_size[0]) - 1) * stride
+                stride *= int(module.stride[0])
+        return 1000.0 * rf / sample_rate
 
     def make_model(self):
        
@@ -167,6 +198,9 @@ class ContextFreePhonemeRecognizer(nn.Module):
         phoneme_classes = self.config['phoneme_classes']
         phoneme_groups = self.config['phoneme_groups']
         noise_level = self.config['noise_level']
+        # `.get` so checkpoints predating this key still load at the original
+        # 210-sample geometry. 1 -> 105 samples, required for a 3-state topology.
+        cnn_last_stride = int(self.config.get('cnn_last_stride', 2))
         
         # calculated dims
         last_cnn_output_dim = n_channels*4
@@ -204,7 +238,7 @@ class ContextFreePhonemeRecognizer(nn.Module):
             nn.Dropout(cnn_dropout_rate),
             
             # Layer 4: Keep stride at 2
-            nn.Conv1d(n_channels*4, last_cnn_output_dim, kernel_size=5, stride=2, padding=2, bias=bias),
+            nn.Conv1d(n_channels*4, last_cnn_output_dim, kernel_size=5, stride=cnn_last_stride, padding=2, bias=bias),
             nn.BatchNorm1d(last_cnn_output_dim),
             nn.GELU(),
             nn.Dropout(cnn_dropout_rate)
@@ -405,12 +439,17 @@ class CUPEEmbeddingsExtractor(nn.Module):
         
         return embeddings
         
-    def predict(self, audio_batch, return_embeddings=False, groups_only=False):
+    def predict(self, audio_batch, return_embeddings=False, groups_only=False, return_pre_window=False,
+                tap='fusion'):
         '''
         audio_batch: a tensor of shape (batch_size, wav_length)
         return_embeddings: if True, returns the embeddings as well as the logits
         groups_only: if True, only returns the group logits
-        
+        tap: with `return_pre_window`, WHICH pre-transformer tensor to return -
+            `'fusion'` (the fused map, the historical behaviour) or `'spectral_stream'`
+            (the per-frame branch, before it is mixed with the smeared `temporal_stream`).
+            Both are `n_channels*4`-d, so nothing downstream changes shape.
+
         Return sahpe: (batch_size, phoneme_groups) ...or... (batch_size, phoneme_classes), (batch_size, phoneme_groups)
         or if return_embeddings is True: (batch_size, T', 8n), (batch_size, phoneme_groups) ...or... (batch_size, T', 8n), (batch_size, phoneme_classes), (batch_size, phoneme_groups)
         '''
@@ -450,6 +489,15 @@ class CUPEEmbeddingsExtractor(nn.Module):
                 logits_class = self.model.classifier(embeddings)
             else: logits_class = None
 
+            # `fused` is the PRE-TRANSFORMER feature map. session_notes.md §1/§3: the boundary
+            # signal peaks before the transformer (f1@25 ~64, abs_err ~17 ms) and is roughly
+            # halved by `window_processor`, so onset snapping reads this rather than
+            # `embeddings`. `tap='spectral_stream'` goes one layer further back, to the branch
+            # that cannot mix across time at all (§1: 65.9 vs fusion's 64.0 on this model
+            # family, and a much wider gap when fusion is degraded).
+            if return_pre_window:
+                pre = spectral.transpose(1, 2) if tap == 'spectral_stream' else fused
+                return logits_class, logits_group, embeddings, pre
             if return_embeddings:
                 return logits_class, logits_group, embeddings
             else:

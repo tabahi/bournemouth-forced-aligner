@@ -112,7 +112,8 @@ def _calculate_confidences(log_probs, framestamps):
 
     return updated_tuples
 
-def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate):
+def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate,
+                  frame_stride_samples=None):
     '''
     Args:
         framestamps: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence)
@@ -123,8 +124,16 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
     Returns:
         updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
     '''
-    duration_in_seconds = wav_len / sample_rate
-    duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
+    # Frames advance at a FIXED rate: the feature extractor's total conv stride
+    # (210 samples = 13.125 ms here). Dividing the clip duration by the frame count is
+    # not the same thing - the windows cover slightly less than the whole clip, so that
+    # form drifts (+25 ms over a 10 s clip even with a correct stride, and +182 ms with
+    # the old mismatched one). Pass `frame_stride_samples` to get the exact mapping.
+    if frame_stride_samples:
+        duration_per_frame = frame_stride_samples / sample_rate
+    else:
+        duration_in_seconds = wav_len / sample_rate
+        duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
 
     updated_tuples = []
     for tup in framestamps:

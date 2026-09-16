@@ -18,8 +18,10 @@ import json
 import traceback
 
 # repo modules
-from .cupe2i.model2i import CUPEEmbeddingsExtractor
-from .cupe2i.windowing import slice_windows, stich_window_predictions, calc_spec_len_ext
+from .cupe2i.model2i import CUPEEmbeddingsExtractor as CUPEEmbeddingsExtractor_i
+from .cupe2i.model2j import CUPEEmbeddingsExtractor as CUPEEmbeddingsExtractor_j
+from .cupe2i.model3a import CUPEEmbeddingsExtractor as CUPEEmbeddingsExtractor_3a
+from .cupe2i.windowing import slice_windows, stich_window_predictions, calc_spec_len_ext, frames_geometry
 from .forced_alignment import AlignmentUtils 
 #from .ipamappers.ph66_mapper import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
 from .ipamappers import ph66_phonemeizer
@@ -28,6 +30,27 @@ from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confid
 # Create reverse mappings for interpretability
 #index_to_glabel = {v: k for k, v in phoneme_groups_index.items()}
 #index_to_plabel = {v: k for k, v in phoneme_mapped_index.items()}
+
+# Which tensor onset snapping reads, plus `'none'` for no snapping at all ("vanilla" - the raw
+# Viterbi framestamps, exactly what BFA produced before onset snapping existed).
+# See `boundary_snap_source` in PhonemeTimestampAligner.
+SNAP_SOURCES = ('pre_transformer', 'spectral_stream', 'boundary_head', 'embeddings', 'auto',
+                'none')
+
+# What `'auto'` picks when the checkpoint has no usable boundary head. `'auto'` is the default
+# source, so this is the source most model2i users will actually get.
+AUTO_SNAP_FALLBACK = 'pre_transformer'
+
+# Default search half-width per source, in ms, used when `boundary_snap_radius_ms=None`.
+# These come from the radius sweeps in `tmp/results/results_TIMIT_lev_sweeps.csv`, scored on
+# r_value_25ms; see `tmp/results/conclusions.md`. The optimum is NOT the same for every source:
+# the flux taps are flat over ~26-52 ms, but `boundary_head` falls off a cliff past 2 frames
+# (ue03a_e100: r=2 -> 0.6700, r=4 -> 0.6004), because a constant-ish head turns a wide radius
+# into a large fixed shift.
+DEFAULT_SNAP_RADIUS_MS = {
+    'boundary_head': 26.25,      # 2 frames at a 210-sample stride
+}
+DEFAULT_SNAP_RADIUS_MS_FALLBACK = 52.5   # 4 frames; used by every flux tap
 
 
 
@@ -38,7 +61,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=3, bad_confidence_threshold=0.6):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=3, bad_confidence_threshold=0.6, boundary_snap_radius_ms=None, boundary_snap_radius=None, boundary_snap_offset=0, boundary_snap_source="auto", warn_level=1):
         """
         Initialize the BFA phoneme timestamp extractor.
 
@@ -75,6 +98,26 @@ class PhonemeTimestampAligner:
             extend_soft_boundaries (bool): Enable the extension of the phoeneme start/end boundaries beyond the core of the phoneme. Use `boundary_softness` to control the leniency of the extension. This can help capture more of the phoneme duration, especially for softer phonemes or in cases where the model's confidence extends beyond the core frames.
             boundary_softness (int): Hyperparameter controlling leniency of boundary extension beyond the core of the phoneme. Default is 3, which corresponds to a threshold of 0.0000001. Set it to 0 or 1 if you want only the cores of the phonemes, or set it to 7 to allow more extension as long as there's any meaningful confidence in the frames between the core and the extended boundary.
             bad_confidence_threshold (float): Threshold for flagging low-confidence alignments (1 to disable), default 0.6,  0.6 would mean if 60% of phonemes have low confidence, a warning is issued, in "segments", ["coverage_analysis"]["bad_confidence"] is set to true. It's recommended to avoid bad-confidence segments for the downstream tasks.
+            boundary_snap_source (str): Which tensor onset snapping reads, or "none" to disable
+                snapping and emit the raw Viterbi framestamps (BFA's pre-1.2 behaviour).
+                One of "auto" (default), "boundary_head", "pre_transformer", "spectral_stream",
+                "embeddings", "none". "auto" uses the checkpoint's learned boundary head when it
+                has a trained one (model3a) and falls back to "pre_transformer" otherwise, so the
+                same setting works on both model2i and model3a checkpoints. See the extended
+                commentary below the assignment in __init__ for the measured comparison.
+            boundary_snap_radius_ms (float or None): Search half-width in MILLISECONDS. None
+                (default) picks the measured optimum for the resolved source - 26.25 ms for
+                "boundary_head", 52.5 ms otherwise. 0 disables snapping. Expressed in ms rather
+                than frames so the same value means the same duration on models with different
+                frame strides.
+            boundary_snap_radius (int, optional): Override the search half-width in FRAMES.
+                Takes precedence over boundary_snap_radius_ms when not None.
+            boundary_snap_offset (int): Frames added after the snap argmax. 0 is correct for the
+                indexing convention and was best in every sweep; only change it when probing.
+            warn_level (int): Verbosity. 0 = silent, 1 = important warnings only (default),
+                2 = warnings plus informational output (checkpoint architecture, resolved frame
+                geometry, snap configuration, low-confidence diagnostics). Critical errors are
+                raised as exceptions regardless of warn_level.
         Parameter Priority (highest to lowest):
             1. Explicit cupe_ckpt_path
             2. Explicit model_name
@@ -121,7 +164,12 @@ class PhonemeTimestampAligner:
             )
         """
 
-        self.warn_level = 1  # 0 = no warnings, 1 = important warnings (more critical for downstream tasks), 2 = all warnings (including low-confidence phonemes and bad confidence patterns). Critical errors will be raised as exceptions regardless of warn_level
+        # 0 = silent, 1 = important warnings (more critical for downstream tasks), 2 = all
+        # warnings plus informational output (resolved architecture and frame geometry, snap
+        # configuration, low-confidence phonemes, bad confidence patterns). Critical errors are
+        # raised as exceptions regardless of warn_level. Set first, so that everything below -
+        # including load_model and the geometry resolution - can report through _info/_warn.
+        self.warn_level = int(warn_level)
         if device == "auto":
             device = detect_device_automatically()
         self.device = device
@@ -143,7 +191,9 @@ class PhonemeTimestampAligner:
 
         if (self.selected_mapper == "ph66"):
             self.phonemizer = ph66_phonemeizer.Phonemizer(language=self.lang, remove_noise_phonemes=True)
-
+        elif (self.selected_mapper == "ph270"):
+            # placeholder for upcoming ph270 mapper implementation which will cover tonal languages and distant families. For now, raise an error to indicate it's not implemented yet.
+            raise NotImplementedError("ph270 mapper is not implemented yet.")
 
         self.phonemes_key = self.phonemizer.phonemes_key
         self.phoneme_groups_key = self.phonemizer.phoneme_groups_key
@@ -155,9 +205,19 @@ class PhonemeTimestampAligner:
         self.phoneme_id_to_group_id = self.phonemizer.phoneme_id_to_group_id
 
         
-        self._setup_config()
+        # Load the model FIRST, then resolve the geometry from it. `_setup_config` derives
+        # `frame_stride_wav` by walking the feature extractor's Conv1d strides, but it used to
+        # run before `load_model`, so `self.extractor` was always None and it always fell back
+        # to the hard-coded 210. That was right only by coincidence: a model built with
+        # `cnn_last_stride: 1` has a 105-sample frame stride, and scoring it at 210 would put
+        # every timestamp out by a factor of two - silently, since nothing raises.
         if preset is not None or model_name is not None or cupe_ckpt_path is not None:
+            self._setup_config(defer_geometry=True)
+            # `load_model` ends by calling `_resolve_geometry` itself, so a later re-load stays
+            # consistent too.
             self.load_model(preset=preset, model_name=model_name, cupe_ckpt_path=cupe_ckpt_path)
+        else:
+            self._setup_config()
 
 
         self.silence_anchors = silence_anchors
@@ -169,6 +229,163 @@ class PhonemeTimestampAligner:
         self.extend_soft_boundaries = extend_soft_boundaries
         self.boundary_softness = boundary_softness
         self.bad_confidence_threshold = bad_confidence_threshold
+        # --- onset snapping ----------------------------------------------------------------
+        # Search half-width, expressed in MILLISECONDS so it is independent of the model's
+        # frame stride (210 samples = 13.125 ms, or 105 = 6.5625 ms on a finer-grid model).
+        # It is converted to frames by `_resolve_snap_radius` using the stride actually derived
+        # from the loaded model, so the same setting means the same duration across checkpoints.
+        #
+        #   boundary_snap_radius_ms = None  per-source default (DEFAULT_SNAP_RADIUS_MS)
+        #   boundary_snap_radius_ms = 0     disables snapping entirely
+        #   boundary_snap_radius            optional override, in FRAMES; wins when not None
+        #
+        # MEASURED on TIMIT, r_value_25ms, sweeping radius at boundary_softness=1
+        # (`tmp/results/results_TIMIT_lev_sweeps.csv`; full tables in
+        # `tmp/results/conclusions.md`). Radii are in frames; 1 frame = 13.125 ms:
+        #
+        #   ue02a_e5 (no trained head)        r=1      r=2      r=3      r=4
+        #     pre_transformer               0.7532   0.7601   0.7513   0.7387
+        #     spectral_stream               0.7588   0.7616   0.7531   0.7348
+        #     embeddings                    0.7370   0.7385   0.7318   0.7223
+        #     (control: none = 0.7472)
+        #
+        #   ue03a_e100 (trained head)         r=1      r=2      r=3      r=4
+        #     spectral_stream               0.6688   0.6948   0.7113   0.7176
+        #     pre_transformer               0.6540   0.6675   0.6749   0.6749
+        #     boundary_head                 0.6469   0.6670   0.6373   0.6004   <- sharp falloff
+        #     (control: none = 0.6469)
+        #
+        # The flux taps are flat over 2-4 frames, so the radius is not a sharp parameter for
+        # them. `boundary_head` is the exception: it loses 0.067 r_value between 2 and 4 frames,
+        # which is why `DEFAULT_SNAP_RADIUS_MS` gives it 26.25 ms and everything else 52.5 ms.
+        # Sweep with `set_boundary_snap(radius_ms=...)`.
+        self._boundary_snap_radius_ms_requested = (None if boundary_snap_radius_ms is None
+                                                   else float(boundary_snap_radius_ms))
+        self.boundary_snap_offset = int(boundary_snap_offset)
+        self._boundary_snap_radius_override = (None if boundary_snap_radius is None
+                                               else int(boundary_snap_radius))
+        # The source is resolved BEFORE the radius, because the radius default depends on which
+        # source was chosen and because `'none'` forces the radius to 0 - see
+        # `_resolve_snap_radius`. The source's documentation is the block below.
+        source = str(boundary_snap_source).lower()
+        if source not in SNAP_SOURCES:
+            raise ValueError(f"boundary_snap_source must be one of {'|'.join(SNAP_SOURCES)}, "
+                             f"got {boundary_snap_source!r}")
+        self.boundary_snap_source_requested = source
+        self._resolve_snap_source()
+        self._resolve_snap_radius()
+
+        # ==================================================================================
+        # WHICH TENSOR the onset snapper reads.  session_notes.md §1 / §3.
+        # ==================================================================================
+        #
+        # THE FORWARD PATH, IN ORDER.  Every candidate is a tap on this one chain, so "which
+        # source" is really "how far down the chain do I read":
+        #
+        #   waveform
+        #     │
+        #     ├─ feature_extractor ....... 4 strided convs, 44.7 ms receptive field,
+        #     │                            emits one frame per 210 samples (13.125 ms)
+        #     ├─ freq_attention .......... per-channel gate from a WINDOW-wide average pool;
+        #     │                            constant across the window, so it cannot move a
+        #     │                            boundary - it rescales channels, nothing else
+        #     ├──────────────┬───────────────────────────────┐
+        #     │              │                               │
+        #     │      temporal_stream                 spectral_stream  ......... ['spectral_stream']
+        #     │      k=7 then k=3 →                  two 1x1 convs → 44.7 ms,
+        #     │      149.7 ms, MIXES TIME            CANNOT MIX TIME
+        #     │              │                               │
+        #     │              └──────────► concat ◄───────────┘
+        #     │                            │
+        #     ├─ fusion = conv1x1(concat) ......................... ['pre_transformer'] DEFAULT
+        #     │    1x1, so it adds no smear of its own - but half its input is
+        #     │    temporal_stream, so it INHERITS that 149.7 ms smear
+        #     │
+        #     ├─ window_processor ........ 4-layer transformer over the 10 frames of ONE
+        #     │                            window (131.2 ms), applied BEFORE the stitch  ['embeddings']
+        #     └─ classifier → posteriors → Viterbi → framestamps ...... what snapping CORRECTS
+        #
+        #   boundary_head ................ a learned per-frame detector read off whichever tap
+        #                                  it was TRAINED on (the checkpoint carries which, in
+        #                                  `bnd_source`). model3a checkpoints only.
+        #                                  ['boundary_head']
+        #
+        #   'auto' ....................... DEFAULT. `boundary_head` when the checkpoint has a
+        #                                  head that was actually trained, `pre_transformer`
+        #                                  otherwise. This is what makes one setting correct for
+        #                                  both model2i and model3a: an old checkpoint has no
+        #                                  head and gets the best tap available on it, a new one
+        #                                  with a trained head uses the head. Resolved once, in
+        #                                  `_resolve_snap_source`, right after the model loads;
+        #                                  `boundary_snap_source` then holds the RESOLVED value
+        #                                  and `boundary_snap_source_requested` holds 'auto'.
+        #
+        #   'none' ....................... VANILLA. No snapping: the Viterbi framestamps are
+        #                                  emitted exactly as decoded, which is what BFA did
+        #                                  before onset snapping existed. Identical in effect to
+        #                                  `boundary_snap_radius_ms=0`, but says so by name, and
+        #                                  it overrides an explicit `boundary_snap_radius`.
+        #                                  Use it as the control arm: every "+N" in the table
+        #                                  below is measured against exactly this.
+        #
+        # Note the order: `fusion` is computed BEFORE the transformer, so nothing the
+        # transformer does can affect it except through backprop.
+        #
+        # ---------------------------------------------------------------------------------
+        # MEASURED RANKING.  Full corpora, r_value_25ms, each source at its own best radius.
+        # Sources: `tmp/results/results_TIMIT_lev.csv` (TIMIT, 6300 files) and
+        # `tmp/results/results_buckeye_lev.csv` (Buckeye, 255 files). Written up with the
+        # per-radius sweeps in `tmp/results/conclusions.md`. MFA is the external reference.
+        #
+        #   checkpoint    source             TIMIT    Buckeye    notes
+        #   ------------  -----------------  -------  ---------  ---------------------------
+        #   (MFA)         -                   0.8035    0.8164   external reference
+        #   ue03d_e04     spectral_stream     0.6895    0.6240
+        #   ue03d_e04     pre_transformer     0.6693    0.6128   <- what 'auto' picks today
+        #   ue03d_e04     boundary_head       0.6654    0.6397   UNTRAINED head, see below
+        #   ue03d_e04     embeddings          0.6146    0.5703
+        #   ue03d_e04     none                  -         -      control
+        #   en (model2i)  spectral_stream     0.6873    0.5174
+        #   en (model2i)  pre_transformer     0.6556    0.5516
+        #   en (model2i)  embeddings          0.5853    0.5128
+        #   en (model2i)  none                0.5812    0.5437   control
+        #
+        # Two things this table says that the defaults do NOT yet act on, both deliberate:
+        #
+        #  1. `spectral_stream` is the strongest source on TIMIT for BOTH checkpoint families,
+        #     and it needs no boundary head, so it works on model2i too. It is not the default
+        #     only because it loses to `pre_transformer` on Buckeye for model2i (0.5174 vs
+        #     0.5516) - i.e. it is the better bet on read speech and the worse one on
+        #     conversational speech. If your domain is closer to TIMIT, set it explicitly.
+        #  2. Snapping is worth roughly +0.07-0.11 r_value on TIMIT and much less on Buckeye,
+        #     and every BFA configuration is still well short of MFA's 0.80. Snapping moves
+        #     onsets; it does not fix the decoder.
+        #
+        # WARNING on 'boundary_head'. `bnd_head_enabled: True` in a checkpoint means the module
+        # exists, NOT that it learned anything - that is `bnd_head_lambda`, and every ue03*
+        # checkpoint released so far has `bnd_head_lambda: 0.0` ("boundary objective OFF",
+        # door 16). Their `out.weight` is still zero, so the head emits a CONSTANT (-2.2) for
+        # every frame. The argmax of a flat signal is its first index, so snapping against it
+        # degenerates into a fixed shift of `1 + offset - radius` frames plus the
+        # monotonic-spacing constraint. That shift can still beat the unsnapped decoder,
+        # because it absorbs the decoder's placement bias - which is exactly what the 0.6397
+        # Buckeye row above is. It is a shift artifact, not a detector.
+        #
+        # `model3a.CUPEEmbeddingsExtractor` records this as `boundary_head_trained`, and
+        # `_resolve_snap_source` routes 'auto' around an untrained head rather than reporting a
+        # shift as a detection result. Asking for 'boundary_head' explicitly on such a
+        # checkpoint still works, but warns.
+        #
+        # `offset` stays 0: a plain global shift of the decoder's onsets is worth +0.74 f1 held
+        # out at -1 frame and 0.00 once snapping is on, because snapping already absorbs the
+        # placement bias - which is what the indexing convention predicts a priori.
+        #
+        # This CHANGES existing alignments relative to BFA <= 1.1.5. That is deliberate:
+        # `boundary_snap_source='none'` turns snapping off entirely (as does
+        # `boundary_snap_radius_ms=0`), and `'embeddings'` restores the pre-1.2 source.
+        # Snapping never changes the onset COUNT - `detection_ratio` moves by <0.003 across
+        # every source; it moves onsets, it does not invent them.
+        self._warned_pre_window = False
         self.break_at_low_confidence = False # under construction, not fully implemented yet
         
         self._setup_decoders()
@@ -183,6 +400,16 @@ class PhonemeTimestampAligner:
             beta=14.769656459379492,
         )
         self.reset_counters()
+
+    def _info(self, msg):
+        """Informational output - resolved geometry, architecture, snap config. `warn_level>=2`."""
+        if getattr(self, 'warn_level', 1) >= 2:
+            print(msg)
+
+    def _warn(self, msg):
+        """A condition the caller should know about but that does not stop the run. `warn_level>=1`."""
+        if getattr(self, 'warn_level', 1) >= 1:
+            print(f"WARN: {msg}")
 
     def reset_counters(self):
         """Reset internal counters for tracking alignment statistics. Purely for debugging and analysis purposes."""
@@ -220,56 +447,566 @@ class PhonemeTimestampAligner:
         if cupe_ckpt_path is None or not os.path.exists(cupe_ckpt_path):
             raise ValueError("CUPE model checkpoint not found.", cupe_ckpt_path)
         torch.random.manual_seed(42)
-        self.extractor = CUPEEmbeddingsExtractor(cupe_ckpt_path, device=self.device)
+        # Which extractor to use is a property of the checkpoint, not of its filename. The old
+        # selector was an allow-list of four filenames, which silently mis-dispatched anything
+        # not on it - including every checkpoint trained since. It is gone; nothing below reads
+        # the filename.
+        #
+        # Which architecture the checkpoint IS, decided from its own weights:
+        #   `boundary_head.*`  -> model3a (contextless base + learned onset detector)
+        #   `classifier_ref.*` -> a PRE-§5.1 model3a; the extractor raises with instructions,
+        #                         because decoding it with the base heads would silently report
+        #                         a different model from the one that produced its numbers
+        #   `refiner.*` only   -> model2j (refiner over LOGITS; door 4, kept for old ckpts)
+        #   neither            -> model2i (contextless base)
+        arch = None
+        # Read the checkpoint once, for the architecture probe AND to keep its training
+        # hyperparameters so `_warn_if_stride_mismatch` can compare geometries.
+        self._ckpt_hyperparams = {}
+        try:
+            probe = torch.load(cupe_ckpt_path, map_location='cpu', weights_only=False)
+            hp = probe.get('hyper_parameters', {}) if isinstance(probe, dict) else {}
+            if hasattr(hp, '__dict__') and not isinstance(hp, dict):
+                hp = vars(hp)                       # argparse.Namespace
+            self._ckpt_hyperparams = dict(hp) if hp else {}
+            if arch is None:
+                state = probe.get('state_dict', probe)
+                if any('boundary_head.' in k or 'classifier_ref.' in k for k in state):
+                    arch = '3a'
+                elif any(k.startswith('refiner.') or '.refiner.' in k for k in state):
+                    arch = 'j'
+                else:
+                    arch = 'i'
+                del state
+            del probe, hp
+        except Exception as _e:
+            arch = arch or 'i'
+            self._warn(f"could not read checkpoint metadata ({type(_e).__name__}); "
+                       f"assuming model2{arch}.")
+
+        self._info(f"Checkpoint architecture: model{'2' if arch in ('i', 'j') else ''}{arch}")
+        if arch == '3a':
+            self.extractor = CUPEEmbeddingsExtractor_3a(cupe_ckpt_path, device=self.device,
+                                                        verbose=self.warn_level)
+        elif arch == 'j':
+            self.extractor = CUPEEmbeddingsExtractor_j(cupe_ckpt_path, device=self.device)
+        else:
+            self.extractor = CUPEEmbeddingsExtractor_i(cupe_ckpt_path, device=self.device)
         self.extractor.eval()
         
         assert self.window_size_wav is not None, "Window size in samples must be calculated before loading the model. call _setup_config() before load_model()."
         assert self.extractor.model.frames_per_window is not None, "Extractor model must have frames_per_window defined."
         self.frames_per_window = self.extractor.model.update_frames_per_window(self.window_size_wav)
 
-    def _setup_config(self, window_size_ms=120, stride_ms=80):
-        
-        """Setup configuration parameters."""
+        # Everything derived FROM the checkpoint has to be re-derived now that there is a new
+        # one: the frame stride and sub-state topology (`_resolve_geometry`), and - because
+        # `'auto'` asks the checkpoint whether it has a trained boundary head - the snap source
+        # and its per-source default radius.
+        self._resolve_geometry()
+        self._warn_if_stride_mismatch()
+        if hasattr(self, 'boundary_snap_source_requested'):
+            # Only on a re-load: during __init__ these are configured just after this returns.
+            self._resolve_snap_source()
+            self._resolve_snap_radius()
+            self._setup_decoders()
+
+    def _setup_config(self, window_size_ms=120, stride_ms=78.75, defer_geometry=False):
+
+        """Setup configuration parameters.
+
+        `stride_ms` MUST be a whole number of output frames, i.e. a multiple of the feature
+        extractor's total conv stride (210 samples = 13.125 ms here). 78.75 ms = 6 frames.
+
+        It used to default to 80 ms = 6.095 frames while `stich_window_predictions` advanced
+        `frames_per_window // 2` = 5. The two windows being averaged therefore described
+        moments 14.4 ms apart, smearing every stitched frame - which is why `abs_err_mean`
+        held at 27.7 ms with `signed_err_median` only +2 ms (a symmetric smear inflates the
+        mean without shifting the median), and why a 30% PER improvement changed alignment
+        by nothing. `frames_geometry` now raises rather than letting this recur silently.
+
+        This must match the value the model was TRAINED with - a mismatch between training
+        and inference geometry is worse than the original bug.
+        """
         self.window_size_ms = window_size_ms
         self.stride_ms = stride_ms
         self.sample_rate = 16000 # hardcoded for now, as CUPE is trained on 16kHz audio, and the resampler will convert to this sample rate if needed. In the future, we could consider making this configurable if we want to support models trained on different sample rates, but for now it's simpler to keep it fixed.
-        
+
         # Calculate window parameters
         self.window_size_wav = int(window_size_ms * self.sample_rate / 1000)
         self.stride_size_wav = int(stride_ms * self.sample_rate / 1000)
-        
-        
-        # Phoneme class configuration
+
+        # Phoneme class configuration. MUST precede `_resolve_geometry`, which reads
+        # `phoneme_classes` to work out how many sub-states the model's class width implies.
         self.phoneme_classes = len(self.phoneme_id_to_label)-1  # exclude padding 'noise' = 66
-        self.phoneme_groups = len(self.group_id_to_label)-1 # exclude padding 'noise' = 16  
+        self.phoneme_groups = len(self.group_id_to_label)-1 # exclude padding 'noise' = 16
         self.blank_class = self.phoneme_label_to_id['noise']
         self.blank_group = self.group_label_to_id['noise']
         self.silence_class = self.phoneme_label_to_id['SIL']
         self.silence_group = self.group_label_to_id['SIL']
+        self.n_substates = 1                # refined by _resolve_geometry once a model is loaded
+        self.model_blank_class = self.blank_class
         # print all these:
         #print(f"Phoneme classes: {self.phoneme_classes}, groups: {self.phoneme_groups}, blank_class: {self.blank_class}, blank_group: {self.blank_group}, silence_class: {self.silence_class}, silence_group: {self.silence_group}")
+
+        if not defer_geometry:
+            self._resolve_geometry()
+
+    def _has_trained_boundary_head(self):
+        """
+        Whether the loaded checkpoint carries a boundary head that was actually TRAINED.
+
+        Three distinct states, and only the third is usable:
+          - no extractor, or a model2i/model2j extractor  -> no head at all
+          - a model3a extractor whose head is still zero  -> head present, emits a constant
+          - a model3a extractor with a trained head       -> usable
+
+        The middle case is the one worth naming: `bnd_head_enabled: True` only says the module
+        exists. `model3a.CUPEEmbeddingsExtractor.__init__` inspects `out.weight` and records the
+        answer as `boundary_head_trained`; an older extractor without that attribute is treated
+        as untrained, which is the safe direction (it routes 'auto' to a flux tap).
+        """
+        if getattr(self, 'extractor', None) is None:
+            return False
+        if getattr(self.extractor, 'detect_boundaries', None) is None:
+            return False
+        return bool(getattr(self.extractor, 'boundary_head_trained', False))
+
+    def _resolve_snap_source(self):
+        """
+        Turn `boundary_snap_source_requested` into the concrete source to read, in
+        `self.boundary_snap_source`.
+
+        Only `'auto'` needs resolving, and it is the default, so this is the path most callers
+        take. It picks the learned head when there is a trained one and `AUTO_SNAP_FALLBACK`
+        otherwise, which is what lets a single default work across both checkpoint families.
+
+        An EXPLICIT request is never silently rewritten - being handed a different tensor than
+        you asked for is precisely the failure that makes a snap result uninterpretable - but
+        the two ways it can be unsatisfiable are reported here rather than at the first batch.
+        """
+        requested = getattr(self, 'boundary_snap_source_requested', 'auto')
+        has_head = self._has_trained_boundary_head()
+
+        if requested == 'auto':
+            self.boundary_snap_source = 'boundary_head' if has_head else AUTO_SNAP_FALLBACK
+            if getattr(self, 'extractor', None) is not None:
+                self._info(f"boundary snap: 'auto' resolved to '{self.boundary_snap_source}' "
+                           f"({'trained boundary head' if has_head else 'no trained boundary head'})")
+        else:
+            self.boundary_snap_source = requested
+
+        if self.boundary_snap_source == 'boundary_head' and getattr(self, 'extractor', None) is not None:
+            if getattr(self.extractor, 'detect_boundaries', None) is None:
+                raise ValueError(
+                    "boundary_snap_source='boundary_head' but this checkpoint has no boundary "
+                    "head (it is not a model3a checkpoint). Use 'auto', 'pre_transformer' or "
+                    "'spectral_stream'.")
+            if not has_head:
+                self._warn(
+                    "boundary_snap_source='boundary_head' but this checkpoint's head was never "
+                    "trained (bnd_head_lambda=0.0, out.weight is zero), so it emits a constant "
+                    "for every frame. Snapping against a constant is a fixed shift of "
+                    f"{1 + self.boundary_snap_offset} - radius frames, not a detection. Use "
+                    "'auto' to fall back to '" + AUTO_SNAP_FALLBACK + "' automatically.")
+        return self.boundary_snap_source
+
+    def _resolve_snap_radius(self):
+        """
+        Convert the requested radius into whole frames using the loaded model's frame stride.
+        Called from the constructor, and again by `set_boundary_snap` when retuned.
+
+        The ms default depends on the RESOLVED source (`DEFAULT_SNAP_RADIUS_MS`), so
+        `_resolve_snap_source` must have run first: `boundary_head` wants 2 frames and the flux
+        taps want 4, and applying the flux radius to a head costs 0.067 r_value.
+
+        A radius of 0 is how "no snapping" is expressed everywhere downstream - every call site
+        already guards on `boundary_snap_radius > 0`, and `snap_onsets_to_embeddings` returns
+        its input unchanged. So `boundary_snap_source='none'` resolves to 0 here rather than
+        being special-cased in five places, and it OVERRIDES an explicit `boundary_snap_radius`
+        too: 'none' means none.
+        """
+        frame_ms = 1000.0 * getattr(self, 'frame_stride_wav', 210) / self.sample_rate
+        requested_ms = self._boundary_snap_radius_ms_requested
+        if requested_ms is None:
+            requested_ms = DEFAULT_SNAP_RADIUS_MS.get(self.boundary_snap_source,
+                                                      DEFAULT_SNAP_RADIUS_MS_FALLBACK)
+        self.boundary_snap_radius_ms = float(requested_ms)
+
+        if self.boundary_snap_source == 'none':
+            self.boundary_snap_radius = 0
+        elif self._boundary_snap_radius_override is not None:
+            self.boundary_snap_radius = self._boundary_snap_radius_override
+        elif self.boundary_snap_radius_ms <= 0:
+            self.boundary_snap_radius = 0
+        else:
+            # round, but never collapse a positive request to 0 frames
+            self.boundary_snap_radius = max(1, int(round(self.boundary_snap_radius_ms / frame_ms)))
+        self.boundary_snap_frame_ms = frame_ms
+        return self.boundary_snap_radius
+
+    def set_boundary_snap(self, radius_ms=None, radius_frames=None, offset=None, source=None,
+                          verbose=None):
+        """
+        Retune onset snapping on a live aligner, for sweeping without reconstructing it.
+
+        Args:
+            radius_ms: search half-width in ms. `0` disables snapping; `'default'` restores the
+                per-source default from `DEFAULT_SNAP_RADIUS_MS`.
+            radius_frames: explicit override in frames; takes precedence over `radius_ms`.
+                Pass `'clear'` to drop a previous override and go back to the ms value.
+            offset: frames added after the argmax (see `snap_onsets_to_embeddings`).
+            source: one of `SNAP_SOURCES` - which tensor to snap against, `'auto'` to re-resolve
+                against the loaded checkpoint, or `'none'` for vanilla (no snapping, the
+                decoder's own framestamps). `'none'` is the control arm every gain in the table
+                on `boundary_snap_source` is measured against. While the source is `'none'` the
+                radius stays 0 whatever `radius_ms` or `radius_frames` say - the reported line
+                prints `[DISABLED]` to show it.
+            verbose: print the resolved configuration. `None` (default) follows `warn_level>=2`.
+
+        Note that changing only `source` also changes the radius when no explicit radius was
+        ever given, because the default radius is per-source.
+
+        Returns:
+            The resolved radius in frames.
+        """
+        if radius_ms is not None:
+            self._boundary_snap_radius_ms_requested = (None if radius_ms == 'default'
+                                                       else float(radius_ms))
+            self._boundary_snap_radius_override = None
+        if radius_frames is not None:
+            self._boundary_snap_radius_override = (None if radius_frames == 'clear'
+                                                   else int(radius_frames))
+        if offset is not None:
+            self.boundary_snap_offset = int(offset)
+        if source is not None:
+            source = str(source).lower()
+            if source not in SNAP_SOURCES:
+                raise ValueError(f"source must be one of {'|'.join(SNAP_SOURCES)}, got {source!r}")
+            self.boundary_snap_source_requested = source
+            self._resolve_snap_source()
+        r = self._resolve_snap_radius()
+        line = (f"boundary snap: source {self.boundary_snap_source}, radius {r} frames "
+                f"({r * self.boundary_snap_frame_ms:.3f} ms), offset {self.boundary_snap_offset}"
+                f"{'  [DISABLED]' if r <= 0 else ''}")
+        if verbose or (verbose is None and self.warn_level >= 2):
+            print(line)
+        return r
+
+    def _warn_if_stride_mismatch(self):
+        """
+        Warn when the checkpoint was TRAINED at a different window stride than this aligner
+        decodes at.
+
+        `session_notes.md` §17.7: the training stitch advanced a hard-coded
+        `frames_per_window // 2` = 5 frames while `window_stride_ms: 80` is 6.095 true frames,
+        so training implied a fictitious 16 ms/frame grid where inference uses the real
+        13.125 ms. It does not invalidate the weights - CUPE is a per-window classifier and the
+        stitch is post-hoc placement - but it is worth surfacing rather than leaving silent,
+        because it means the model was trained against slightly smeared supervision.
+        """
+        hp = getattr(self, '_ckpt_hyperparams', None) or {}
+        trained = hp.get('window_stride_ms', None)
+        if trained is None:
+            return
+        if abs(float(trained) - float(self.stride_ms)) > 1e-6:
+            frame_ms = 1000.0 * self.frame_stride_wav / self.sample_rate
+            self._info(
+                f"checkpoint was TRAINED at window_stride_ms={trained} but this aligner "
+                f"decodes at {self.stride_ms}. "
+                f"({float(trained) * self.sample_rate / 1000.0 / self.frame_stride_wav:.4f} vs "
+                f"{float(self.stride_ms) * self.sample_rate / 1000.0 / self.frame_stride_wav:.4f} "
+                f"output frames per window step, at {frame_ms:g} ms/frame.) "
+                f"Weights remain valid - CUPE is per-window and the stitch is post-hoc - the "
+                f"training stitch simply advanced a whole 5 frames for a 6.095-frame step.")
+
+    def snap_onsets_to_embeddings(self, batch_framestamps, embeddings, spectral_lens,
+                                  radius=None, offset=0):
+        '''
+        Move each phoneme ONSET to the strongest embedding-change frame nearby.
+        `session_notes.md` §4 / §15.1 / §16 - inference only, no retraining.
+
+        ## Why
+
+        The Viterbi reads `log_softmax(logits_class)`, the 67-d posteriors. Measured twice, on
+        two different checkpoints, with the same probe:
+
+            emb_cos  (512-d embeddings, pre-classifier)  peak-pick f1@25  53.33
+            post_jsd (67-d posteriors, what Viterbi reads)                49.13
+            random floor                                                 43.84
+
+        A well-trained CUPE is near one-hot INSIDE a phone, so posterior change collapses to a
+        near-binary "the argmax flipped" indicator with no graded sub-frame placement. The
+        embeddings keep that gradation. The decoder is therefore placing boundaries with a
+        strictly worse signal than the model has already computed.
+
+        This keeps the decoder's phone identities and sequence - which the lattice and the text
+        phonemization guarantee - and only moves WHERE each onset sits.
+
+        ## Measured (full TIMIT, 6300 files, r_value_25ms; `tmp/results/conclusions.md`)
+
+            checkpoint    none     pre_transformer   spectral_stream   boundary_head
+            en (model2i)  0.5812        0.6556            0.6873            n/a
+            ue03d_e04       -           0.6693            0.6895           0.6654
+
+        ## Constraints
+
+        Onsets stay strictly increasing and inside their neighbours' original positions, so
+        snapping can never reorder phones or collapse two onto one frame. Each phone's end is
+        then re-derived from its new start: carried to the next onset where the two were
+        contiguous before snapping, and otherwise shifted by the same amount as the start so the
+        duration survives a gap. Every emitted segment spans at least one frame - see the
+        comment at that clamp for the zero-duration bug this replaced.
+
+        ## Two kinds of source tensor
+
+        `embeddings` may be either:
+
+          - **[B, T, D]**, a feature map -> the change signal is `1 - cos(x[t], x[t+1])`, i.e.
+            spectral flux when D is the CNN feature dim. This is the historical behaviour.
+          - **[B, T]** (or [B, T, 1]), a per-frame boundary SCORE, e.g. `BoundaryHead`'s logit
+            -> the signal is `score[t+1]`, so that `argmax + 1` lands on the scored frame
+            itself. The head is trained on the FRAME index (`logit[b]` for an onset at `b`)
+            while `s` lives on the PAIR index, and this shift is what reconciles them. It is
+            asserted in `p2cupe/boundary_loss.py`'s `__main__`, and it fails silently if wrong.
+
+        Everything after the signal - the argmax, the `+1`, the monotonicity constraints, the
+        end-carrying - is shared, so the two sources differ ONLY in what is being maximised.
+
+        Args:
+            batch_framestamps: list per clip of (phoneme_id, start_frame, end_frame, target_idx)
+            embeddings: stitched [B, T, D] feature map, or [B, T] per-frame boundary scores
+            spectral_lens: valid frame count per clip
+            radius: search half-width in FRAMES. `None` uses `self.boundary_snap_radius`;
+                `0` disables. 4 frames = 52.5 ms at the 210-sample stride. The optimum is flat
+                over 3-6 frames, so this is not a sharp tuning parameter.
+            offset: frames added after the argmax. `s[t]` compares frames t and t+1, so the
+                onset is `t+1`; `offset=0` was best on both slices and is what the indexing
+                convention predicts a priori.
+        Returns:
+            New list of framestamps with snapped start (and adjusted end) frames.
+        '''
+        if radius is None:
+            radius = int(getattr(self, 'boundary_snap_radius', 0))
+        if radius <= 0 or embeddings is None:
+            return batch_framestamps
+
+        # A [B, T, 1] map carries no cosine information, so treat it as a per-frame score too.
+        per_frame_score = (embeddings.dim() == 2) or (embeddings.shape[-1] == 1)
+
+        out_batch = []
+        for i, framestamps in enumerate(batch_framestamps):
+            if not framestamps:
+                out_batch.append(framestamps)
+                continue
+            T = int(spectral_lens[i]) if spectral_lens is not None else embeddings.shape[1]
+            T = max(2, min(T, embeddings.shape[1]))
+            if per_frame_score:
+                # `score[t+1]` so that the shared `argmax + 1` below lands on the scored frame.
+                score = embeddings[i, :T].float().reshape(T)
+                sig = score[1:].cpu().numpy()
+            else:
+                emb = embeddings[i, :T].float()
+                sig = (1.0 - F.cosine_similarity(emb[:-1], emb[1:], dim=-1)).cpu().numpy()
+            if sig.size == 0:
+                out_batch.append(framestamps)
+                continue
+
+            stamps = list(framestamps)
+            new_starts = []
+            lo_bound = 0
+            for j, (_ph, start_frame, _end, _idx) in enumerate(stamps):
+                f = int(start_frame)
+                lo = max(lo_bound, f - radius, 0)
+                hi = min(f + radius, len(sig) - 1)
+                if hi < lo:
+                    # No searchable window (the phone sits past the end of the signal, or a
+                    # previous snap pushed `lo_bound` beyond it). Keep the decoder's frame, but
+                    # clamp into range so the end arithmetic below cannot run off the tensor -
+                    # `spectral_lens` can exceed the stitched length by a frame.
+                    f = max(0, min(f, T - 1))
+                    new_starts.append(f)
+                    lo_bound = f + 1
+                    continue
+                best = int(sig[lo:hi + 1].argmax()) + lo
+                cand = best + 1 + offset
+                nxt = int(stamps[j + 1][1]) if j + 1 < len(stamps) else T
+                cand = int(min(max(cand, lo_bound), max(lo_bound, min(nxt - 1, T - 1))))
+                new_starts.append(cand)
+                lo_bound = cand + 1
+
+            snapped = []
+            for j, (ph, start_frame, end_frame, idx) in enumerate(stamps):
+                new_start = new_starts[j]
+                # Where the NEXT phone now begins; `T` for the last one. `new_starts` is
+                # strictly increasing, so this is always >= new_start + 1 and there is always
+                # room for a one-frame segment.
+                nxt_start = new_starts[j + 1] if j + 1 < len(stamps) else T
+
+                if j + 1 < len(stamps) and int(end_frame) >= int(stamps[j + 1][1]) - 1:
+                    # Contiguous with its neighbour before snapping: keep it contiguous, so the
+                    # segmentation stays gap-free rather than only its onsets being right.
+                    new_end = nxt_start
+                else:
+                    # Not contiguous - there was a genuine gap (a blank run) after this phone.
+                    # Shift the end by the same amount as the start so the DURATION survives.
+                    #
+                    # This is the fix for the collapse that made snapping unusable on model2i
+                    # checkpoints: the old code left `new_end` at the ORIGINAL end and then
+                    # clamped with `max(new_end, new_start)`, so any onset that snapped past its
+                    # own end produced a zero-length segment. `_calculate_confidences` scores
+                    # such a segment as `probs[start, ph]` at a frame the phone is no longer on,
+                    # which is how "b 65.6 65.6 c=0.000" came out of butterfly.wav - a real
+                    # phoneme reported with zero duration and zero confidence.
+                    new_end = int(end_frame) + (new_start - int(start_frame))
+
+                new_end = min(new_end, nxt_start, T)
+                new_end = max(new_end, new_start + 1)   # never emit an empty segment
+                snapped.append((ph, new_start, new_end, idx))
+            out_batch.append(snapped)
+        return out_batch
+
+    def _expand_substates(self, seqs, seq_lens):
+        '''
+        Re-label a phone sequence as its begin/middle/end triplets, for a sub-state model.
+
+            [p, q]  ->  [p_B, p_M, p_E, q_B, q_M, q_E]      substate_id = n_sub * base + sub
+
+        The three ids are distinct, which is what makes this a valid CTC target sequence.
+        A no-op when the loaded model has one state per phone.
+
+        Args:
+            seqs: [B, S] base ph66 ids
+            seq_lens: [B] sequence lengths in phones
+        Returns:
+            ([B, S * n_sub] expanded ids, [B] expanded lengths)
+        '''
+        n_sub = getattr(self, 'n_substates', 1)
+        if n_sub <= 1:
+            return seqs, seq_lens
+        B, S = seqs.shape
+        offsets = torch.arange(n_sub, device=seqs.device, dtype=seqs.dtype)
+        expanded = ((seqs * n_sub).unsqueeze(-1) + offsets).reshape(B, S * n_sub)
+        return expanded, seq_lens * n_sub
+
+    def _collapse_substates(self, batch_framestamps):
+        '''
+        Map sub-state framestamps back to phones.
+
+        Framestamps are `(phoneme_id, start_frame, end_frame, target_seq_idx)`. The three
+        sub-states of one phone are consecutive entries sharing
+        `target_seq_idx // n_sub`, so they are merged into a single entry spanning
+        `min(start)` to `max(end)`: the phone's onset is the first frame of its *begin*
+        sub-state, which is exactly the quantity the eval scores.
+
+        `phoneme_id // n_sub` recovers the base ph66 id and is correct for blank as well,
+        blank being the last id in both spaces.
+        '''
+        n_sub = getattr(self, 'n_substates', 1)
+        if n_sub <= 1:
+            return batch_framestamps
+
+        collapsed_batch = []
+        for framestamps in batch_framestamps:
+            merged = []
+            for phoneme_id, start_frame, end_frame, target_idx in framestamps:
+                base_id = int(phoneme_id) // n_sub
+                base_idx = int(target_idx) // n_sub if int(target_idx) >= 0 else int(target_idx)
+                if merged and merged[-1][3] == base_idx and base_idx >= 0 and merged[-1][0] == base_id:
+                    prev = merged[-1]
+                    merged[-1] = (prev[0], min(prev[1], int(start_frame)),
+                                  max(prev[2], int(end_frame)), prev[3])
+                else:
+                    merged.append((base_id, int(start_frame), int(end_frame), base_idx))
+            collapsed_batch.append(merged)
+        return collapsed_batch
+
+    def _resolve_geometry(self):
+        """
+        Derive the frame geometry from the loaded model, and the sub-state topology from its
+        class width.
+
+        Samples per output frame = product of the feature extractor's conv strides. NOT
+        `window_size_wav / frames_per_window` (1920/10 = 192): that is the average density
+        including padding-compressed edge frames, while the interior frames are genuinely
+        `stride` apart (verified by gradient centroid).
+
+        Must be called AFTER `load_model`, or `self.extractor` is None and the stride silently
+        falls back to 210 - correct for a `cnn_last_stride: 2` model, and a factor-of-two error
+        for a `cnn_last_stride: 1` one.
+        """
+        import torch.nn as _nn
+        model = getattr(self.extractor, 'model', self.extractor)
+        src = getattr(model, 'feature_extractor', None)
+        self.frame_stride_wav = 210
+        if src is not None:
+            st = 1
+            for m in src.modules():
+                if isinstance(m, _nn.Conv1d):
+                    st *= int(m.stride[0])
+            self.frame_stride_wav = st
+        elif self.extractor is not None:
+            # An extractor with no feature extractor is a real anomaly. With no extractor at all
+            # (`preset=None`, model loaded later) the 210 fallback is just a placeholder that
+            # `load_model` will overwrite, so there is nothing to report.
+            self._warn("no feature_extractor found; assuming a 210-sample frame stride. "
+                       "If this model was trained with cnn_last_stride: 1, every timestamp will "
+                       "be out by 2x.")
+
+        # Sub-states: the model's class width tells us how many states each phone was split
+        # into. 67 = one state per phone (the original space), 199 = begin/middle/end.
+        # See modules/p2cupe/substates.py - substate_id = n_sub * base_id + sub, so the
+        # collapse is a plain floor-divide and is correct for blank too.
+        classes_dim = getattr(model, 'classes_dim', self.phoneme_classes + 1)
+        base_dim = self.phoneme_classes + 1
+        self.n_substates = max(1, int(round(classes_dim / base_dim)))
+        if self.n_substates * base_dim != classes_dim:
+            raise ValueError(
+                f"model emits {classes_dim} classes, which is not a whole multiple of the "
+                f"{base_dim}-class ph66 space; cannot infer the sub-state topology")
+        self.model_classes_dim = classes_dim
+        # The class-space decoder runs in the MODEL's label space, so its blank is the last id
+        # there (198 for a 3-state model), not the base ph66 blank (66). Getting this wrong
+        # would point the Viterbi's blank state at a real phoneme's middle sub-state.
+        self.model_blank_class = classes_dim - 1
+
+        frames_per_window = int(round(self.window_size_wav / self.frame_stride_wav)) + 1
+        self.stride_frames, _, _ = frames_geometry(
+            self.window_size_ms, self.stride_ms, self.sample_rate,
+            frames_per_window, self.frame_stride_wav, strict=True)
+        self._info(f"BFA geometry: window {self.window_size_ms}ms, stride {self.stride_ms}ms = "
+                   f"{self.stride_frames} frames, frame stride {self.frame_stride_wav} samples "
+                   f"({1000.0*self.frame_stride_wav/self.sample_rate:g} ms/frame), "
+                   f"{self.n_substates} sub-state(s)/phone, {classes_dim} classes")
 
     def _setup_decoders(self):
         """Setup Viterbi decoders for phoneme classes and groups."""
         
-        # Alignment utilities
+        # Alignment utilities.
+        # The group decoder runs in the flat 17-way group space, unaffected by sub-states.
+        # The class decoder runs in the MODEL's class space, so its blank is `model_blank_class`
+        # (198 for a 3-state model, 66 otherwise) - the base ph66 blank would land on a real
+        # phoneme's middle sub-state. Likewise silence is SIL's *begin* sub-state, which is id
+        # 0 under `substate_id = n_sub * base + sub`, so `silence_class` needs no adjustment.
         self.alignment_utils_g = AlignmentUtils(blank_id=self.blank_group, silence_id=self.silence_group, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise, truly_forced=self.enforce_all_targets)
-        self.alignment_utils_p = AlignmentUtils(blank_id=self.blank_class, silence_id=self.silence_class, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise, truly_forced=self.enforce_all_targets)
+        self.alignment_utils_p = AlignmentUtils(blank_id=self.model_blank_class, silence_id=self.silence_class, silence_anchors=self.silence_anchors, ignore_noise=self.ignore_noise, truly_forced=self.enforce_all_targets, n_substates=getattr(self, 'n_substates', 1))
 
 
-    def download_model(self, model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", local_dir=None):
+    def download_model(self, model_name=None, local_dir=None):
         """Download the specified model from hugging face using huggingface_hub.
 
 
-        -   `model_name (str)`: Name of the model checkpoint to download. Must be one of the available models in the Tabahi/CUPE-2i repository.
+        -   `model_name (str)`: Name of the model checkpoint to download. Must be one of the available models in the Tabahi/CUPE-2i repository. Defaults to the English model3a checkpoint (`presets.MODEL3A_EN`); `presets.py` is the single place every checkpoint filename is written down.
         -   `local_dir (str or Path, optional)`: If provided, the downloaded file will be placed under this directory.
 
         """
         from huggingface_hub import hf_hub_download
-        
+        from .presets import MODEL3A_EN
+
+        if model_name is None:
+            model_name = MODEL3A_EN
         repo_id = "Tabahi/CUPE-2i"
         filename = f"ckpt/{model_name}"
-        
+
         try:
             # Just return the cached path directly
             model_path = hf_hub_download(
@@ -278,9 +1015,9 @@ class PhonemeTimestampAligner:
                 local_dir=local_dir,
                 local_files_only=False
             )
-            print(f"Model available at: {model_path}")
+            self._info(f"Model available at: {model_path}")
             return model_path
-            
+
         except Exception as e:
             raise Exception(f"Error downloading model: {e}")
 
@@ -393,22 +1130,91 @@ class PhonemeTimestampAligner:
         
         batch_size, num_windows, window_size = windowed_audio.shape
         windows_flat = windowed_audio.reshape(-1, window_size)
-        
+
+        # model2j checkpoints may carry a second-stage ContextualRefiner (see model2j.py);
+        # model2i and model3a extractors have no such attribute. Either way it needs the
+        # stitched embeddings to run, regardless of whether the caller itself wants them back.
+        # (model3a's post-stitch refiner was DELETED in session_notes.md §5.1 - door 14. What a
+        # model3a checkpoint adds now is a boundary head, handled below as a snap source.)
+        refiner = getattr(self.extractor, 'refiner', None)
+        # Onset snapping reads the stitched embeddings too when its source is 'embeddings',
+        # so they must be computed whenever that is the case - not only when the caller wants
+        # them returned. `boundary_snap_source` is the RESOLVED source here: 'auto' was turned
+        # into a concrete tap by `_resolve_snap_source` when the model loaded, so it can never
+        # reach this far.
+        snapping_on = (getattr(self, 'boundary_snap_radius', 0) or 0) > 0
+        need_embeddings = (extract_embeddings or (refiner is not None)
+                           or (snapping_on and self.boundary_snap_source == 'embeddings'))
+
+        # Whether the onset snapper wants a PRE-TRANSFORMER tap. Asked for from the same forward,
+        # so it costs nothing beyond the extra stitch. Only 'embeddings' reads post-transformer,
+        # so every other source needs one.
+        #
+        # Order along the forward path, with each tap's TIMIT r_value_25ms on ue03d_e04 - the
+        # full diagram and the caveats are on `boundary_snap_source` in __init__:
+        #
+        #   feature_extractor → temporal ‖ spectral → fusion → window_processor → posteriors
+        #                                   ↑           ↑            ↑                ↑
+        #                        'spectral_stream'  'pre_transformer'  'embeddings'  'none'
+        #                            0.6895          0.6693           0.6146      control
+        #
+        # 'none' is vanilla - snapping off, the decoder's own framestamps. It resolves to
+        # radius 0 in `_resolve_snap_radius`, so every guard below already handles it.
+        #
+        want_pre_window = snapping_on and self.boundary_snap_source in (
+            'pre_transformer', 'spectral_stream', 'boundary_head')
+
+        # WHICH tap. For 'boundary_head' it is not a choice: the head was trained on one tensor
+        # and the checkpoint carries which (`bnd_source`), so feeding it the other would score
+        # low without raising.
+        if self.boundary_snap_source == 'spectral_stream':
+            want_tap = 'spectral_stream'
+        elif self.boundary_snap_source == 'boundary_head':
+            want_tap = str(getattr(self.extractor, 'bnd_source', 'fusion'))
+        else:
+            want_tap = 'fusion'
+
         # Get predictions
-        if extract_embeddings:
-            logits_class, logits_group, embeddings = self.extractor.predict(
-                windows_flat, 
-                return_embeddings=True, 
-                groups_only=False
-            )
+        pre_window = None
+        if need_embeddings or want_pre_window:
+            if want_pre_window:
+                try:
+                    logits_class, logits_group, embeddings, pre_window = self.extractor.predict(
+                        windows_flat, return_pre_window=True, groups_only=False, tap=want_tap)
+                except TypeError:
+                    # An extractor that predates `return_pre_window` / `tap`. Say so rather than
+                    # silently snapping against a different tensor than the caller asked for -
+                    # a snap result read off the wrong tap is not interpretable.
+                    if self.boundary_snap_source in ('boundary_head', 'spectral_stream'):
+                        raise ValueError(
+                            f"boundary_snap_source={self.boundary_snap_source!r} needs an "
+                            f"extractor that can supply the requested pre-transformer tap "
+                            f"({want_tap})"
+                            + (" and a checkpoint with a trained BoundaryHead (model3a)"
+                               if self.boundary_snap_source == 'boundary_head' else "")
+                            + ". This one cannot; use 'auto', 'pre_transformer' or 'embeddings'.")
+                    if self.boundary_snap_source == 'pre_transformer' and not self._warned_pre_window:
+                        self._warn("this extractor cannot supply pre-transformer features; "
+                                   "falling back to boundary_snap_source='embeddings', which "
+                                   "measures barely above no snapping at all (TIMIT r_value "
+                                   "0.5853 vs 0.5812 for 'none').")
+                        self._warned_pre_window = True
+                    logits_class, logits_group, embeddings = self.extractor.predict(
+                        windows_flat, return_embeddings=True, groups_only=False)
+            else:
+                logits_class, logits_group, embeddings = self.extractor.predict(
+                    windows_flat,
+                    return_embeddings=True,
+                    groups_only=False
+                )
         else:
             logits_class, logits_group = self.extractor.predict(
-                windows_flat, 
-                return_embeddings=False, 
+                windows_flat,
+                return_embeddings=False,
                 groups_only=False
             )
             embeddings = None
-        
+
         frames_per_window = logits_group.shape[1]
         
         # Reshape outputs
@@ -425,7 +1231,8 @@ class PhonemeTimestampAligner:
             cnn_output_size=frames_per_window, 
             sample_rate=self.sample_rate, 
             window_size_ms=self.window_size_ms, 
-            stride_ms=self.stride_ms
+            stride_ms=self.stride_ms,
+            stride_frames=self.stride_frames
         )
         
         logits_group = stich_window_predictions(
@@ -434,30 +1241,89 @@ class PhonemeTimestampAligner:
             cnn_output_size=frames_per_window, 
             sample_rate=self.sample_rate, 
             window_size_ms=self.window_size_ms, 
-            stride_ms=self.stride_ms
+            stride_ms=self.stride_ms,
+            stride_frames=self.stride_frames
         )
         
-        if extract_embeddings and embeddings is not None:
+        if need_embeddings and embeddings is not None:
             embeddings = embeddings.reshape(batch_size, num_windows, frames_per_window, -1)
             embeddings = stich_window_predictions(
-                embeddings, 
+                embeddings,
                 original_audio_length=original_audio_length,
-                cnn_output_size=frames_per_window, 
-                sample_rate=self.sample_rate, 
-                window_size_ms=self.window_size_ms, 
-                stride_ms=self.stride_ms
+                cnn_output_size=frames_per_window,
+                sample_rate=self.sample_rate,
+                window_size_ms=self.window_size_ms,
+                stride_ms=self.stride_ms,
+                stride_frames=self.stride_frames
             )
-        
-        # Calculate spectral length
-        spectral_lens = calc_spec_len_ext(
-            torch.tensor(wav_lens), 
-            self.window_size_ms, 
-            self.stride_ms, 
-            self.sample_rate, 
-            torch.tensor(frames_per_window, dtype=torch.long)
-        ).tolist()
 
-        return logits_class, logits_group, embeddings, spectral_lens
+        # The pre-transformer map is stitched on the SAME geometry, so an onset index means the
+        # same moment in both tensors and the snapper's arithmetic is unchanged.
+        if pre_window is not None:
+            pre_window = stich_window_predictions(
+                pre_window.reshape(batch_size, num_windows, frames_per_window, -1),
+                original_audio_length=original_audio_length,
+                cnn_output_size=frames_per_window,
+                sample_rate=self.sample_rate,
+                window_size_ms=self.window_size_ms,
+                stride_ms=self.stride_ms,
+                stride_frames=self.stride_frames
+            )
+
+        # Calculate spectral length
+        spectral_lens_t = calc_spec_len_ext(
+            torch.tensor(wav_lens),
+            self.window_size_ms,
+            self.stride_ms,
+            self.sample_rate,
+            torch.tensor(frames_per_window, dtype=torch.long),
+            stride_frames=self.stride_frames
+        )
+        spectral_lens = spectral_lens_t.tolist()
+
+        # Stage 2a: model3a - the LEARNED onset detector, read off the stitched feature map.
+        # Mirrors `p2cupe/trainer.py::forward`, which is the definition of correct: the head was
+        # trained on the stitched tensor, so it is applied to the stitched tensor.
+        #
+        # It touches nothing else. The posteriors, the decoder, the phone identities and the
+        # sequence are exactly model2i's - this only offers `snap_onsets_to_embeddings` a
+        # different signal to maximise, selected by `boundary_snap_source`.
+        boundary_logit = None
+        if self.boundary_snap_source == 'boundary_head' and pre_window is not None:
+            detect = getattr(self.extractor, 'detect_boundaries', None)
+            if detect is None:
+                # `_resolve_snap_source` already rejects this at load time; kept as a guard for
+                # a caller that reassigned `boundary_snap_source` directly.
+                raise ValueError(
+                    "boundary_snap_source='boundary_head' but this checkpoint has no "
+                    "BoundaryHead (it is not a model3a). Use 'auto' or 'pre_transformer'.")
+            boundary_logit = detect(pre_window)
+
+        # Stage 2: contextual refinement over the whole clip (model2j only). Mirrors
+        # maestro6.ComposedModel.forward - zero-initialised heads + residual on the base
+        # logits mean a checkpoint with an untrained/no-op refiner reproduces the base
+        # model exactly, so this is safe to always apply when a refiner is present.
+        if refiner is not None:
+            with torch.no_grad():
+                logits_class, logits_group = refiner(
+                    embeddings,
+                    lengths=spectral_lens_t.to(embeddings.device),
+                    base_logits_class=logits_class,
+                    base_logits_group=logits_group,
+                )
+                self._info(f"Refiner applied: logits_class shape {logits_class.shape}, "
+                           f"logits_group shape {logits_group.shape}")
+            if not extract_embeddings and not (getattr(self, 'boundary_snap_radius', 0) or 0) > 0:
+                embeddings = None
+
+        # The snap source, resolved here so the caller does not re-derive the policy:
+        #   'boundary_head'                      -> the head's per-frame logit  [B, T]
+        #   'pre_transformer' / 'spectral_stream'-> the stitched CNN map        [B, T, D]
+        #   'embeddings'                         -> the 512-d embeddings        [B, T, D]
+        snap_source = boundary_logit if boundary_logit is not None else (
+            pre_window if pre_window is not None else embeddings)
+
+        return logits_class, logits_group, embeddings, spectral_lens, snap_source
     
     def ensure_target_coverage(self, phoneme_sequences, aligned_frames, seq_lens=None, _silence_class=0, debug=False):
         '''
@@ -885,7 +1751,7 @@ class PhonemeTimestampAligner:
 
         assert self.extractor is not None, "CUPE extractor model is not loaded. Use load_model() to load the model before calling this method."
 
-        logits_class, logits_group, embeddings, spectral_lens = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings)
+        logits_class, logits_group, embeddings, spectral_lens, snap_source = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings)
 
 
         # Prepare sequences for alignment
@@ -899,16 +1765,38 @@ class PhonemeTimestampAligner:
         log_probs_p = F.log_softmax(logits_class, dim=2)
 
         
+        # With a sub-state model the class head emits p_B/p_M/p_E, so the phone lattice is
+        # built over the EXPANDED sequence and the framestamps are collapsed straight back.
+        # Doing it at this boundary rather than inside the Viterbi keeps the decoder itself
+        # (and door 7's settled blank-stride behaviour) completely untouched: the triplet
+        # simply occupies the slots one phone used to, and the three sub-state labels are
+        # distinct, so CTC's skip transition already permits a direct B->M->E walk.
+        decode_ph_seqs, decode_ph_lens = self._expand_substates(ph_seqs, ph_seq_lens)
+
         frame_phonemes = self.alignment_utils_p.decode_alignments(
                     log_probs_p,
-                    true_seqs=ph_seqs,
+                    true_seqs=decode_ph_seqs,
                     pred_lens=spectral_lens,
-                    true_seqs_lens=ph_seq_lens,
+                    true_seqs_lens=decode_ph_lens,
                     forced_alignment=True,
                     boost_targets=self.boost_targets,
                     enforce_minimum=self.enforce_minimum,
                     debug=debug
                 )
+        frame_phonemes = self._collapse_substates(frame_phonemes)
+
+        # §4 route 1: re-place the onsets using the embedding change signal, which carries
+        # boundary information the posteriors have lost. Identities and order are untouched.
+        # Applied BEFORE ensure_target_coverage/extend_soft_boundaries so those still see a
+        # well-formed, monotonic segmentation. `boundary_snap_radius=0` disables it.
+        if (getattr(self, 'boundary_snap_radius', 0) or 0) > 0:
+            # `snap_source` is already resolved by `_cupe_prediction_batch` from
+            # `boundary_snap_source`: the head's per-frame logit, the pre-transformer map, or
+            # the 512-d embeddings. `snap_onsets_to_embeddings` reads the per-frame and the
+            # feature-map forms differently but places onsets identically.
+            frame_phonemes = self.snap_onsets_to_embeddings(
+                frame_phonemes, snap_source, spectral_lens,
+                radius=self.boundary_snap_radius, offset=self.boundary_snap_offset)
 
         # Forced alignment with target boosting
         frame_groups = self.alignment_utils_g.decode_alignments(
@@ -925,7 +1813,7 @@ class PhonemeTimestampAligner:
         frame_phonemes = self.ensure_target_coverage(phoneme_sequences, aligned_frames=frame_phonemes, seq_lens=ph_seq_lens, _silence_class=self.silence_class, debug=debug)
         frame_groups = self.ensure_target_coverage(group_sequences, aligned_frames=frame_groups, seq_lens=ph_seq_lens, _silence_class=self.silence_group, debug=debug)
 
-        if self.extend_soft_boundaries:
+        if self.extend_soft_boundaries and self.boundary_softness > 0:
             if debug: print("Extending end boundaries of aligned phonemes/groups based on confidence scores...")
             frame_phonemes = self.extend_soft_boundaries_func(log_probs_p, frame_phonemes, boundary_softness=self.boundary_softness, debug=debug)
             frame_groups = self.extend_soft_boundaries_func(log_probs_g, frame_groups, boundary_softness=self.boundary_softness, debug=False)
@@ -941,14 +1829,16 @@ class PhonemeTimestampAligner:
                 spectral_lens[b],
                 start_offset_times[b] if isinstance(start_offset_times, (list, tuple)) else start_offset_times,
                 wav_lens[b],
-                self.resampler_sample_rate
+                self.resampler_sample_rate,
+                frame_stride_samples=self.frame_stride_wav
             )
             frame_groups[b] = convert_to_ms(
                 frame_groups[b],
                 spectral_lens[b],
                 start_offset_times[b] if isinstance(start_offset_times, (list, tuple)) else start_offset_times,
                 wav_lens[b],
-                self.resampler_sample_rate
+                self.resampler_sample_rate,
+                frame_stride_samples=self.frame_stride_wav
             )
 
             # Resort phonemes and groups by timestamp after adding missing phonemes
@@ -1015,7 +1905,7 @@ class PhonemeTimestampAligner:
             )
 
         # CUPE forward pass (no embeddings)
-        logits_class, _, _, spectral_lens = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings=False)
+        logits_class, _, _, spectral_lens, _ = self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings=False)
 
         # Log softmax
         log_probs_p = F.log_softmax(logits_class, dim=2)

@@ -170,7 +170,10 @@ def main(audio_path, text_or_srt, output_path,
             duration_max=duration_max,
             device=device,
             boost_targets=boost_targets,
-            silence_anchors=silence_anchors
+            silence_anchors=silence_anchors,
+            # --debug turns on the informational output (resolved architecture, frame
+            # geometry, snap source); without it only real warnings are printed.
+            warn_level=2 if debug else 1,
         )
 
         if debug:

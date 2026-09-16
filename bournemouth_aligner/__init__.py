@@ -4,7 +4,7 @@ Bournemouth Forced Aligner - Phoneme-level timestamp extraction from audio using
 URL: https://github.com/tabahi/bournemouth-forced-aligner
 """
 
-__version__ = "0.1.0"
+__version__ = "1.2.0"
 
 from .core import PhonemeTimestampAligner
 

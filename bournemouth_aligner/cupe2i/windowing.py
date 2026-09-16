@@ -4,6 +4,72 @@ import torch
 import math
 
 
+def frames_geometry(window_size_ms, stride_ms, sample_rate, frames_per_window,
+                    frame_stride_samples, strict=True):
+    '''
+    Resolve how many OUTPUT frames one window stride advances.
+
+    ## Why this exists (2026-08-02)
+
+    `stich_window_predictions` used to hard-code `stride_frames = frames_per_window // 2`,
+    which is only correct when `stride_ms == window_size_ms / 2`. The shipped config was
+    `window_size_ms=120, stride_ms=80` - a 2/3 advance - so the stitch placed window `i`
+    frame 7 and window `i+1` frame 2 at the SAME global index and averaged them, even
+    though (measured from the conv stack by gradient centroid) those two frames describe
+    moments **14.4 ms apart**.
+
+    Every stitched frame was therefore a blend of two predictions about different instants:
+    a ~14 ms smear applied unconditionally, which no acoustic model can undo. It explains
+    why `abs_err_mean` sat at 27.7 ms while `signed_err_median` stayed near +2 ms (a
+    symmetric smear inflates the mean error without shifting the median), and why three
+    rounds of loss work plus a 30% PER improvement moved alignment by nothing.
+
+    The advance must be `stride_samples / frame_stride_samples`, where `frame_stride_samples`
+    is the product of the feature extractor's conv strides (7*5*3*2 = 210 here) - NOT
+    `window_size_samples / frames_per_window` (1920/10 = 192), which is the average frame
+    density including the padding-compressed edge frames, not the true spacing.
+
+    For that ratio to be a whole number the stride must be a multiple of the frame stride:
+        stride_ms = 5 * 210 / 16000 * 1000 = 65.625 ms   -> 5 frames, interior error 0.0 ms
+        stride_ms = 6 * 210 / 16000 * 1000 = 78.75 ms    -> 6 frames
+
+    Returns:
+        (stride_frames, stride_samples, window_size_samples)
+    '''
+    window_size_samples = int(window_size_ms * sample_rate / 1000)
+    stride_samples = int(stride_ms * sample_rate / 1000)
+    exact = stride_samples / float(frame_stride_samples)
+    stride_frames = int(round(exact))
+
+    if abs(exact - stride_frames) > 1e-6:
+        msg = (f"windowing geometry is inconsistent: stride {stride_samples} samples "
+               f"({stride_ms} ms) is {exact:.4f} output frames, not a whole number "
+               f"(frame stride {frame_stride_samples} samples). The stitch would average "
+               f"frames describing moments {abs(exact - stride_frames) * frame_stride_samples / sample_rate * 1000:.1f} ms "
+               f"apart. Use a stride_ms that is a multiple of "
+               f"{1000.0 * frame_stride_samples / sample_rate:g} ms.")
+        if strict:
+            raise ValueError(msg)
+        print("WARN:", msg)
+    if stride_frames < 1:
+        raise ValueError(f"stride_frames must be >= 1, got {stride_frames}")
+    if stride_frames > frames_per_window:
+        raise ValueError(f"stride_frames ({stride_frames}) > frames_per_window "
+                         f"({frames_per_window}): windows would not overlap or would leave gaps")
+    return stride_frames, stride_samples, window_size_samples
+
+
+def total_stitched_frames(num_windows, frames_per_window, stride_frames):
+    '''
+    Frames produced by stitching `num_windows` windows.
+
+    The old expression was `num_windows * frames_per_window // 2`, which both hard-coded
+    the 50% overlap and silently dropped the tail of the last window. The correct count is
+    the position of the last window's last frame, plus one.
+    '''
+    return (max(int(num_windows), 1) - 1) * int(stride_frames) + int(frames_per_window)
+
+
 def slice_windows(audio_batch: torch.Tensor,
                         sample_rate: int = 16000,
                         window_size_ms: int = 160,
@@ -105,7 +171,8 @@ def stich_window_predictions(window_logits: torch.Tensor,
                              cnn_output_size: int,
                              sample_rate: int = 16000,
                              window_size_ms: int = 160,
-                             stride_ms: int = 80) -> torch.Tensor:
+                             stride_ms: int = 80,
+                             stride_frames: int = None) -> torch.Tensor:
     """
     Efficiently combines predictions from overlapping windows while maintaining the original behavior. Can be used for phoneme logits, embeddings, or CNN outputs features.
     
@@ -126,8 +193,10 @@ def stich_window_predictions(window_logits: torch.Tensor,
     window_size_samples = int(window_size_ms * sample_rate / 1000)
     stride_samples = int(stride_ms * sample_rate / 1000)
     num_windows_total = ((original_audio_length - window_size_samples) // stride_samples) + 1
-    total_frames = ((num_windows_total * cnn_output_size) // 2)
-    stride_frames = frames_per_window // 2
+    if stride_frames is None:
+        stride_frames = frames_per_window // 2
+    stride_frames = int(stride_frames)
+    total_frames = total_stitched_frames(num_windows_total, cnn_output_size, stride_frames)
     
     # Pre-compute weights once and cache
     window_weights = torch.cos(torch.linspace(-math.pi/2, math.pi/2, frames_per_window, device=device))
@@ -220,7 +289,7 @@ def stich_window_predictions____non_vectorized(window_logits: torch.Tensor,
 
 
 
-def calc_spec_len_ext(wav_lens, window_size_ms, stride_ms, sample_rate, frames_per_window, disable_windowing=False, wav_len_max=1*16000):
+def calc_spec_len_ext(wav_lens, window_size_ms, stride_ms, sample_rate, frames_per_window, disable_windowing=False, wav_len_max=1*16000, stride_frames=None):
     """
     Calculate the total number of frames for the whole audio clip, for each clip in the batch.
     When `disable_windowing=False` then there are two level of windowing, one by the window slicing process and other by the CNN.
@@ -251,7 +320,8 @@ def calc_spec_len_ext(wav_lens, window_size_ms, stride_ms, sample_rate, frames_p
                 # Calculate number of windows
                 num_windows = ((wav_len - window_size_wav) // stride_size_wav) + 1
                 # Calculate total frames after combining windows
-                total_frames = ((num_windows * frames_per_window) // 2)  # divide by 2 due to window overlap
+                sf = int(stride_frames) if stride_frames is not None else int(frames_per_window) // 2
+                total_frames = (num_windows - 1) * sf + frames_per_window
             
             if (total_frames < 2):
                 raise Exception("WARN: spectral_len < 2, wav_lens:", wav_len.item(), "output frames:", total_frames.item(), "num_windows:", num_windows.item(), "Expected at least", window_size_ms, "ms", "got", (1000*wav_len.item()/sample_rate), "ms")

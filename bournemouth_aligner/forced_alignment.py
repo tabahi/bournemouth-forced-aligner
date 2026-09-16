@@ -1,8 +1,5 @@
 '''
-Updated on 2025-08-07 to better forced phoneme alignment capabilities. All phonemes in the target sequence are ensured to be aligned, even when they have very low probabilities.
-This module provides a Viterbi decoder that ensures all phonemes in the target sequence are aligned,
-even when they have very low probabilities. It includes methods for boosting target phoneme probabilities,
-enforcing minimum probabilities, and post-processing to ensure all target phonemes appear in the alignment.
+Updated on 2026-05-06
 '''
 
 import torch
@@ -13,7 +10,8 @@ class ViterbiDecoder:
     Viterbi decoder that ensures all phonemes in the target sequence are aligned,
     even when they have very low probabilities.
     """
-    def __init__(self, blank_id, silence_id, silence_anchors=3,  min_phoneme_prob=1e-8, ignore_noise=True, truly_forced=False):
+    def __init__(self, blank_id, silence_id, silence_anchors=3,  min_phoneme_prob=1e-8, ignore_noise=True, truly_forced=False, n_substates=1):
+        self.n_substates = max(1, int(n_substates))   # MFA-style begin/middle/end; 1 = original
         self.blank_id = blank_id
         self.silence_id = silence_id
         self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
@@ -130,7 +128,10 @@ class ViterbiDecoder:
 
         # Try segmented alignment: match target SIL groups with audio silences,
         # split at matched points, run Viterbi on each correctly-assigned segment.
-        if anchor_pauses and self.silence_id is not None:
+        # Segmented decoding cuts at SIL groups; with sub-states only SIL_B equals
+        # `silence_id`, so it would cut at a non-phone boundary. Door 6 measured
+        # silence anchoring as making no difference, so fall through instead.
+        if anchor_pauses and self.silence_id is not None and getattr(self, 'n_substates', 1) == 1:
             if debug: print("Attempting segmented Viterbi alignment with silence anchoring...")
             result = self._segmented_viterbi_decode(
                 modified_log_probs, true_sequence, true_sequence_idx, debug=debug
@@ -150,11 +151,17 @@ class ViterbiDecoder:
 
         # Reduce stride until the CTC path fits within the available frames.
         # (was incorrectly comparing against seq_len instead of num_frames before)
+        n_sub = max(1, int(getattr(self, 'n_substates', 1)))
+        def _lattice_len(st):
+            if n_sub == 1:
+                return st * seq_len + 1
+            return 1 + (seq_len // n_sub) * (n_sub + max(st - 1, 1))
+
         stride = 4
-        if (stride * seq_len + 1) > num_frames: stride = 3
-        if (stride * seq_len + 1) > num_frames: stride = 2
-        if (stride * seq_len + 1) > num_frames: stride = 1
-        expanded_len = stride * seq_len + 1
+        if _lattice_len(stride) > num_frames: stride = 3
+        if _lattice_len(stride) > num_frames: stride = 2
+        if _lattice_len(stride) > num_frames: stride = 1
+        expanded_len = _lattice_len(stride)
 
         if expanded_len > num_frames:
             # Truly impossible: fewer frames than phonemes.
@@ -178,18 +185,15 @@ class ViterbiDecoder:
         
         
         
-        ctc_path = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(self.blank_id)
-        ctc_path_true_idx = torch.zeros(expanded_len, device=device, dtype=torch.long).fill_(-1)
-        #ctc_path_true_idx[::2] = -1
-        #ctc_path[::2] = self.blank_id
-        ctc_path[1::stride] = true_sequence
-        ctc_path_true_idx[1::stride] = true_sequence_idx
+        ctc_path, ctc_path_true_idx, can_skip_mask = self._build_ctc_lattice(
+            true_sequence, true_sequence_idx, stride, expanded_len, device)
         ctc_len = len(ctc_path)
 
 
         band_width = max(ctc_len // 4, 20) if ctc_len > 60 else 0
         frame_phonemes, frame_phonemes_idx = self._viterbi_decode(
-            modified_log_probs, ctc_path, ctc_len, ctc_path_true_idx, band_width=band_width, debug=debug
+            modified_log_probs, ctc_path, ctc_len, ctc_path_true_idx, band_width=band_width, debug=debug,
+            can_skip_mask=can_skip_mask
         )
         
         if return_scores:
@@ -560,7 +564,77 @@ class ViterbiDecoder:
             modified[start:end] = F.log_softmax(modified[start:end], dim=-1)
         return modified
 
-    def _viterbi_decode(self, log_probs, ctc_path, ctc_len, ctc_path_true_idx=None, band_width=0, debug=False):
+    def _build_ctc_lattice(self, true_sequence, true_sequence_idx, stride, expanded_len, device):
+        '''
+        Build the CTC state sequence, its target-index map, and the legal-skip mask.
+
+        ## One state per phone (`n_substates == 1`) - unchanged
+
+            blank  p  blank blank blank  q  blank blank blank  r ...      (stride = 4)
+
+        Exactly what this code always did. Door 7 settled the blank-stride question; nothing
+        here reopens it.
+
+        ## Sub-states (`n_substates == 3`)
+
+        The sub-states of one phone are **adjacent**, and the `stride - 1` blanks separate
+        *phones*, not sub-states:
+
+            blank  p_B p_M p_E  blank blank blank  q_B q_M q_E  blank ...
+
+        Naively feeding the expanded 3S sequence to the one-state layout instead puts three
+        blanks *inside* every phone, between p_B and p_M. That is both wrong (a phone's
+        begin->middle transition is continuous by definition) and ruinously long: for a 3 s
+        clip it is 4*102+1 = 409 states in 451 frames, so nearly every state gets exactly one
+        frame and there is no slack left to place a boundary acoustically. Measured on an
+        untrained model, that layout covered only **49.8%** of target phones against 72.4%
+        for the one-state lattice. This layout is 1 + S*(n_sub + stride - 1) = 205 states for
+        the same clip.
+
+        ## Why the skip mask has to be explicit
+
+        The default rule `can_skip[s] = ctc_path[s] != ctc_path[s-2]` exists to let the DP
+        jump a blank between two different labels. With adjacent sub-states it would also fire
+        on `p_B -> p_E` (different labels, two apart), letting the path delete p_M and
+        collapse the phone to two frames - destroying the minimum duration that is the whole
+        point of the topology. So a skip is legal here only when the state being jumped is
+        genuinely a blank AND the destination starts a phone.
+
+        Returns:
+            (ctc_path [L], ctc_path_true_idx [L], can_skip_mask [L] or None)
+        '''
+        n_sub = max(1, int(getattr(self, 'n_substates', 1)))
+
+        if n_sub == 1:
+            ctc_path = torch.full((expanded_len,), self.blank_id, device=device, dtype=torch.long)
+            ctc_path_true_idx = torch.full((expanded_len,), -1, device=device, dtype=torch.long)
+            ctc_path[1::stride] = true_sequence
+            ctc_path_true_idx[1::stride] = true_sequence_idx
+            return ctc_path, ctc_path_true_idx, None
+
+        n_phones = len(true_sequence) // n_sub
+        gap = max(stride - 1, 1)                      # blanks between phones
+        ctc_len = 1 + n_phones * (n_sub + gap)
+
+        ctc_path = torch.full((ctc_len,), self.blank_id, device=device, dtype=torch.long)
+        ctc_path_true_idx = torch.full((ctc_len,), -1, device=device, dtype=torch.long)
+        can_skip = torch.zeros(ctc_len, dtype=torch.bool, device=device)
+
+        pos = 1                                        # state 0 is the leading blank
+        for i in range(n_phones):
+            for s in range(n_sub):
+                ctc_path[pos + s] = true_sequence[i * n_sub + s]
+                ctc_path_true_idx[pos + s] = true_sequence_idx[i * n_sub + s]
+            # A skip may land only on this phone's FIRST sub-state, and only when it jumps a
+            # real blank (pos-1 is the last blank of the preceding gap).
+            if pos >= 2 and ctc_path[pos - 1] == self.blank_id:
+                can_skip[pos] = True
+            pos += n_sub + gap                         # step over the trailing blank gap
+
+        return ctc_path, ctc_path_true_idx, can_skip
+
+    def _viterbi_decode(self, log_probs, ctc_path, ctc_len, ctc_path_true_idx=None, band_width=0, debug=False,
+                        can_skip_mask=None):
         """
         Standard Viterbi decoding implementation.
 
@@ -600,9 +674,14 @@ class ViterbiDecoder:
         can_skip = torch.zeros(ctc_len, dtype=torch.bool, device=device)
 
         can_advance[1:] = True
-        for s in range(2, ctc_len):
-            if ctc_path[s] != ctc_path[s-2]:
-                can_skip[s] = True
+        if can_skip_mask is not None:
+            # Sub-state lattice: the default rule would allow p_B -> p_E (different labels,
+            # two apart), deleting the middle state and destroying the minimum duration.
+            can_skip[:] = can_skip_mask.to(device)
+        else:
+            for s in range(2, ctc_len):
+                if ctc_path[s] != ctc_path[s-2]:
+                    can_skip[s] = True
 
         # Forward pass
         for t in range(1, num_frames):
@@ -838,7 +917,7 @@ class AlignmentUtils: # 2025-09-10
     Alignment utilities with forced alignment fixes.
     """
     
-    def __init__(self, blank_id, silence_id, silence_anchors=10, ignore_noise=True, truly_forced=True):
+    def __init__(self, blank_id, silence_id, silence_anchors=10, ignore_noise=True, truly_forced=True, n_substates=1):
         '''
         Initialize AlignmentUtils.
         Args:
@@ -850,7 +929,8 @@ class AlignmentUtils: # 2025-09-10
         self.silence_id = silence_id
         self.silence_anchors = silence_anchors  # Number of silence frames to anchor pauses
         self.truly_forced = truly_forced
-        self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise, truly_forced=self.truly_forced)
+        self.n_substates = max(1, int(n_substates))
+        self.viterbi_decoder = ViterbiDecoder(blank_id, silence_id, silence_anchors=self.silence_anchors, ignore_noise=ignore_noise, truly_forced=self.truly_forced, n_substates=self.n_substates)
     
     
     def decode_alignments(self, log_probs, true_seqs=None, pred_lens=None, 
