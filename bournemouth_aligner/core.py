@@ -13,6 +13,8 @@ Outputs: JSON files (.vs2.json) with phoneme timestamps, phoneme groups timestam
 import torch
 import torchaudio
 import torch.nn.functional as F
+import contextlib
+import math
 import os
 import json
 import traceback
@@ -22,7 +24,15 @@ from .cupe2i.model2i import CUPEEmbeddingsExtractor as CUPEEmbeddingsExtractor_i
 from .cupe2i.model2j import CUPEEmbeddingsExtractor as CUPEEmbeddingsExtractor_j
 from .cupe2i.model3a import CUPEEmbeddingsExtractor as CUPEEmbeddingsExtractor_3a
 from .cupe2i.windowing import slice_windows, stich_window_predictions, calc_spec_len_ext, frames_geometry
-from .forced_alignment import AlignmentUtils 
+from .forced_alignment import AlignmentUtils
+from .segmental import decode_segmental
+from . import chunking as _chunking
+from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
+                       DEFAULT_PHONEMES_PER_SECOND, DEFAULT_DERAIL_FRAMES,
+                       DEFAULT_DERAIL_RUN, DEFAULT_BACKOFF, DEFAULT_CONF_FLOOR,
+                       DEFAULT_WEAK_RUN, DEFAULT_SNAP_TO_SILENCE_SEC,
+                       MIN_KEEP_FRACTION, NO_DERAIL_TRIM_FRACTION,
+                       stride4_max_phonemes)
 #from .ipamappers.ph66_mapper import phoneme_mapped_index, phoneme_groups_index, phoneme_groups_mapper
 from .ipamappers import ph66_phonemeizer
 from .presets import get_preset
@@ -37,20 +47,74 @@ from .utils import dict_to_textgrid, weighted_pool_embeddings, _calculate_confid
 SNAP_SOURCES = ('pre_transformer', 'spectral_stream', 'boundary_head', 'embeddings', 'auto',
                 'none')
 
-# What `'auto'` picks when the checkpoint has no usable boundary head. `'auto'` is the default
-# source, so this is the source most model2i users will actually get.
-AUTO_SNAP_FALLBACK = 'pre_transformer'
+# What `'auto'` resolves to, BY ARCHITECTURE. `tmp/results/conclusions.md` §10 - the first
+# comparison with `none` controls on BOTH corpora - measured, as gain in r_value_25ms over
+# not snapping at all:
+#
+#                        TIMIT ue03f_e49   TIMIT ue03g_e19   Buckeye ue03f_e49
+#   spectral_stream          +0.0552           +0.0565           +0.0260
+#   pre_transformer          +0.0336           +0.0372           +0.0144
+#   boundary_head (trained)      -              -0.0168         (control invalid)
+#   embeddings               -0.0243           -0.0205           -0.0253
+#
+# So for model3a, `spectral_stream` is the best real source on both corpora and is above
+# control on both. For model2i the ranking inverts on Buckeye (§2): on the `en` checkpoint
+# `spectral_stream` scores 0.5174 against a 0.5437 control - BELOW no snapping - while
+# `pre_transformer` stays above it at 0.5516. `pre_transformer` is the only source above
+# control on both corpora for model2i, so the two families get different answers.
+#
+# A TRAINED boundary head is never selected automatically: it is the one "real" source that
+# scores BELOW not snapping (-0.0168 on 6300 TIMIT files, -0.028 on the 400-clip probe in
+# §8). It learned the decoder's own placement (AUC 0.864 vs its own decoder, against 0.70-0.75
+# for the flux taps), which means it reproduces the decoder's lateness instead of correcting
+# it. Ask for it explicitly if you want it.
+AUTO_SNAP_MODEL3A = 'spectral_stream'
+AUTO_SNAP_MODEL2I = 'pre_transformer'
+# Back-compat alias for the pre-1.3 name, which had a single architecture-independent value.
+AUTO_SNAP_FALLBACK = AUTO_SNAP_MODEL2I
 
-# Default search half-width per source, in ms, used when `boundary_snap_radius_ms=None`.
-# These come from the radius sweeps in `tmp/results/results_TIMIT_lev_sweeps.csv`, scored on
-# r_value_25ms; see `tmp/results/conclusions.md`. The optimum is NOT the same for every source:
-# the flux taps are flat over ~26-52 ms, but `boundary_head` falls off a cliff past 2 frames
-# (ue03a_e100: r=2 -> 0.6700, r=4 -> 0.6004), because a constant-ish head turns a wide radius
-# into a large fixed shift.
-DEFAULT_SNAP_RADIUS_MS = {
-    'boundary_head': 26.25,      # 2 frames at a 210-sample stride
+# Phoneme decoders, see `decoder` in PhonemeTimestampAligner and `segmental.py`.
+DECODERS = ('segmental', 'ctc')
+# Windows per CUPE forward pass (one window per 80 ms of audio, so ~64 s of audio per pass).
+WINDOW_BATCH = 800
+# Default for `segmental_max_seconds`: longer segments fall back to the chunker, to bound
+# memory and time. Measured peaks decoding one segment whole (model3a, CUDA):
+#     120 s: GPU 658 MB, +460 MB RAM, 21 s        225 s: GPU 766 MB, +470 MB RAM, 45 s
+# The chunker costs accuracy with this decoder (225 s Buckeye segment: 67.3 whole, 54.7
+# chunked), so raise it when the hardware allows.
+DEFAULT_SEGMENTAL_MAX_SECONDS = 120.0
+
+# Default search half-width per source, in FRAMES, used when neither `boundary_snap_radius`
+# nor `boundary_snap_radius_ms` is given. Frames are the unit of record because the snapper
+# searches whole frames - a ms value is rounded to frames before it is used, so two different
+# ms settings routinely mean the same search. (The eval CSVs show the cost of not fixing a
+# unit: `cfg_snap_radius` holds `52.5` on some rows and `2`/`4`/`6` on others, i.e. ms and
+# frames in one column.) `boundary_snap_radius_ms` still works and still wins over these.
+#
+# 4 frames is the only radius sweep on a FULL corpus (`results_TIMIT_lev.csv`, `en` model2i,
+# spectral_stream): r=2 -> 0.6522, r=4 -> 0.6897, r=6 -> 0.6788. The 100-file TIMIT sweeps in
+# §4 agree that the flux taps are flat over 2-4 frames.
+#
+# CAVEAT, and the reason this is worth re-measuring: every model3a full-corpus row on both
+# corpora (§10, the rows the source defaults above rest on) was taken at r=2, not r=4, and the
+# 20-file Buckeye sweeps prefer r=1 and fall with every step. There is no full-Buckeye radius
+# sweep for any checkpoint. 4 stays the default because it is the only measurement on a whole
+# corpus, not because the question is settled.
+DEFAULT_SNAP_RADIUS_FRAMES = {
+    # NOT a measurement on a trained head. §8b: this was tuned on `ue03a_e100`, whose head is
+    # constant, so its "radius falloff" is a property of the fixed shift a constant head
+    # produces (`1 + offset - radius` frames), not of any detector. Kept small because that
+    # is the conservative direction for a source `auto` no longer selects.
+    'boundary_head': 2,
 }
-DEFAULT_SNAP_RADIUS_MS_FALLBACK = 52.5   # 4 frames; used by every flux tap
+DEFAULT_SNAP_RADIUS_FRAMES_FALLBACK = 4     # every flux tap
+
+# Deprecated ms-valued equivalents, kept so existing imports keep working. Derived from the
+# frame defaults at the 210-sample stride (13.125 ms/frame) that every released checkpoint
+# uses; on a `cnn_last_stride: 1` model the frame values above are still right and these are
+# not, which is the other reason frames are now the unit of record.
+DEFAULT_SNAP_RADIUS_MS = {k: v * 13.125 for k, v in DEFAULT_SNAP_RADIUS_FRAMES.items()}
+DEFAULT_SNAP_RADIUS_MS_FALLBACK = DEFAULT_SNAP_RADIUS_FRAMES_FALLBACK * 13.125
 
 
 
@@ -61,7 +125,7 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=3, bad_confidence_threshold=0.6, boundary_snap_radius_ms=None, boundary_snap_radius=None, boundary_snap_offset=0, boundary_snap_source="auto", warn_level=1):
+    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=30, device="auto", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ensure_completeness=False,ignore_noise=True, extend_soft_boundaries=True, boundary_softness=3, bad_confidence_threshold=0.6, boundary_snap_radius_ms=None, boundary_snap_radius=None, boundary_snap_offset=0, boundary_snap_source="auto", chunk_audio=True, chunk_seconds=DEFAULT_CHUNK_SECONDS, chunk_max_phonemes=DEFAULT_MAX_PHONEMES, chunk_phonemes_per_second=DEFAULT_PHONEMES_PER_SECOND, chunk_vad=True, decoder="segmental", segmental_max_seconds=DEFAULT_SEGMENTAL_MAX_SECONDS, warn_level=1):
         """
         Initialize the BFA phoneme timestamp extractor.
 
@@ -101,19 +165,65 @@ class PhonemeTimestampAligner:
             boundary_snap_source (str): Which tensor onset snapping reads, or "none" to disable
                 snapping and emit the raw Viterbi framestamps (BFA's pre-1.2 behaviour).
                 One of "auto" (default), "boundary_head", "pre_transformer", "spectral_stream",
-                "embeddings", "none". "auto" uses the checkpoint's learned boundary head when it
-                has a trained one (model3a) and falls back to "pre_transformer" otherwise, so the
-                same setting works on both model2i and model3a checkpoints. See the extended
-                commentary below the assignment in __init__ for the measured comparison.
-            boundary_snap_radius_ms (float or None): Search half-width in MILLISECONDS. None
-                (default) picks the measured optimum for the resolved source - 26.25 ms for
-                "boundary_head", 52.5 ms otherwise. 0 disables snapping. Expressed in ms rather
-                than frames so the same value means the same duration on models with different
-                frame strides.
-            boundary_snap_radius (int, optional): Override the search half-width in FRAMES.
-                Takes precedence over boundary_snap_radius_ms when not None.
+                "embeddings", "none". "auto" branches on the checkpoint's ARCHITECTURE:
+                "spectral_stream" for model3a, "pre_transformer" for model2i/model2j - the two
+                families do not rank the sources the same way once Buckeye is included. It never
+                selects a trained boundary head, which measures below no snapping at all. See
+                AUTO_SNAP_MODEL3A at the top of this module for the numbers, and the extended
+                commentary below the assignment in __init__ for the full source comparison.
+            boundary_snap_radius (int or None): Search half-width in FRAMES - the unit the
+                snapper actually works in, since it searches a whole number of frames either
+                side of each onset. None (default) picks the measured optimum for the resolved
+                source: 4 frames for the flux taps, 2 for "boundary_head". 0 disables snapping.
+            boundary_snap_radius_ms (float or None): The same half-width in MILLISECONDS,
+                rounded to frames at the loaded model's stride. Used only when
+                `boundary_snap_radius` is None. Worth reaching for when comparing models with
+                different frame strides (13.125 ms/frame at a 210-sample stride, 6.5625 at
+                105), where one frame count means two different durations; for a single model,
+                ask in frames. 0 disables snapping.
             boundary_snap_offset (int): Frames added after the snap argmax. 0 is correct for the
                 indexing convention and was best in every sweep; only change it when probing.
+            chunk_audio (bool): Align long segments by walking overlapping windows instead of
+                decoding them in one shot. ON by default, and it only engages for segments past
+                `chunk_seconds` of audio or `chunk_max_phonemes` targets - shorter segments take
+                the single-shot path unchanged, so this cannot alter existing short-clip results.
+                Set False to restore the pre-1.3 whole-segment behaviour. See `chunking.py` for
+                why one-shot decoding collapses rather than degrades on long clips, and
+                `set_chunking()` to retune on a live aligner.
+            chunk_seconds (float): Audio window length in seconds (default 10). Windows overlap:
+                each one restarts at the end of the previous window's last TRUSTED phoneme, not
+                at a fixed offset, so the overlap is however much of the previous window was
+                discarded.
+            chunk_max_phonemes (int): Cap on the phoneme budget handed to one window (default
+                200). The budget is deliberately larger than the window can hold - the surplus
+                crams into the final frames at one frame apiece, and that cram is what marks
+                where the window's alignment stopped being trustworthy.
+            chunk_phonemes_per_second (float): Phonemes per second of SPEECH used to size each
+                window's budget (default 15, a safe upper bound for English). Measured against
+                speech seconds, not wall-clock seconds, which is what `chunk_vad` is for.
+            chunk_vad (bool): Use a plain energy VAD to (a) measure speech seconds per window so
+                a pause-heavy window is not over-budgeted, and (b) move a cut into a nearby pause
+                when there is one. This is NOT `silence_anchors`: it never splits the target
+                sequence and never touches the posteriors. Disabling it makes every window budget
+                as if it were entirely speech.
+            decoder (str): Which Viterbi places the phonemes. "segmental" (default) assigns every
+                frame to a phone or a pause, with a 2-frame minimum phone duration, and places
+                each onset using the posteriors AND the boundary tap's acoustic change in the
+                same pass (see `segmental.py`). "ctc" is the original blank/spike CTC lattice
+                followed by greedy onset snapping (BFA <= 1.1.5 behaviour). Measured on Buckeye,
+                onset F1 at 25 ms: 59.0 (ctc) -> 68.2 (segmental) over 200 segments.
+                `enforce_all_targets` keeps its meaning in both: True aligns every target,
+                False lets the segmental decoder skip words the audio does not contain and
+                absorb speech the text does not contain. The segmental decoder needs a boundary
+                tap, so it falls back to "ctc" when `boundary_snap_source='none'`, and for
+                sub-state models. `boost_targets`, `enforce_minimum` and `silence_anchors` are
+                CTC-lattice settings and do not apply to it.
+            segmental_max_seconds (float): With the segmental decoder, segments up to this long
+                are decoded whole and never chunked; longer ones use the chunker (when
+                `chunk_audio=True`) to bound memory and time. Default 120. Whole-segment decoding
+                is more accurate (a 225 s Buckeye segment: 67.3 onset F1 whole vs 54.7 chunked)
+                and its memory is modest (225 s: 766 MB GPU peak, ~470 MB extra RAM), so raise it
+                if the hardware allows.
             warn_level (int): Verbosity. 0 = silent, 1 = important warnings only (default),
                 2 = warnings plus informational output (checkpoint architecture, resolved frame
                 geometry, snap configuration, low-confidence diagnostics). Critical errors are
@@ -220,6 +330,11 @@ class PhonemeTimestampAligner:
             self._setup_config()
 
 
+        decoder = str(decoder).lower()
+        if decoder not in DECODERS:
+            raise ValueError(f"decoder must be one of {'|'.join(DECODERS)}, got {decoder!r}")
+        self.decoder = decoder
+        self.segmental_max_seconds = float(segmental_max_seconds)
         self.silence_anchors = silence_anchors
         self.boost_targets = boost_targets
         self.enforce_minimum = enforce_minimum
@@ -230,35 +345,40 @@ class PhonemeTimestampAligner:
         self.boundary_softness = boundary_softness
         self.bad_confidence_threshold = bad_confidence_threshold
         # --- onset snapping ----------------------------------------------------------------
-        # Search half-width, expressed in MILLISECONDS so it is independent of the model's
-        # frame stride (210 samples = 13.125 ms, or 105 = 6.5625 ms on a finer-grid model).
-        # It is converted to frames by `_resolve_snap_radius` using the stride actually derived
-        # from the loaded model, so the same setting means the same duration across checkpoints.
+        # Search half-width, in FRAMES. The snapper searches `sig[f-r : f+r+1]` - a whole
+        # number of frames - so frames are what the setting actually controls; 50 ms and 55 ms
+        # both mean a 4-frame search at a 210-sample stride, and "4" says which one runs.
         #
-        #   boundary_snap_radius_ms = None  per-source default (DEFAULT_SNAP_RADIUS_MS)
-        #   boundary_snap_radius_ms = 0     disables snapping entirely
-        #   boundary_snap_radius            optional override, in FRAMES; wins when not None
+        #   boundary_snap_radius = None     per-source default (DEFAULT_SNAP_RADIUS_FRAMES)
+        #   boundary_snap_radius = 4        4 frames, whatever the model's stride
+        #   boundary_snap_radius = 0        disables snapping entirely
+        #   boundary_snap_radius_ms         optional override in MILLISECONDS, rounded to
+        #                                   frames at the loaded model's stride; wins over
+        #                                   `boundary_snap_radius` only if that one is None
         #
-        # MEASURED on TIMIT, r_value_25ms, sweeping radius at boundary_softness=1
-        # (`tmp/results/results_TIMIT_lev_sweeps.csv`; full tables in
-        # `tmp/results/conclusions.md`). Radii are in frames; 1 frame = 13.125 ms:
+        # `boundary_snap_radius_ms` is still useful for one thing: comparing across models with
+        # DIFFERENT strides (210 samples = 13.125 ms/frame, or 105 = 6.5625 ms on a finer-grid
+        # model), where the same frame count is a different duration. For a single model, ask
+        # in frames.
         #
-        #   ue02a_e5 (no trained head)        r=1      r=2      r=3      r=4
-        #     pre_transformer               0.7532   0.7601   0.7513   0.7387
+        # MEASURED, r_value_25ms. The only FULL-corpus radius sweep is
+        # `results_TIMIT_lev.csv`, `en` model2i, spectral_stream:
+        #
+        #     r=2      r=4      r=6
+        #   0.6522   0.6897   0.6788          <- 4 frames, hence the default
+        #
+        # The 100-file TIMIT sweeps agree the flux taps are flat over 2-4 frames
+        # (`results_TIMIT_lev_sweeps.csv`; tables in `conclusions.md` §4):
+        #
+        #   ue02a_e5                          r=1      r=2      r=3      r=4
         #     spectral_stream               0.7588   0.7616   0.7531   0.7348
-        #     embeddings                    0.7370   0.7385   0.7318   0.7223
+        #     pre_transformer               0.7532   0.7601   0.7513   0.7387
         #     (control: none = 0.7472)
         #
-        #   ue03a_e100 (trained head)         r=1      r=2      r=3      r=4
-        #     spectral_stream               0.6688   0.6948   0.7113   0.7176
-        #     pre_transformer               0.6540   0.6675   0.6749   0.6749
-        #     boundary_head                 0.6469   0.6670   0.6373   0.6004   <- sharp falloff
-        #     (control: none = 0.6469)
-        #
-        # The flux taps are flat over 2-4 frames, so the radius is not a sharp parameter for
-        # them. `boundary_head` is the exception: it loses 0.067 r_value between 2 and 4 frames,
-        # which is why `DEFAULT_SNAP_RADIUS_MS` gives it 26.25 ms and everything else 52.5 ms.
-        # Sweep with `set_boundary_snap(radius_ms=...)`.
+        # NOT settled, and worth re-running: every model3a full-corpus row on both corpora -
+        # the rows the SOURCE defaults rest on (§10) - was taken at r=2, not r=4, and the
+        # 20-file Buckeye sweeps prefer r=1 and fall with every step. There is no full-Buckeye
+        # radius sweep for any checkpoint. Sweep with `set_boundary_snap(radius_frames=...)`.
         self._boundary_snap_radius_ms_requested = (None if boundary_snap_radius_ms is None
                                                    else float(boundary_snap_radius_ms))
         self.boundary_snap_offset = int(boundary_snap_offset)
@@ -310,15 +430,16 @@ class PhonemeTimestampAligner:
         #                                  `bnd_source`). model3a checkpoints only.
         #                                  ['boundary_head']
         #
-        #   'auto' ....................... DEFAULT. `boundary_head` when the checkpoint has a
-        #                                  head that was actually trained, `pre_transformer`
-        #                                  otherwise. This is what makes one setting correct for
-        #                                  both model2i and model3a: an old checkpoint has no
-        #                                  head and gets the best tap available on it, a new one
-        #                                  with a trained head uses the head. Resolved once, in
-        #                                  `_resolve_snap_source`, right after the model loads;
-        #                                  `boundary_snap_source` then holds the RESOLVED value
-        #                                  and `boundary_snap_source_requested` holds 'auto'.
+        #   'auto' ....................... DEFAULT. Branches on the checkpoint's ARCHITECTURE:
+        #                                  `spectral_stream` for model3a, `pre_transformer` for
+        #                                  model2i/model2j. It never picks a boundary head.
+        #                                  Resolved once, in `_resolve_snap_source`, right after
+        #                                  the model loads; `boundary_snap_source` then holds
+        #                                  the RESOLVED value and
+        #                                  `boundary_snap_source_requested` holds 'auto'.
+        #                                  CHANGED in 1.3 - it used to pick the head whenever
+        #                                  one was trained. See AUTO_SNAP_MODEL3A at the top of
+        #                                  this module.
         #
         #   'none' ....................... VANILLA. No snapping: the Viterbi framestamps are
         #                                  emitted exactly as decoded, which is what BFA did
@@ -332,49 +453,69 @@ class PhonemeTimestampAligner:
         # transformer does can affect it except through backprop.
         #
         # ---------------------------------------------------------------------------------
-        # MEASURED RANKING.  Full corpora, r_value_25ms, each source at its own best radius.
-        # Sources: `tmp/results/results_TIMIT_lev.csv` (TIMIT, 6300 files) and
-        # `tmp/results/results_buckeye_lev.csv` (Buckeye, 255 files). Written up with the
-        # per-radius sweeps in `tmp/results/conclusions.md`. MFA is the external reference.
+        # MEASURED RANKING.  GAIN OVER NO SNAPPING, r_value_25ms, full corpora, radius 2
+        # frames, boundary_softness=1. `conclusions.md` §10 - the first runs with a `none`
+        # control on BOTH corpora, which is what makes these differences readable as gains
+        # rather than as a head-to-head ordering.
         #
-        #   checkpoint    source             TIMIT    Buckeye    notes
-        #   ------------  -----------------  -------  ---------  ---------------------------
-        #   (MFA)         -                   0.8035    0.8164   external reference
-        #   ue03d_e04     spectral_stream     0.6895    0.6240
-        #   ue03d_e04     pre_transformer     0.6693    0.6128   <- what 'auto' picks today
-        #   ue03d_e04     boundary_head       0.6654    0.6397   UNTRAINED head, see below
-        #   ue03d_e04     embeddings          0.6146    0.5703
-        #   ue03d_e04     none                  -         -      control
-        #   en (model2i)  spectral_stream     0.6873    0.5174
-        #   en (model2i)  pre_transformer     0.6556    0.5516
-        #   en (model2i)  embeddings          0.5853    0.5128
-        #   en (model2i)  none                0.5812    0.5437   control
+        #   source                          TIMIT f49   TIMIT g19   Buckeye f49
+        #   ------------------------------  ----------  ----------  -----------
+        #   (control) none                    0.6330      0.6242      0.5877
+        #   spectral_stream                   +0.0552     +0.0565     +0.0260   <- model3a auto
+        #   pre_transformer                   +0.0336     +0.0372     +0.0144
+        #   boundary_head (constant shift)    +0.0234        -        +0.0472   artifact, see below
+        #   boundary_head (TRAINED)              -       -0.0168     control invalid
+        #   embeddings                        -0.0243     -0.0205     -0.0253
         #
-        # Two things this table says that the defaults do NOT yet act on, both deliberate:
+        # And for model2i, where the ranking INVERTS on Buckeye (§2; `en`, radius 4 frames):
         #
-        #  1. `spectral_stream` is the strongest source on TIMIT for BOTH checkpoint families,
-        #     and it needs no boundary head, so it works on model2i too. It is not the default
-        #     only because it loses to `pre_transformer` on Buckeye for model2i (0.5174 vs
-        #     0.5516) - i.e. it is the better bet on read speech and the worse one on
-        #     conversational speech. If your domain is closer to TIMIT, set it explicitly.
-        #  2. Snapping is worth roughly +0.07-0.11 r_value on TIMIT and much less on Buckeye,
-        #     and every BFA configuration is still well short of MFA's 0.80. Snapping moves
-        #     onsets; it does not fix the decoder.
+        #   source                            TIMIT     Buckeye
+        #   ------------------------------  ---------  ---------
+        #   (control) none                    0.5812     0.5437
+        #   spectral_stream                   0.6873     0.5174   <- BELOW control on Buckeye
+        #   pre_transformer                   0.6556     0.5516   <- model2i auto
+        #   embeddings                        0.5853     0.5128
         #
-        # WARNING on 'boundary_head'. `bnd_head_enabled: True` in a checkpoint means the module
-        # exists, NOT that it learned anything - that is `bnd_head_lambda`, and every ue03*
-        # checkpoint released so far has `bnd_head_lambda: 0.0` ("boundary objective OFF",
-        # door 16). Their `out.weight` is still zero, so the head emits a CONSTANT (-2.2) for
-        # every frame. The argmax of a flat signal is its first index, so snapping against it
-        # degenerates into a fixed shift of `1 + offset - radius` frames plus the
-        # monotonic-spacing constraint. That shift can still beat the unsnapped decoder,
-        # because it absorbs the decoder's placement bias - which is exactly what the 0.6397
-        # Buckeye row above is. It is a shift artifact, not a detector.
+        # (MFA, for scale: 0.8035 TIMIT / 0.8164 Buckeye. Every BFA setting is still far short
+        # of it. Snapping moves onsets; it does not fix the decoder.)
         #
-        # `model3a.CUPEEmbeddingsExtractor` records this as `boundary_head_trained`, and
-        # `_resolve_snap_source` routes 'auto' around an untrained head rather than reporting a
-        # shift as a detection result. Asking for 'boundary_head' explicitly on such a
-        # checkpoint still works, but warns.
+        # What the defaults act on:
+        #
+        #  1. model3a gets `spectral_stream` - best real source on both corpora, above control
+        #     on both. model2i gets `pre_transformer`, because `spectral_stream` is the best
+        #     on TIMIT for model2i too but falls BELOW the control on Buckeye (0.5174 vs
+        #     0.5437): better on read speech, worse on conversational. Hence the branch.
+        #  2. `embeddings` (BFA <= 1.1.5's source) is below control on BOTH corpora for both
+        #     families. It is never a default.
+        #  3. A TRAINED head is never selected automatically - it is the only real source that
+        #     loses to its own control.
+        #
+        # WARNING on 'boundary_head'. Two separate problems, and 'auto' avoids both by never
+        # selecting it.
+        #
+        # UNTRAINED heads. `bnd_head_enabled: True` means the module exists, NOT that it
+        # learned anything - that is `bnd_head_lambda`, and most released ue03* checkpoints
+        # have `bnd_head_lambda: 0.0` ("boundary objective OFF", door 16). Their `out.weight`
+        # is zero, so the head emits a CONSTANT (-2.2) for every frame. The argmax of a flat
+        # signal is its first index, so snapping against it degenerates into a fixed shift of
+        # `1 + offset - radius` frames plus the monotonic-spacing constraint. That shift can
+        # still score well because it absorbs the decoder's placement bias - on Buckeye it is
+        # the single best setting in the CSVs (+0.0472, ahead of spectral_stream's +0.0260),
+        # which says the decoder runs about one frame late and Buckeye punishes that more than
+        # TIMIT does. It is a shift artifact, not a detector. A plain global shift is not
+        # reachable through this API today (`offset` only applies after a search, `radius=0`
+        # disables snapping), and is worth adding as a first-class option.
+        #
+        # TRAINED heads. `ue03g_e19` (lambda=1.0) has one, and it does detect boundaries - frame
+        # AUC 0.886 against ground truth, next to spectral_stream's 0.893 on the same
+        # checkpoint. But snapping to it scores 0.0168 BELOW not snapping at all on 6300 TIMIT
+        # files. Its targets come from the model's OWN Viterbi output, so what it learned best
+        # is the decoder's placement (AUC 0.864 against its own decoder, vs 0.70-0.75 for the
+        # flux taps) - it reproduces the decoder's lateness instead of correcting it. Signed
+        # error median +6, the same as `none`, where the flux taps pull it to +3/+4.
+        #
+        # `model3a.CUPEEmbeddingsExtractor` records `boundary_head_trained` either way.
+        # Requesting 'boundary_head' explicitly works and warns, with the relevant caveat.
         #
         # `offset` stays 0: a plain global shift of the decoder's onsets is worth +0.74 f1 held
         # out at -1 frame and 0.00 once snapping is on, because snapping already absorbs the
@@ -387,7 +528,26 @@ class PhonemeTimestampAligner:
         # every source; it moves onsets, it does not invent them.
         self._warned_pre_window = False
         self.break_at_low_confidence = False # under construction, not fully implemented yet
-        
+
+        # --- adaptive chunking (chunking.py) ------------------------------------------
+        # Long segments are walked window by window rather than decoded in one shot. The
+        # tunables below are the ones worth reaching for; the run lengths, backoff and
+        # confidence floor that decide WHERE a window is cut live in `chunking.py` and are
+        # settable through `set_chunking()`.
+        self.chunk_audio = bool(chunk_audio)
+        self.chunk_seconds = float(chunk_seconds)
+        self.chunk_max_phonemes = int(chunk_max_phonemes)
+        self.chunk_phonemes_per_second = float(chunk_phonemes_per_second)
+        self.chunk_vad = bool(chunk_vad)
+        self.chunk_derail_frames = DEFAULT_DERAIL_FRAMES
+        self.chunk_derail_run = DEFAULT_DERAIL_RUN
+        self.chunk_backoff = DEFAULT_BACKOFF
+        self.chunk_conf_floor = DEFAULT_CONF_FLOOR
+        self.chunk_weak_run = DEFAULT_WEAK_RUN
+        self.chunk_snap_to_silence = DEFAULT_SNAP_TO_SILENCE_SEC
+        self._warn_if_budget_overruns_lattice()
+
+
         self._setup_decoders()
 
         # Initialize audio processing
@@ -484,6 +644,9 @@ class PhonemeTimestampAligner:
             self._warn(f"could not read checkpoint metadata ({type(_e).__name__}); "
                        f"assuming model2{arch}.")
 
+        # Kept because `boundary_snap_source='auto'` branches on the architecture, not on
+        # whether a boundary head exists - see `_resolve_snap_source`.
+        self._ckpt_arch = arch
         self._info(f"Checkpoint architecture: model{'2' if arch in ('i', 'j') else ''}{arch}")
         if arch == '3a':
             self.extractor = CUPEEmbeddingsExtractor_3a(cupe_ckpt_path, device=self.device,
@@ -577,8 +740,17 @@ class PhonemeTimestampAligner:
         `self.boundary_snap_source`.
 
         Only `'auto'` needs resolving, and it is the default, so this is the path most callers
-        take. It picks the learned head when there is a trained one and `AUTO_SNAP_FALLBACK`
-        otherwise, which is what lets a single default work across both checkpoint families.
+        take. It branches on the checkpoint's ARCHITECTURE - `AUTO_SNAP_MODEL3A` for model3a,
+        `AUTO_SNAP_MODEL2I` for model2i/model2j - because the two families do not rank the
+        sources the same way once Buckeye is taken into account. The table and the measurements
+        are on `AUTO_SNAP_MODEL3A` above.
+
+        This CHANGED in 1.3. It used to branch on whether the checkpoint had a *trained*
+        boundary head, and pick the head when it did. `conclusions.md` §10 measured that head
+        against a `none` control for the first time and it came out 0.0168 BELOW not snapping
+        at all on 6300 TIMIT files - it is the only real source that loses to its own control -
+        so `auto` no longer selects it. An explicit `boundary_snap_source='boundary_head'`
+        still works.
 
         An EXPLICIT request is never silently rewritten - being handed a different tensor than
         you asked for is precisely the failure that makes a snap result uninterpretable - but
@@ -588,10 +760,11 @@ class PhonemeTimestampAligner:
         has_head = self._has_trained_boundary_head()
 
         if requested == 'auto':
-            self.boundary_snap_source = 'boundary_head' if has_head else AUTO_SNAP_FALLBACK
+            arch = getattr(self, '_ckpt_arch', None)
+            self.boundary_snap_source = AUTO_SNAP_MODEL3A if arch == '3a' else AUTO_SNAP_MODEL2I
             if getattr(self, 'extractor', None) is not None:
                 self._info(f"boundary snap: 'auto' resolved to '{self.boundary_snap_source}' "
-                           f"({'trained boundary head' if has_head else 'no trained boundary head'})")
+                           f"(model{'3a' if arch == '3a' else '2' + str(arch or 'i')})")
         else:
             self.boundary_snap_source = requested
 
@@ -607,53 +780,81 @@ class PhonemeTimestampAligner:
                     "trained (bnd_head_lambda=0.0, out.weight is zero), so it emits a constant "
                     "for every frame. Snapping against a constant is a fixed shift of "
                     f"{1 + self.boundary_snap_offset} - radius frames, not a detection. Use "
-                    "'auto' to fall back to '" + AUTO_SNAP_FALLBACK + "' automatically.")
+                    f"'auto' to get '{AUTO_SNAP_MODEL3A}' instead. (Note that on Buckeye that "
+                    "shift is the single best-scoring setting in the CSVs, +0.047 r_value over "
+                    "no snapping - the decoder runs late and the shift corrects it. It is still "
+                    "a shift, not a detector.)")
+            else:
+                self._warn(
+                    "boundary_snap_source='boundary_head' with a TRAINED head. Measured at "
+                    "0.0168 r_value BELOW not snapping at all on 6300 TIMIT files "
+                    "(conclusions.md §10): the head learned to reproduce the decoder's own "
+                    "onset placement rather than correct it. 'auto' selects "
+                    f"'{AUTO_SNAP_MODEL3A}' instead, and 'none' disables snapping.")
         return self.boundary_snap_source
 
     def _resolve_snap_radius(self):
         """
-        Convert the requested radius into whole frames using the loaded model's frame stride.
+        Settle the search half-width, in FRAMES, in `self.boundary_snap_radius`.
         Called from the constructor, and again by `set_boundary_snap` when retuned.
 
-        The ms default depends on the RESOLVED source (`DEFAULT_SNAP_RADIUS_MS`), so
-        `_resolve_snap_source` must have run first: `boundary_head` wants 2 frames and the flux
-        taps want 4, and applying the flux radius to a head costs 0.067 r_value.
+        Frames are the unit of record. The snapper searches `sig[f-r : f+r+1]`, a whole number
+        of frames, so a millisecond radius is only ever a way of naming one - 50 ms and 55 ms
+        are the same 4-frame search at a 210-sample stride, and saying "4" says which search
+        will actually run. Milliseconds are still accepted and still win when given; they are
+        converted here and the resulting duration is reported back in
+        `self.boundary_snap_radius_ms` for anyone logging it.
+
+        Precedence, highest first:
+          1. `boundary_snap_source='none'`  -> 0, overriding everything ('none' means none)
+          2. `boundary_snap_radius`         -> used as-is, in frames
+          3. `boundary_snap_radius_ms`      -> rounded to frames at this model's stride
+          4. per-source default             -> `DEFAULT_SNAP_RADIUS_FRAMES`
+
+        `_resolve_snap_source` must have run first, because (4) is per-source.
 
         A radius of 0 is how "no snapping" is expressed everywhere downstream - every call site
         already guards on `boundary_snap_radius > 0`, and `snap_onsets_to_embeddings` returns
-        its input unchanged. So `boundary_snap_source='none'` resolves to 0 here rather than
-        being special-cased in five places, and it OVERRIDES an explicit `boundary_snap_radius`
-        too: 'none' means none.
+        its input unchanged - so 'none' resolves to 0 here rather than being special-cased in
+        five places.
         """
         frame_ms = 1000.0 * getattr(self, 'frame_stride_wav', 210) / self.sample_rate
-        requested_ms = self._boundary_snap_radius_ms_requested
-        if requested_ms is None:
-            requested_ms = DEFAULT_SNAP_RADIUS_MS.get(self.boundary_snap_source,
-                                                      DEFAULT_SNAP_RADIUS_MS_FALLBACK)
-        self.boundary_snap_radius_ms = float(requested_ms)
 
         if self.boundary_snap_source == 'none':
-            self.boundary_snap_radius = 0
+            radius = 0
         elif self._boundary_snap_radius_override is not None:
-            self.boundary_snap_radius = self._boundary_snap_radius_override
-        elif self.boundary_snap_radius_ms <= 0:
-            self.boundary_snap_radius = 0
+            radius = max(0, int(self._boundary_snap_radius_override))
+        elif self._boundary_snap_radius_ms_requested is not None:
+            ms = float(self._boundary_snap_radius_ms_requested)
+            # round, but never collapse a positive request to a 0-frame (i.e. disabled) search
+            radius = 0 if ms <= 0 else max(1, int(round(ms / frame_ms)))
         else:
-            # round, but never collapse a positive request to 0 frames
-            self.boundary_snap_radius = max(1, int(round(self.boundary_snap_radius_ms / frame_ms)))
+            radius = DEFAULT_SNAP_RADIUS_FRAMES.get(self.boundary_snap_source,
+                                                    DEFAULT_SNAP_RADIUS_FRAMES_FALLBACK)
+
+        self.boundary_snap_radius = int(radius)
+        # Derived, for reporting only - the duration the resolved frame count actually spans,
+        # not whatever ms value may have been asked for.
+        self.boundary_snap_radius_ms = self.boundary_snap_radius * frame_ms
         self.boundary_snap_frame_ms = frame_ms
         return self.boundary_snap_radius
 
-    def set_boundary_snap(self, radius_ms=None, radius_frames=None, offset=None, source=None,
+    def set_boundary_snap(self, radius_frames=None, radius_ms=None, offset=None, source=None,
                           verbose=None):
         """
         Retune onset snapping on a live aligner, for sweeping without reconstructing it.
 
+        Sweep in FRAMES - `set_boundary_snap(radius_frames=n)`. That is the unit the search
+        actually uses, so a frame sweep visits every distinct setting exactly once, where a ms
+        sweep silently repeats itself (50 ms and 55 ms are the same 4-frame search).
+
         Args:
-            radius_ms: search half-width in ms. `0` disables snapping; `'default'` restores the
-                per-source default from `DEFAULT_SNAP_RADIUS_MS`.
-            radius_frames: explicit override in frames; takes precedence over `radius_ms`.
-                Pass `'clear'` to drop a previous override and go back to the ms value.
+            radius_frames: search half-width in frames. `0` disables snapping; `'clear'`
+                restores the per-source default from `DEFAULT_SNAP_RADIUS_FRAMES`.
+            radius_ms: the same half-width in ms, rounded to frames at the loaded model's
+                stride. Used only while `radius_frames` is unset, so pass `radius_frames='clear'`
+                first if one was given. `'default'` clears it. Useful for comparing models with
+                different frame strides; otherwise prefer frames.
             offset: frames added after the argmax (see `snap_onsets_to_embeddings`).
             source: one of `SNAP_SOURCES` - which tensor to snap against, `'auto'` to re-resolve
                 against the loaded checkpoint, or `'none'` for vanilla (no snapping, the
@@ -669,13 +870,18 @@ class PhonemeTimestampAligner:
         Returns:
             The resolved radius in frames.
         """
-        if radius_ms is not None:
-            self._boundary_snap_radius_ms_requested = (None if radius_ms == 'default'
-                                                       else float(radius_ms))
-            self._boundary_snap_radius_override = None
+        # Frames first: a plain `set_boundary_snap(radius_frames=n)` must not be silently
+        # outranked by a ms value set earlier, so clearing one clears the other.
         if radius_frames is not None:
             self._boundary_snap_radius_override = (None if radius_frames == 'clear'
                                                    else int(radius_frames))
+            if radius_frames != 'clear':
+                self._boundary_snap_radius_ms_requested = None
+        if radius_ms is not None:
+            self._boundary_snap_radius_ms_requested = (None if radius_ms == 'default'
+                                                       else float(radius_ms))
+            if radius_frames is None:
+                self._boundary_snap_radius_override = None
         if offset is not None:
             self.boundary_snap_offset = int(offset)
         if source is not None:
@@ -1104,6 +1310,22 @@ class PhonemeTimestampAligner:
 
 
     
+    def _predict_windows(self, windows_flat, **kwargs):
+        '''
+        `extractor.predict` over `windows_flat` in groups of `WINDOW_BATCH` windows.
+
+        CUPE classifies each window on its own, so splitting the batch changes nothing in the
+        output - but it caps GPU memory, which otherwise grows with segment length because every
+        window of the segment goes through one forward pass (~9 MB per second of audio: 2.0 GB
+        for a 225 s segment).
+        '''
+        if windows_flat.shape[0] <= WINDOW_BATCH:
+            return self.extractor.predict(windows_flat, **kwargs)
+        parts = [self.extractor.predict(windows_flat[i:i + WINDOW_BATCH], **kwargs)
+                 for i in range(0, windows_flat.shape[0], WINDOW_BATCH)]
+        return tuple(None if parts[0][k] is None else torch.cat([p[k] for p in parts], dim=0)
+                     for k in range(len(parts[0])))
+
     def _cupe_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
         """
         Process a batch of audio through the CUPE model to get logits.
@@ -1142,7 +1364,9 @@ class PhonemeTimestampAligner:
         # them returned. `boundary_snap_source` is the RESOLVED source here: 'auto' was turned
         # into a concrete tap by `_resolve_snap_source` when the model loaded, so it can never
         # reach this far.
-        snapping_on = (getattr(self, 'boundary_snap_radius', 0) or 0) > 0
+        # The segmental decoder reads the same tap as the snapper, whether or not snapping is on.
+        snapping_on = ((getattr(self, 'boundary_snap_radius', 0) or 0) > 0
+                       or self._segmental_needs_tap())
         need_embeddings = (extract_embeddings or (refiner is not None)
                            or (snapping_on and self.boundary_snap_source == 'embeddings'))
 
@@ -1179,7 +1403,7 @@ class PhonemeTimestampAligner:
         if need_embeddings or want_pre_window:
             if want_pre_window:
                 try:
-                    logits_class, logits_group, embeddings, pre_window = self.extractor.predict(
+                    logits_class, logits_group, embeddings, pre_window = self._predict_windows(
                         windows_flat, return_pre_window=True, groups_only=False, tap=want_tap)
                 except TypeError:
                     # An extractor that predates `return_pre_window` / `tap`. Say so rather than
@@ -1199,16 +1423,16 @@ class PhonemeTimestampAligner:
                                    "measures barely above no snapping at all (TIMIT r_value "
                                    "0.5853 vs 0.5812 for 'none').")
                         self._warned_pre_window = True
-                    logits_class, logits_group, embeddings = self.extractor.predict(
+                    logits_class, logits_group, embeddings = self._predict_windows(
                         windows_flat, return_embeddings=True, groups_only=False)
             else:
-                logits_class, logits_group, embeddings = self.extractor.predict(
+                logits_class, logits_group, embeddings = self._predict_windows(
                     windows_flat,
                     return_embeddings=True,
                     groups_only=False
                 )
         else:
-            logits_class, logits_group = self.extractor.predict(
+            logits_class, logits_group = self._predict_windows(
                 windows_flat,
                 return_embeddings=False,
                 groups_only=False
@@ -1674,9 +1898,48 @@ class PhonemeTimestampAligner:
 
         return updated_batch
 
+    def _segmental_needs_tap(self):
+        '''Whether the segmental decoder will run, and so needs the boundary tap computed.'''
+        return (getattr(self, 'decoder', 'ctc') == 'segmental'
+                and getattr(self, 'n_substates', 1) == 1
+                and getattr(self, 'boundary_snap_source', 'none') != 'none')
+
+    def _decode_segmental_batch(self, log_probs, ph_seqs, ph_seq_lens, spectral_lens,
+                                change_source, word_sequences=None):
+        '''
+        Run `segmental.decode_segmental` per batch item. Returns framestamps in the same
+        `(phoneme_id, start_frame, end_frame, target_seq_idx)` form as the CTC decoder.
+
+        `change_source` is the snap tap: a [B, T, D] feature map, whose adjacent-frame cosine
+        distance is the spectral flux, or a [B, T] per-frame boundary score.
+        '''
+        per_frame = (change_source.dim() == 2) or (change_source.shape[-1] == 1)
+        out = []
+        for b in range(log_probs.shape[0]):
+            T = int(spectral_lens[b])
+            n = int(ph_seq_lens[b])
+            if n == 0:
+                out.append([])
+                continue
+            T_src = min(T, change_source.shape[1])
+            if per_frame:
+                change = change_source[b, :T_src].float().reshape(-1).cpu().numpy()
+            else:
+                emb = change_source[b, :T_src].float()
+                change = (1.0 - F.cosine_similarity(emb[:-1], emb[1:], dim=-1)).cpu().numpy()
+            words = None
+            if word_sequences is not None and word_sequences[b] is not None \
+                    and len(word_sequences[b]) >= n:
+                words = list(word_sequences[b])[:n]
+            out.append(decode_segmental(
+                log_probs[b, :T], ph_seqs[b, :n].tolist(), self.model_blank_class,
+                self.silence_class, change=change, word_idx=words,
+                enforce=self.enforce_all_targets, change_per_frame=per_frame))
+        return out
+
     def extract_timestamps_from_segment_batch(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0,
                                       group_sequences=None, extract_embeddings=True, do_groups=True,
-                                      debug=True, ):
+                                      debug=False, word_sequences=None):
         """
         Extract phoneme and group timestamps from multiple audio segments (batch processing).
 
@@ -1689,6 +1952,10 @@ class PhonemeTimestampAligner:
             extract_embeddings: Whether to extract pooled embeddings.
             do_groups: Whether to extract phoneme group timestamps.
             debug: Enable debug output.
+            word_sequences: Optional word index per phoneme, per segment (the phonemizer's
+                `word_num`). Only the segmental decoder uses it: pauses are allowed between
+                words, and `enforce_all_targets=False` skips whole words. Without it every
+                phoneme is treated as its own word.
 
         Returns:
             timestamp_dicts: List of dictionaries with 'phoneme_timestamps' and 'group_timestamps'.
@@ -1771,25 +2038,32 @@ class PhonemeTimestampAligner:
         # (and door 7's settled blank-stride behaviour) completely untouched: the triplet
         # simply occupies the slots one phone used to, and the three sub-state labels are
         # distinct, so CTC's skip transition already permits a direct B->M->E walk.
-        decode_ph_seqs, decode_ph_lens = self._expand_substates(ph_seqs, ph_seq_lens)
+        use_segmental = self._segmental_needs_tap() and snap_source is not None
+        if use_segmental:
+            # Onsets are placed with the boundary tap INSIDE the Viterbi, so there is nothing
+            # left for the greedy snapper below to do.
+            frame_phonemes = self._decode_segmental_batch(
+                log_probs_p, ph_seqs, ph_seq_lens, spectral_lens, snap_source, word_sequences)
+        else:
+            decode_ph_seqs, decode_ph_lens = self._expand_substates(ph_seqs, ph_seq_lens)
 
-        frame_phonemes = self.alignment_utils_p.decode_alignments(
-                    log_probs_p,
-                    true_seqs=decode_ph_seqs,
-                    pred_lens=spectral_lens,
-                    true_seqs_lens=decode_ph_lens,
-                    forced_alignment=True,
-                    boost_targets=self.boost_targets,
-                    enforce_minimum=self.enforce_minimum,
-                    debug=debug
-                )
-        frame_phonemes = self._collapse_substates(frame_phonemes)
+            frame_phonemes = self.alignment_utils_p.decode_alignments(
+                        log_probs_p,
+                        true_seqs=decode_ph_seqs,
+                        pred_lens=spectral_lens,
+                        true_seqs_lens=decode_ph_lens,
+                        forced_alignment=True,
+                        boost_targets=self.boost_targets,
+                        enforce_minimum=self.enforce_minimum,
+                        debug=debug
+                    )
+            frame_phonemes = self._collapse_substates(frame_phonemes)
 
         # §4 route 1: re-place the onsets using the embedding change signal, which carries
         # boundary information the posteriors have lost. Identities and order are untouched.
         # Applied BEFORE ensure_target_coverage/extend_soft_boundaries so those still see a
         # well-formed, monotonic segmentation. `boundary_snap_radius=0` disables it.
-        if (getattr(self, 'boundary_snap_radius', 0) or 0) > 0:
+        if (not use_segmental) and (getattr(self, 'boundary_snap_radius', 0) or 0) > 0:
             # `snap_source` is already resolved by `_cupe_prediction_batch` from
             # `boundary_snap_source`: the head's per-frame logit, the pre-transformer map, or
             # the 512-d embeddings. `snap_onsets_to_embeddings` reads the per-frame and the
@@ -1798,16 +2072,24 @@ class PhonemeTimestampAligner:
                 frame_phonemes, snap_source, spectral_lens,
                 radius=self.boundary_snap_radius, offset=self.boundary_snap_offset)
 
-        # Forced alignment with target boosting
-        frame_groups = self.alignment_utils_g.decode_alignments(
-            log_probs_g, 
-            true_seqs=grp_seqs, 
-            pred_lens=spectral_lens, 
-            true_seqs_lens=ph_seq_lens, 
-            forced_alignment=True,
-            boost_targets=self.boost_targets,
-            enforce_minimum=self.enforce_minimum,
-        )
+        if use_segmental:
+            # Groups are a many-to-one relabelling of the phonemes, so they take the phoneme
+            # segmentation directly: consistent with it by construction, and one Viterbi
+            # instead of two.
+            grp_list = grp_seqs.tolist()
+            frame_groups = [[(int(grp_list[b][ti]), sf, ef, ti) for (_ph, sf, ef, ti) in fp]
+                            for b, fp in enumerate(frame_phonemes)]
+        else:
+            # Forced alignment with target boosting
+            frame_groups = self.alignment_utils_g.decode_alignments(
+                log_probs_g,
+                true_seqs=grp_seqs,
+                pred_lens=spectral_lens,
+                true_seqs_lens=ph_seq_lens,
+                forced_alignment=True,
+                boost_targets=self.boost_targets,
+                enforce_minimum=self.enforce_minimum,
+            )
 
 
         frame_phonemes = self.ensure_target_coverage(phoneme_sequences, aligned_frames=frame_phonemes, seq_lens=ph_seq_lens, _silence_class=self.silence_class, debug=debug)
@@ -1882,7 +2164,565 @@ class PhonemeTimestampAligner:
         return timestamp_dicts, [None] * len(frame_phonemes), [None] * len(frame_phonemes)
 
     
-    def extract_timestamps_from_segment_simplified(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0.0, debug=True):
+    # ======================================================================================
+    # Adaptive chunking for long segments.  See `chunking.py` for the rationale and the
+    # measurement that motivated it.
+    # ======================================================================================
+
+    def set_chunking(self, enabled=None, seconds=None, max_phonemes=None,
+                     phonemes_per_second=None, vad=None, derail_frames=None,
+                     derail_run=None, backoff=None, conf_floor=None, weak_run=None,
+                     snap_to_silence=None, verbose=None):
+        """
+        Retune the long-segment chunker on a live aligner, for sweeping without
+        reconstructing it. Every argument left as None keeps its current value.
+
+        Args:
+            enabled: master switch (`chunk_audio`). False restores whole-segment decoding.
+            seconds: audio window length.
+            max_phonemes: cap on one window's phoneme budget.
+            phonemes_per_second: budget rate, measured over SPEECH seconds.
+            vad: use the energy VAD for speech-seconds and cut snapping.
+            derail_frames: a phoneme this short (frames) is the decoder out of audio.
+            derail_run: consecutive short phonemes that constitute a cram.
+            backoff: minimum phonemes dropped before a detected cut.
+            conf_floor: confidence below which a phoneme counts as unseen.
+            weak_run: consecutive below-floor phonemes that derail a window on their own.
+            snap_to_silence: seconds a cut may be moved forward to land in a pause; 0 off.
+            verbose: print the resolved configuration. None follows `warn_level>=2`.
+
+        Returns:
+            The resolved configuration as a dict.
+        """
+        if enabled is not None:
+            self.chunk_audio = bool(enabled)
+        if seconds is not None:
+            self.chunk_seconds = float(seconds)
+        if max_phonemes is not None:
+            self.chunk_max_phonemes = int(max_phonemes)
+        if phonemes_per_second is not None:
+            self.chunk_phonemes_per_second = float(phonemes_per_second)
+        if vad is not None:
+            self.chunk_vad = bool(vad)
+        if derail_frames is not None:
+            self.chunk_derail_frames = int(derail_frames)
+        if derail_run is not None:
+            self.chunk_derail_run = int(derail_run)
+        if backoff is not None:
+            self.chunk_backoff = int(backoff)
+        if conf_floor is not None:
+            self.chunk_conf_floor = float(conf_floor)
+        if weak_run is not None:
+            self.chunk_weak_run = int(weak_run)
+        if snap_to_silence is not None:
+            self.chunk_snap_to_silence = float(snap_to_silence)
+        # Re-checked here, not only in __init__, because all three of `seconds`,
+        # `max_phonemes` and `phonemes_per_second` feed the same constraint: whichever of
+        # the rate and the cap binds first has to stay under what the window's frames can
+        # hold at CTC stride 4 (152 phonemes for an 8s window, 190 for 10s).
+        self._warn_if_budget_overruns_lattice()
+
+        cfg = {
+            'enabled': self.chunk_audio, 'seconds': self.chunk_seconds,
+            'max_phonemes': self.chunk_max_phonemes,
+            'phonemes_per_second': self.chunk_phonemes_per_second,
+            'vad': self.chunk_vad, 'derail_frames': self.chunk_derail_frames,
+            'derail_run': self.chunk_derail_run, 'backoff': self.chunk_backoff,
+            'conf_floor': self.chunk_conf_floor, 'weak_run': self.chunk_weak_run,
+            'snap_to_silence': self.chunk_snap_to_silence,
+        }
+        if verbose or (verbose is None and self.warn_level >= 2):
+            print("chunking: " + ", ".join(f"{k}={v}" for k, v in cfg.items()))
+        return cfg
+
+    def _warn_if_budget_overruns_lattice(self):
+        """
+        Warn when a window's phoneme budget cannot fit the CTC lattice at stride 4.
+
+        `chunk_seconds` and the budget are not independent. The forced decoder builds a
+        `stride * S + 1` lattice and walks `stride` down from 4 until it fits the window's
+        frames; below 4 there is less blank room between phones and placement degrades.
+
+        Both knobs are checked because either can cause it: raising the rate, or shortening
+        the window without lowering the cap (an 8s window holds 152 phonemes at stride 4
+        where a 10s window holds 190). Nothing is silently adjusted - the caller may have a
+        reason - but it is said out loud rather than surfacing later as a bad alignment.
+
+        This is a guard against a condition no tested configuration has actually hit; the
+        measured cost of a high rate comes from somewhere else (see
+        `chunking.DEFAULT_PHONEMES_PER_SECOND`). Keep the warning quiet rather than loud.
+        """
+        if not getattr(self, 'chunk_audio', False):
+            return
+        frame_ms = 1000.0 * getattr(self, 'frame_stride_wav', 210) / self.sample_rate
+        safe = stride4_max_phonemes(self.chunk_seconds, 1000.0 / frame_ms)
+        rate_ask = int(math.ceil(self.chunk_phonemes_per_second * self.chunk_seconds))
+        budget = min(self.chunk_max_phonemes, rate_ask)
+        if budget > safe:
+            driver = ("chunk_max_phonemes" if self.chunk_max_phonemes <= rate_ask
+                      else f"chunk_phonemes_per_second={self.chunk_phonemes_per_second:g}")
+            self._warn(
+                f"a full {self.chunk_seconds:g}s window can budget {budget} phonemes "
+                f"({driver}), but only {safe} fit the CTC lattice at stride 4. The decoder "
+                f"will compress the lattice and windows may derail internally. Use "
+                f"chunk_max_phonemes<={safe}, or chunking.stride4_max_phonemes"
+                f"({self.chunk_seconds:g}) to derive it.")
+
+    def detect_speech_segments(self, audio_wav, **kwargs):
+        """
+        Energy VAD over a waveform. Returns `[(start_sec, end_sec), ...]` for the speech
+        spans, in order.
+
+        Exposed because it is useful on its own (marking `[SIL]` regions, trimming, sanity
+        checks), but its job inside BFA is narrow: size each chunk's phoneme budget from
+        SPEECH seconds rather than wall-clock seconds, and let a chunk cut land in a pause.
+        It is independent of `silence_anchors`, which is a different mechanism operating on
+        the posteriors and the target sequence - see `chunking.py`.
+
+        Args:
+            audio_wav: waveform tensor, 1-D or (C, T).
+            **kwargs: forwarded to `chunking.detect_speech_segments` (frame_ms, hop_ms,
+                noise_margin_db, dynamic_range_db, min_speech_ms, min_silence_ms, pad_ms).
+        """
+        return _chunking.detect_speech_segments(audio_wav, self.resampler_sample_rate, **kwargs)
+
+    @contextlib.contextmanager
+    def _chunk_window_scope(self):
+        """
+        Run one chunk window without letting it touch the segment-level bookkeeping.
+
+        A window is an internal step, not a unit of work the caller asked for, and most of
+        one is thrown away. Left alone it would corrupt both halves of the reporting:
+
+          - `ensure_target_coverage` counts every window's targets, so a phoneme aligned in
+            the discarded tail of window 1 and again in window 2 is counted twice. On
+            30s.wav that turned 356 targets into a reported 920.
+          - it also warns about targets it could not place, which for the over-provisioned
+            tail is the EXPECTED outcome - those phonemes are the next window's job.
+
+        So the counters are snapshotted and restored, and `warn_level` is held at 1 for the
+        duration (silencing the level-2 coverage chatter but not real warnings).
+        `align_segment_chunked` then attributes the segment's totals once, from the
+        assembled result.
+
+        SILENCE ANCHORING IS ALSO DISABLED inside a window, and that one is not just
+        bookkeeping. `silence_anchors` splits the target sequence at SIL tokens from the
+        transcript's punctuation and decodes each span separately - a mitigation for
+        exactly the long-segment collapse the chunker now handles directly, applied to a
+        window that is already short enough not to need it. Measured on 30s.wav, chunked:
+
+            silence_anchors    0      3      10
+            mean confidence  0.403  0.330  0.403     (0.330 also trips `bad_alignment`)
+
+        0 and 10 are identical because at 10 no span qualifies inside a 10 s window, so it
+        falls through to the plain Viterbi. 3 does fire, and it only costs accuracy: the
+        window gets cut at punctuation that may not be where the speaker paused, on top of
+        the cut the chunker is about to make on evidence. Holding it at 0 makes chunked
+        results independent of a setting that no longer applies to them. The parameter
+        still does its original job when `chunk_audio=False`.
+        """
+        names = ('total_segments_processed', 'total_segments_bad', 'total_segments_failed',
+                 'total_phonemes_aligned', 'total_phonemes_target',
+                 'total_phonemes_aligned_easily', 'total_phonemes_missed',
+                 'total_phonemes_extra', 'perfect_matches')
+        saved = {n: getattr(self, n) for n in names}
+        saved_warn = self.warn_level
+        self.warn_level = min(self.warn_level, 1)
+        # `decode_alignments` reads `anchor_pauses=self.silence_anchors > 0` off these, so
+        # zeroing them is what turns the segmented path off for the window.
+        utils = [u for u in (getattr(self, 'alignment_utils_p', None),
+                             getattr(self, 'alignment_utils_g', None)) if u is not None]
+        saved_anchors = [u.silence_anchors for u in utils]
+        for u in utils:
+            u.silence_anchors = 0
+        try:
+            yield
+        finally:
+            for u, v in zip(utils, saved_anchors):
+                u.silence_anchors = v
+            self.warn_level = saved_warn
+            for n, v in saved.items():
+                setattr(self, n, v)
+
+    def _needs_chunking(self, duration_sec, n_phonemes):
+        """
+        Whether a segment goes down the chunked path.
+
+        Both conditions matter and neither implies the other: 40 s of sparse speech holds
+        few phonemes but still overruns the decoder's usable window, while 30 s of rapid
+        speech overruns the phoneme budget first.
+
+        The test is a plain `>`, so `chunk_seconds` means what it says: anything longer is
+        chunked. It used to carry 10% slack on each side, which made the real threshold 11 s
+        for a nominal 10 - so a 10.2 s segment took the single-shot path and collapsed, while
+        the setting that would have caught it (`chunk_seconds`) appeared to be satisfied.
+        A segment of exactly `chunk_seconds` still takes the cheaper single-shot path.
+        """
+        if not self.chunk_audio:
+            return False
+        if self._segmental_needs_tap():
+            # The segmental decoder does not collapse on long segments (recall is flat across
+            # position on 30 s segments, and 30s.wav keeps its confidence to the last word), so
+            # windowing only adds cut points that can land mid-phone: on 40 Buckeye segments,
+            # onset f1@25 69.2 whole vs 68.3 chunked, and 30s.wav mean confidence 0.728 vs
+            # 0.661, and on a single 225 s Buckeye segment 67.3 vs 54.7. It is kept only as a
+            # memory/time guard above `segmental_max_seconds`.
+            return duration_sec > self.segmental_max_seconds
+        return (duration_sec > self.chunk_seconds
+                or n_phonemes > self.chunk_max_phonemes)
+
+    @torch.no_grad()
+    def align_segment_whole(self, clip_wav, start_sec, end_sec, phoneme_sequence,
+                            group_sequence=None, extract_embeddings=False, do_groups=False,
+                            debug=False, word_sequence=None):
+        '''
+        Align one segment in a single decode on its own, UNPADDED audio.
+
+        This is the path for segments longer than `duration_max` that are not chunked. The
+        batched path pads every segment to `duration_max` and would otherwise truncate a
+        longer one silently, dropping its tail. Same inputs and return value as
+        `align_segment_chunked`.
+        '''
+        sr = self.resampler_sample_rate
+        wav = clip_wav.mean(dim=0) if clip_wav.dim() > 1 else clip_wav
+        a = max(0, int(start_sec * sr))
+        b = int(end_sec * sr) if (end_sec is not None and end_sec > 0) else wav.shape[0]
+        wav = self._rms_normalize(wav[a:min(b, wav.shape[0])])
+        res, pe, ge = self.extract_timestamps_from_segment_batch(
+            wav.unsqueeze(0), [wav.shape[0]], [list(phoneme_sequence)],
+            start_offset_times=[start_sec],
+            group_sequences=[list(group_sequence)] if (do_groups and group_sequence is not None) else None,
+            extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug,
+            word_sequences=[list(word_sequence)] if word_sequence is not None else None)
+        return res[0], pe[0], ge[0]
+
+    @torch.no_grad()
+    def align_segment_chunked(self, clip_wav, start_sec, end_sec, phoneme_sequence,
+                              group_sequence=None, extract_embeddings=False,
+                              do_groups=False, debug=False, word_sequence=None):
+        """
+        Align one long segment by walking overlapping windows, and return exactly what one
+        element of `extract_timestamps_from_segment_batch`'s output looks like - so the
+        caller cannot tell which path a segment took.
+
+        The loop is the one described in `chunking.py`: over-provision each window's
+        phoneme budget from its speech seconds, align it, find where the surplus starts
+        cramming into one frame apiece (corroborated by the confidence collapse), keep
+        everything before that, and restart at the end of the last kept phoneme with the
+        phonemes that were not kept.
+
+        Args:
+            clip_wav: the PARENT clip's waveform, 1-D or (C, T). Sliced here, not by
+                `chop_wav` - windows must not be padded out to `duration_max`, which would
+                cost several times the compute per window and change the window count.
+            start_sec, end_sec: segment bounds within the clip, in seconds.
+            phoneme_sequence: target phoneme ids for the whole segment.
+            group_sequence: matching group ids, or None to derive them per window.
+            extract_embeddings, do_groups, debug: as `extract_timestamps_from_segment_batch`.
+            word_sequence: word index per phoneme (phonemizer `word_num`), or None.
+
+        Returns:
+            `(result_dict, pooled_phoneme_embeddings, pooled_group_embeddings)` where
+            `result_dict` has 'phoneme_timestamps' and 'group_timestamps' as 8-tuples
+            `(id, start_frame, end_frame, target_idx, is_estimated, confidence,
+            start_ms, end_ms)`. Frames and target indices are SEGMENT-global, not
+            window-local, and the ms values carry `start_sec` like the single-shot path.
+        """
+        sr = self.resampler_sample_rate
+        n_total = len(phoneme_sequence)
+
+        wav = clip_wav
+        if wav.dim() > 1:
+            wav = wav.mean(dim=0)
+        seg_a = max(0, int(start_sec * sr))
+        seg_b = int(end_sec * sr) if (end_sec is not None and end_sec > 0) else wav.shape[0]
+        seg_b = min(seg_b, wav.shape[0])
+        wav = wav[seg_a:seg_b]
+        # Normalise ONCE over the whole segment rather than per window. CUPE wants
+        # RMS-normalised input, but normalising each window separately would hand the same
+        # moment of audio a different gain depending on which window it fell in, so the
+        # overlap would not agree with itself.
+        wav = self._rms_normalize(wav)
+        seg_dur = wav.shape[0] / sr
+
+        speech = self.detect_speech_segments(wav) if self.chunk_vad else []
+        if debug or self.warn_level >= 2:
+            sp = _chunking.speech_seconds(speech, 0.0, seg_dur)
+            print(f"Chunked alignment: {seg_dur:.2f}s segment, {n_total} phonemes, "
+                  f"VAD speech {sp:.2f}s in {len(speech)} span(s)")
+
+        # Each entry is `(framestamp, pooled_embedding_row_or_None)` - see the comment at
+        # the extend below for why the two travel together rather than in parallel lists.
+        ph_rows, grp_rows = [], []
+        ph_cursor = 0
+        t_cursor = 0.0
+        # One window always consumes at least one phoneme, so `n_total` iterations is a
+        # hard ceiling; the +8 covers the audio-only advances over pure-silence windows.
+        for _ in range(n_total + 8):
+            if ph_cursor >= n_total or (seg_dur - t_cursor) < self.seg_duration_min:
+                break
+            remaining = n_total - ph_cursor
+
+            chunk_end = min(t_cursor + self.chunk_seconds, seg_dur)
+            # Extend to the end only when what remains could not be aligned AT ALL.
+            #
+            # This used to collapse whenever the remainder was under a quarter of a window,
+            # which measured the wrong quantity and created a dead zone: the next window does
+            # not start at `chunk_end`, it starts at the CUT, which is typically 20-25%
+            # earlier. So a 12 s segment saw "2 s left, less than 2.5 s, collapse" and became
+            # one 12 s window - i.e. the single-shot decode the chunker exists to avoid -
+            # when the real next window would have been [~7.5 s, 12 s], a perfectly alignable
+            # 4.5 s. Everything between `chunk_seconds` and 1.25x `chunk_seconds` was
+            # silently un-chunked.
+            #
+            # Because the restart is at the cut, a small remainder here never becomes a small
+            # window; it is absorbed into a window that starts well before it.
+            if (seg_dur - chunk_end) < self.seg_duration_min:
+                chunk_end = seg_dur
+            audio_exhausted = chunk_end >= seg_dur - 1e-6
+
+            sp_sec = _chunking.speech_seconds(speech, t_cursor, chunk_end)
+            if sp_sec < 0.15 and not audio_exhausted:
+                # A window with no speech in it. Skip the audio rather than forcing
+                # phonemes into it - this is the one place the VAD decides something on its
+                # own, and getting it wrong only costs a window of overlap.
+                nxt = next((a for a, _ in speech if a > t_cursor), chunk_end)
+                skipped_from = t_cursor
+                t_cursor = max(min(nxt, chunk_end), t_cursor + 0.25)
+                if debug:
+                    print(f"  window {skipped_from:6.2f}-{chunk_end:6.2f}s is silent, "
+                          f"skipping to {t_cursor:.2f}s")
+                continue
+
+            budget = int(math.ceil(self.chunk_phonemes_per_second * sp_sec))
+            budget = max(1, min(budget, self.chunk_max_phonemes))
+            n = min(remaining, budget)
+            if audio_exhausted:
+                # Last window: there is no more audio to walk into, so everything left has
+                # to go in here whether it fits or not. A cram at this point is the text
+                # genuinely outrunning the audio, not a budget artifact.
+                n = remaining
+            final = (n == remaining) and audio_exhausted
+
+            res, pe, ge, used_n = self._align_chunk(
+                wav, t_cursor, chunk_end, start_sec,
+                list(phoneme_sequence[ph_cursor:ph_cursor + n]),
+                list(group_sequence[ph_cursor:ph_cursor + n]) if (do_groups and group_sequence is not None) else None,
+                extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug,
+                words=list(word_sequence[ph_cursor:ph_cursor + n]) if word_sequence is not None else None)
+            if res is None:
+                # Window could not be aligned at all even after shrinking the budget.
+                # Advance the audio and try again rather than aborting the segment.
+                t_cursor = min(seg_dur, t_cursor + max(0.5, self.chunk_seconds * 0.25))
+                continue
+            n = used_n
+            final = final and (n == remaining)
+
+            stamps = res['phoneme_timestamps']
+            if not stamps:
+                # The window decoded but placed nothing (every target fell outside the
+                # valid frame range). Advance past it rather than dividing by it below.
+                if debug:
+                    print(f"  window {t_cursor:6.2f}-{chunk_end:6.2f}s produced no stamps, skipping")
+                t_cursor = min(seg_dur, t_cursor + max(0.5, self.chunk_seconds * 0.25))
+                continue
+            keep, reason = self._chunk_keep_count(stamps, n, final)
+
+            frame_offset = int(round(t_cursor * sr / self.frame_stride_wav))
+            keep_mask = [0 <= int(t[3]) < keep for t in stamps]
+            kept = [t for t, m in zip(stamps, keep_mask) if m]
+            if not kept:
+                # Nothing survived the cut. Take the window's first phoneme on trust so the
+                # walk cannot stall, and let the coverage/confidence warnings flag it.
+                kept = stamps[:1]
+                keep = max(1, min(keep, 1))
+                keep_mask = [i == 0 for i in range(len(stamps))]
+
+            last_end_ms = max(float(t[7]) for t in kept)
+            cut_rel = (last_end_ms / 1000.0) - start_sec
+
+            if (not final) and self.chunk_snap_to_silence > 0:
+                # Restarting on a pause gives the next window's first phoneme a clean onset
+                # to latch onto. Forward only - moving the cut back would make the next
+                # window re-align audio already assigned to a kept phoneme.
+                snapped = _chunking.snap_cut_to_silence(
+                    cut_rel, speech, seg_dur, self.chunk_snap_to_silence)
+                if snapped > cut_rel:
+                    cut_rel = snapped
+
+            # Stamps and their pooled embedding rows are carried together, because the
+            # final sort below can reorder them: two windows' kept stamps are each in time
+            # order, but a snapped or soft-extended boundary at a window edge can still put
+            # one window's last stamp after the next window's first. Appending to two
+            # parallel lists and sorting only one would silently pair each embedding with a
+            # different phoneme.
+            keep_ids = [i for i, m in enumerate(keep_mask) if m]
+            ph_rows.extend(zip(
+                self._reindex_stamps(kept, ph_cursor, frame_offset),
+                (pe[keep_ids] if (extract_embeddings and pe is not None) else [None] * len(kept))))
+
+            if do_groups:
+                g_all = res.get('group_timestamps') or []
+                g_ids = [i for i, t in enumerate(g_all) if 0 <= int(t[3]) < keep]
+                g_kept = [g_all[i] for i in g_ids]
+                grp_rows.extend(zip(
+                    self._reindex_stamps(g_kept, ph_cursor, frame_offset),
+                    (ge[g_ids] if (extract_embeddings and ge is not None
+                                   and len(ge) == len(g_all)) else [None] * len(g_kept))))
+
+            if debug:
+                why = f"derailed at {reason}" if reason else "kept whole window"
+                print(f"  window {t_cursor:6.2f}-{chunk_end:6.2f}s  speech {sp_sec:5.2f}s  "
+                      f"budget {n:3d}  kept {keep:3d} ({why})  next cut {cut_rel:.2f}s")
+
+            ph_cursor += keep
+            # Phoneme progress is guaranteed (keep >= 1), so the loop always terminates;
+            # this only keeps the audio cursor from stalling and re-decoding the same
+            # window over and over when a cut lands on or before where it started.
+            t_cursor = max(cut_rel, t_cursor + 1e-3) if cut_rel > t_cursor else \
+                min(seg_dur, t_cursor + max(0.25, self.chunk_seconds * 0.25))
+            if final:
+                break
+
+        if ph_cursor < n_total and (debug or self.warn_level >= 1):
+            self._warn(f"chunked alignment ran out of audio with {n_total - ph_cursor} of "
+                       f"{n_total} phonemes unaligned ({seg_dur:.2f}s segment). The text is "
+                       f"longer than the audio, or the audio is mostly silence.")
+
+        ph_rows.sort(key=lambda r: (r[0][6], r[0][3]))
+        grp_rows.sort(key=lambda r: (r[0][6], r[0][3]))
+        ph_stamps = [r[0] for r in ph_rows]
+        grp_stamps = [r[0] for r in grp_rows]
+
+        # Attribute the segment's coverage stats ONCE, from the assembled result. The
+        # per-window numbers were rolled back by `_chunk_window_scope` because they count
+        # each over-provisioned tail as "missed" and each re-aligned phoneme twice.
+        covered = {int(t[3]) for t in ph_stamps if int(t[3]) >= 0}
+        self.total_phonemes_target += n_total
+        self.total_phonemes_aligned += len(ph_stamps)
+        self.total_phonemes_aligned_easily += sum(1 for t in ph_stamps if not t[4])
+        self.total_phonemes_missed += max(0, n_total - len(covered))
+        self.total_phonemes_extra += max(0, len(ph_stamps) - len(covered))
+
+        result = {'phoneme_timestamps': ph_stamps, 'group_timestamps': grp_stamps}
+        p_emb = self._stack_rows(ph_rows)
+        g_emb = self._stack_rows(grp_rows)
+        return result, p_emb, g_emb
+
+    @staticmethod
+    def _stack_rows(rows):
+        """`[(stamp, emb_row), ...]` -> `[N, D]` tensor, or None if no window produced any."""
+        embs = [r[1] for r in rows if r[1] is not None]
+        if not embs or len(embs) != len(rows):
+            return None
+        return torch.stack(embs, dim=0)
+
+    @staticmethod
+    def _reindex_stamps(stamps, ph_offset, frame_offset):
+        """
+        Move one window's framestamps into segment-global coordinates.
+
+        Only the frames and the target index move; the ms values already carry the
+        window's `start_offset_times`, which `_align_chunk` sets to the window's absolute
+        position, so they are global on arrival.
+        """
+        out = []
+        for (ph, sf, ef, ti, est, conf, sms, ems) in stamps:
+            out.append((ph, int(sf) + frame_offset, int(ef) + frame_offset,
+                        int(ti) + ph_offset if int(ti) >= 0 else int(ti),
+                        est, conf, sms, ems))
+        return out
+
+    def _align_chunk(self, wav, t0, t1, seg_start_sec, phonemes, groups,
+                     extract_embeddings=False, do_groups=False, debug=False, words=None):
+        """
+        Align one window. Returns `(result, pooled_p, pooled_g, n_phonemes_used)`, or
+        `(None, None, None, 0)` if the window could not be aligned at all.
+
+        The budget is over-provisioned by design, so it can overshoot far enough that the
+        CTC lattice no longer fits the window's frames and `decode_with_forced_alignment`
+        raises. That is a budget that was too greedy, not a broken window, so it is halved
+        and retried rather than propagated.
+        """
+        sr = self.resampler_sample_rate
+        a, b = int(t0 * sr), int(t1 * sr)
+        chunk = wav[a:b]
+        if chunk.shape[0] < self.seg_duration_min_samples or not phonemes:
+            return None, None, None, 0
+
+        n = len(phonemes)
+        for _ in range(4):
+            try:
+                with self._chunk_window_scope():
+                    res, pe, ge = self.extract_timestamps_from_segment_batch(
+                        chunk.unsqueeze(0), [chunk.shape[0]], [list(phonemes[:n])],
+                        start_offset_times=[seg_start_sec + t0],
+                        group_sequences=[list(groups[:n])] if (do_groups and groups) else None,
+                        extract_embeddings=extract_embeddings, do_groups=do_groups,
+                        debug=False,
+                        word_sequences=[list(words[:n])] if words else None)
+                return res[0], pe[0], ge[0], n
+            except ValueError as ex:
+                n = n // 2
+                if n < 1:
+                    if debug or self.warn_level >= 1:
+                        self._warn(f"could not align window {t0:.2f}-{t1:.2f}s: {ex}")
+                    return None, None, None, 0
+                if debug:
+                    print(f"  window {t0:.2f}-{t1:.2f}s over-budgeted ({ex}); "
+                          f"retrying with {n} phonemes")
+        return None, None, None, 0
+
+    def _chunk_keep_count(self, stamps, n_targets, final):
+        """
+        How many of a window's `n_targets` phonemes to trust.
+
+        `stamps` are the window's aligned 8-tuples, in start-time order, with window-local
+        target indices. They are re-keyed by target index here (first occurrence wins;
+        `ensure_target_coverage` can insert estimated duplicates) so a missing target shows
+        up as `None` and counts as derailed.
+
+        Returns `(keep_count, reason)` where reason is 'duration', 'confidence', 'trim' or
+        None.
+        """
+        durations = [None] * n_targets
+        confidences = [None] * n_targets
+        for (_ph, sf, ef, ti, _est, conf, _sms, _ems) in stamps:
+            ti = int(ti)
+            if 0 <= ti < n_targets and durations[ti] is None:
+                durations[ti] = int(ef) - int(sf)
+                confidences[ti] = float(conf)
+
+        min_keep = max(1, int(MIN_KEEP_FRACTION * n_targets))
+        cut, reason = _chunking.find_derailment(
+            durations, confidences, min_keep=min_keep,
+            derail_frames=self.chunk_derail_frames, derail_run=self.chunk_derail_run,
+            conf_floor=self.chunk_conf_floor, weak_run=self.chunk_weak_run,
+            backoff=self.chunk_backoff)
+
+        if final:
+            # The LAST window keeps everything, derailed or not, and this has to be checked
+            # BEFORE the cut. A cut defers phonemes to the next window; on the final window
+            # there is no next window, so the same cut DELETES them. That is how the last
+            # three phonemes of 30s.wav ("find", at 31.4-31.9 s) went missing: the window was
+            # 33 phonemes, `find_derailment` called a confidence cut at 30, and 31-33 had
+            # nowhere to go. A badly-placed stamp is strictly better than no stamp - it is
+            # flagged by its own confidence, and by `coverage_analysis`, where a dropped
+            # phoneme is silent.
+            #
+            # `reason` is still reported so the debug line can say the window derailed even
+            # though nothing was trimmed; a cram here means the text genuinely outruns the
+            # audio rather than the budget being too greedy.
+            return n_targets, (f'{reason} (final, kept anyway)' if reason else None)
+        if cut is not None:
+            return max(min_keep, min(cut, n_targets)), reason
+        # No cram and audio still to come means the budget was too SMALL for this window:
+        # its last phonemes were stretched to fill audio that belongs to the ones that
+        # never got in. Drop a short tail so the next window re-decodes them.
+        trim = max(2, int(NO_DERAIL_TRIM_FRACTION * n_targets))
+        return max(min_keep, n_targets - trim), 'trim'
+
+    def extract_timestamps_from_segment_simplified(self, wavs, wav_lens, phoneme_sequences, start_offset_times=0.0, debug=False):
         '''
         Simplified version of extract_timestamps_from_segment_batch.
         No group timestamps, no embeddings, no target boosting, no silence anchoring.
@@ -2162,6 +3002,7 @@ class PhonemeTimestampAligner:
         ts_outs = [self.phonemize_sentence(seg["text"]) for _, seg, _ in flat_items]
         phoneme_sequences = [ts[self.phonemes_key] for ts in ts_outs]
         group_sequences = [ts[self.phoneme_groups_key] for ts in ts_outs] if do_groups else [None] * len(flat_items)
+        word_sequences = [ts.get("word_num") for ts in ts_outs]
 
         for (_, seg, _), ph_seq, grp_seq in zip(flat_items, phoneme_sequences, group_sequences):
             seg[self.phonemes_key] = ph_seq
@@ -2190,6 +3031,7 @@ class PhonemeTimestampAligner:
         flat_items_f = [flat_items[i] for i in valid_indices]
         ph_seqs_f = [phoneme_sequences[i] for i in valid_indices]
         grp_seqs_f = [group_sequences[i] for i in valid_indices]
+        word_seqs_f = [word_sequences[i] for i in valid_indices]
         ts_outs_f = [ts_outs[i] for i in valid_indices]
 
         # --- Chop audio from each sub-segment's parent clip ---
@@ -2223,6 +3065,7 @@ class PhonemeTimestampAligner:
             flat_items_f = [flat_items_f[i] for i in valid_indices]
             ph_seqs_f = [ph_seqs_f[i] for i in valid_indices]
             grp_seqs_f = [grp_seqs_f[i] for i in valid_indices]
+            word_seqs_f = [word_seqs_f[i] for i in valid_indices]
             ts_outs_f = [ts_outs_f[i] for i in valid_indices]
             wavs = [wavs[i] for i in valid_indices]
             wav_lens = [wav_lens[i] for i in valid_indices]
@@ -2234,59 +3077,104 @@ class PhonemeTimestampAligner:
         wavs = torch.stack(wavs, dim=0)
         start_times = [seg["start"] for _, seg, _ in flat_items_f]
 
-        # --- Model inference (single batched call across all segments) ---
-        if batch_size < len(flat_items):
-            if debug: print(f"Processing {len(flat_items_f)} segments in batches of {batch_size}...")
-            results = []
-            pooled_emb_p_list = []
-            pooled_emb_g_list = []
-            for i in range(0, len(flat_items_f), batch_size):
-                batch_slice = slice(i, i + batch_size)
+        results = [None] * len(flat_items_f)
+        pooled_emb_p_list = [None] * len(flat_items_f)
+        pooled_emb_g_list = [None] * len(flat_items_f)
+
+        # --- Route long segments to the adaptive chunker -----------------------------------
+        # A long segment is not just a bigger short one. Past roughly `chunk_seconds` of
+        # audio or `chunk_max_phonemes` targets, the single-shot Viterbi stops degrading and
+        # starts collapsing - on 30s.wav it packed 353 phonemes into the first 18.3s of a 32s
+        # clip and emitted the last ~200 at one frame each. Those segments are walked window
+        # by window instead (chunking.py); everything shorter takes the batched single-shot
+        # path below, unchanged, so short-clip results are bit-identical to before.
+        long_ids, whole_ids, short_ids = [], [], []
+        for i, ((_bi, seg, _cw), ph_seq) in enumerate(zip(flat_items_f, ph_seqs_f)):
+            seg_dur = float(seg["end"]) - float(seg["start"])
+            if self._needs_chunking(seg_dur, len(ph_seq)):
+                long_ids.append(i)
+            elif seg_dur > self.seg_duration_max:
+                # Longer than the batch padding: decode on its own rather than be truncated.
+                whole_ids.append(i)
+            else:
+                short_ids.append(i)
+
+        for i in whole_ids:
+            bi, seg, clip_wav = flat_items_f[i]
+            try:
+                res, pe, ge = self.align_segment_whole(
+                    clip_wav, float(seg["start"]), float(seg["end"]), ph_seqs_f[i],
+                    group_sequence=grp_seqs_f[i] if do_groups else None,
+                    extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug,
+                    word_sequence=word_seqs_f[i])
+            except ValueError as ex:
+                self._warn(f"alignment failed for clip {bi}, segment "
+                           f"{seg['start']:.2f}-{seg['end']:.2f}s: {ex}")
+                res, pe, ge = {'phoneme_timestamps': [], 'group_timestamps': []}, None, None
+            results[i], pooled_emb_p_list[i], pooled_emb_g_list[i] = res, pe, ge
+
+        for i in long_ids:
+            bi, seg, clip_wav = flat_items_f[i]
+            if debug or self.warn_level >= 2:
+                print(f"Clip {bi}: segment {seg['start']:.2f}-{seg['end']:.2f}s with "
+                      f"{len(ph_seqs_f[i])} phonemes -> chunked alignment "
+                      f"({self.chunk_seconds:g}s windows)")
+            try:
+                res, pe, ge = self.align_segment_chunked(
+                    clip_wav, float(seg["start"]), float(seg["end"]), ph_seqs_f[i],
+                    group_sequence=grp_seqs_f[i] if do_groups else None,
+                    extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug,
+                    word_sequence=word_seqs_f[i])
+            except ValueError as ex:
+                self._warn(f"chunked alignment failed for clip {bi}, segment "
+                           f"{seg['start']:.2f}-{seg['end']:.2f}s: {ex}")
+                res, pe, ge = {'phoneme_timestamps': [], 'group_timestamps': []}, None, None
+            results[i], pooled_emb_p_list[i], pooled_emb_g_list[i] = res, pe, ge
+
+        # --- Model inference for the rest (single batched call across all segments) ---
+        if short_ids:
+            eff_batch = batch_size if batch_size < len(flat_items) else len(short_ids)
+            if debug and eff_batch < len(short_ids):
+                print(f"Processing {len(short_ids)} segments in batches of {eff_batch}...")
+            for i in range(0, len(short_ids), eff_batch):
+                ids = short_ids[i:i + eff_batch]
                 try:
-                    batch_results_slice, batch_p_embds_slice, batch_g_embds_slice = self.extract_timestamps_from_segment_batch(
-                        wavs[batch_slice], [wav_lens[j] for j in range(*batch_slice.indices(len(wavs)))], ph_seqs_f[batch_slice],
-                        start_offset_times=[start_times[j] for j in range(*batch_slice.indices(len(start_times)))],
-                        group_sequences=grp_seqs_f[batch_slice] if do_groups else None,
+                    r_slice, p_slice, g_slice = self.extract_timestamps_from_segment_batch(
+                        torch.stack([wavs[j] for j in ids], dim=0),
+                        [wav_lens[j] for j in ids],
+                        [ph_seqs_f[j] for j in ids],
+                        start_offset_times=[start_times[j] for j in ids],
+                        group_sequences=[grp_seqs_f[j] for j in ids] if do_groups else None,
                         extract_embeddings=extract_embeddings,
                         do_groups=do_groups,
-                        debug=debug
+                        debug=debug,
+                        word_sequences=[word_seqs_f[j] for j in ids],
                     )
-                    results.extend(batch_results_slice)
-                    pooled_emb_p_list.extend(batch_p_embds_slice)
-                    pooled_emb_g_list.extend(batch_g_embds_slice)
                 except ValueError as ex:
                     if debug or self.warn_level >= 1:
-                        print(f"ValueError processing batch {batch_slice}: {ex}. This may be due to audio duration too short for the phoneme sequence. Check the segment durations and phoneme counts. Expected at least 2 frames per phone.")
+                        print(f"ValueError processing segments {ids}: {ex}. This may be due to audio duration too short for the phoneme sequence. Check the segment durations and phoneme counts. Expected at least 2 frames per phone.")
                         # print audio duration and phoneme sequences for each segment in the batch slice
-                        for j in range(*batch_slice.indices(len(flat_items_f))):
+                        for j in ids:
                             bi, seg, _ = flat_items_f[j]
                             ph_seq = ph_seqs_f[j]
                             grp_seq = grp_seqs_f[j] if do_groups else None
                             seg_duration = wav_lens[j] / self.resampler_sample_rate
                             print(f"  Clip {bi}, segment '{seg['text'][:30]}...', duration: {seg_duration:.2f}s, phoneme count: {len(ph_seq)}, group count: {len(grp_seq) if grp_seq is not None else 'N/A'}")
-                        
-                    results.extend([
-                        {
-                            'phoneme_timestamps': [],
-                            'group_timestamps': [],
-                        }
-                        for b in range(batch_size)
-                    ])
-                    pooled_emb_p_list.extend([None] * batch_size)
-                    pooled_emb_g_list.extend([None] * batch_size)
+
+                    # One placeholder PER SEGMENT IN THIS SLICE. The old code emitted
+                    # `batch_size` of them regardless, so a short final slice shifted every
+                    # later segment's result onto the wrong segment.
+                    r_slice = [{'phoneme_timestamps': [], 'group_timestamps': []} for _ in ids]
+                    p_slice = [None] * len(ids)
+                    g_slice = [None] * len(ids)
                 except Exception as e:
-                    print(f"Error processing batch slice {batch_slice}: {e}")
+                    print(f"Error processing segments {ids}: {e}")
                     raise e
 
-        else:
-            results, pooled_emb_p_list, pooled_emb_g_list = self.extract_timestamps_from_segment_batch(
-                wavs, wav_lens, ph_seqs_f,
-                start_offset_times=start_times,
-                group_sequences=grp_seqs_f if do_groups else None,
-                extract_embeddings=extract_embeddings,
-                do_groups=do_groups,
-                debug=debug
-            )
+                for k, j in enumerate(ids):
+                    results[j] = r_slice[k]
+                    pooled_emb_p_list[j] = p_slice[k]
+                    pooled_emb_g_list[j] = g_slice[k]
 
         # --- Post-process and regroup results by batch item ---
         for idx, ((bi, seg, _), result, ts) in enumerate(zip(flat_items_f, results, ts_outs_f)):
@@ -2339,22 +3227,64 @@ class PhonemeTimestampAligner:
                     low_confidence_count = sum(1 for c in confidences if c < 0.5)
                     low_confidence_ratio = low_confidence_count / len(confidences)
 
+                    # `si` counts SURVIVING segments, so it does not index the caller's input
+                    # once anything has been skipped (empty phonemization, a chop error).
+                    # The time range does identify the segment unambiguously, so both
+                    # warnings below carry it - chasing "segment 44" back to an SRT that has
+                    # a different segment 44 is a waste of everyone's afternoon.
+                    seg_where = (f"Clip {bi}, segment {si+1} "
+                                 f"({float(seg_out.get('start', 0)):.2f}-"
+                                 f"{float(seg_out.get('end', 0)):.2f}s)")
+
                     if low_confidence_ratio > self.bad_confidence_threshold:
                         if debug or self.warn_level >= 2:
-                            print(f"  WARNING: Clip {bi}, segment {si+1} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) avg={avg_confidence:.3f}")
+                            print(f"  WARNING: {seg_where} has too many low-confidence phonemes: {low_confidence_ratio:.2%} ({low_confidence_count}/{len(confidences)}) avg={avg_confidence:.3f}")
                         batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
                         self.total_segments_bad += 1
+                    # The head-vs-tail confidence split. This is the signature of an
+                    # alignment that starts on the right audio and then runs away from it:
+                    # confidence collapses as the decoder loses the thread, well before the
+                    # durations degenerate. `chunking.find_derailment` now uses the same
+                    # signal WITHIN a window to decide where to cut, but this check stays -
+                    # it is the last line of defence, reporting a segment that came out bad
+                    # even after chunking (or with chunking turned off).
                     first_20_confidences = sum(confidences[10:30]) / 20
                     last_20_confidences = sum(confidences[-30:-10]) / 20
 
                     if first_20_confidences > 0.1 and last_20_confidences < 0.1:
-                        if self.silence_anchors == 0:
-                            raise Exception(f"Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider setting `silence_anchors=3`.")
+                        seg_dur = float(seg_out.get("end", 0)) - float(seg_out.get("start", 0))
+                        n_ph = len(seg_out[self.phonemes_key])
+                        was_chunked = self._needs_chunking(seg_dur, n_ph)
+                        pps = (n_ph / seg_dur) if seg_dur > 0 else 0.0
+                        if not was_chunked and self.silence_anchors == 0 and not self.chunk_audio:
+                            raise Exception(f"Bad confidence pattern in {seg_where}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Both mitigations are off - enable `chunk_audio=True` (recommended for segments over ~{self.chunk_seconds:g}s) or set `silence_anchors=3`.")
+
+                        # Three distinct situations, and the advice differs for each. The
+                        # middle one used to be reported as "enable chunk_audio=True" even
+                        # when it already was - the segment simply sat under the threshold.
+                        if was_chunked:
+                            hint = (f"the chunker's cut points are landing late; try a smaller "
+                                    f"`chunk_seconds` (now {self.chunk_seconds:g}s) or a lower "
+                                    f"`chunk_phonemes_per_second` (now "
+                                    f"{self.chunk_phonemes_per_second:g}) via `set_chunking()`")
+                        elif self.chunk_audio:
+                            hint = (f"this {seg_dur:.1f}s / {n_ph}-phoneme segment is UNDER the "
+                                    f"chunking threshold (chunk_seconds={self.chunk_seconds:g}s, "
+                                    f"chunk_max_phonemes={self.chunk_max_phonemes}), so it took "
+                                    f"the single-shot path. Chunking is already on - lower the "
+                                    f"threshold, e.g. `set_chunking(seconds={max(2.0, seg_dur * 0.6):.0f})`")
                         else:
-                            if debug or self.warn_level >= 2:
-                                print(f"  WARNING: Bad confidence pattern in clip {bi}, segment {si+1}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Consider adjusting `silence_anchors`.")
-                            batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
-                            self.total_segments_bad += 1
+                            hint = (f"this {seg_dur:.1f}s segment took the single-shot path and "
+                                    f"`chunk_audio` is off - enable it")
+                        dense = (f" Note {n_ph} phonemes in {seg_dur:.1f}s is {pps:.1f}/s, above "
+                                 f"the {self.chunk_phonemes_per_second:g}/s this aligner assumes "
+                                 f"speech runs at; if the audio is not unusually fast, check the "
+                                 f"transcript for text that is not spoken in this segment."
+                                 if pps > self.chunk_phonemes_per_second else "")
+                        if debug or self.warn_level >= 1:
+                            print(f"  WARNING: Bad confidence pattern in {seg_where}: first 20 avg {first_20_confidences:.3f} vs last 20 avg {last_20_confidences:.3f}. Likely {hint}.{dense}")
+                        batch_results[bi]["segments"][si]["coverage_analysis"]["bad_alignment"] = True
+                        self.total_segments_bad += 1
 
         if debug:
             overall_avg_confidence = total_confidence / total_phonemes if total_phonemes > 0 else 0.0

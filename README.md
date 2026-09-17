@@ -617,7 +617,14 @@ PhonemeTimestampAligner(
     lang="en-us",                 # espeak-ng language code for phonemisation
     duration_max=10,              # Max segment length in seconds (used for padding)
     device="auto",                # "auto" | "cpu" | "cuda" | "mps"
-    silence_anchors=0,            # >0 enables silence-anchored splitting (try 3 for long sentences)
+    decoder="segmental",          # "segmental" (default) or "ctc" (BFA <= 1.1.5); see "Decoders" below
+    segmental_max_seconds=120,    # segmental: decode whole up to this length, chunk beyond
+    silence_anchors=0,            # >0 enables silence-anchored splitting (ctc decoder only)
+    chunk_audio=True,             # Walk long segments in overlapping windows (see "Long audio" below)
+    chunk_seconds=10.0,           # Window length; only segments longer than this are chunked
+    chunk_max_phonemes=190,       # Cap per window; = stride4_max_phonemes(chunk_seconds)
+    chunk_phonemes_per_second=15, # Budget rate, measured over SPEECH seconds
+    chunk_vad=True,               # Energy VAD for speech-seconds and cut placement
     boost_targets=True,           # Boost acoustic probability of target phonemes before alignment
     enforce_minimum=True,         # Prevent phonemes from being completely zeroed out
     enforce_all_targets=True,     # Guarantee every phoneme in the transcript gets a timestamp
@@ -641,10 +648,17 @@ PhonemeTimestampAligner(
 | `lang` | `"en-us"` | espeak-ng language code for phonemisation. See [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
 | `duration_max` | `10` | Maximum segment duration in seconds. Longer audio is truncated. Keep ≤30 s for best results. |
 | `device` | `"auto"` | `"auto"` detects CUDA/MPS/CPU automatically. |
-| `silence_anchors` | `0` | When >0, uses detected silences as anchor points to improve long-segment alignment. Try `3`. |
+| `decoder` | `"segmental"` | Which Viterbi places the phonemes. `"segmental"` assigns every frame to a phone or a pause and places onsets with the posteriors and the acoustic change together; `"ctc"` is the original CTC lattice plus onset snapping. See [Decoders](#decoders). |
+| `segmental_max_seconds` | `120` | Segmental decoder: segments up to this long are decoded in one pass and never chunked; longer ones are chunked to bound memory. Whole decoding is more accurate (225 s segment: 67.3 vs 54.7), so raise it if memory allows (225 s whole: 766 MB GPU, ~470 MB RAM). |
+| `silence_anchors` | `0` | CTC decoder only. When >0, uses detected silences as anchor points to improve long-segment alignment. Try `3`. Only helps when the transcript's punctuation matches the speaker's actual pauses — for long audio prefer `chunk_audio`. |
+| `chunk_audio` | `True` | Align segments longer than `chunk_seconds` by walking overlapping windows instead of decoding them in one shot. See [Long audio](#long-audio). Shorter segments are unaffected. |
+| `chunk_seconds` | `10.0` | Window length in seconds. Segments shorter than this (plus 10% slack) take the single-shot path. |
+| `chunk_max_phonemes` | `190` | Cap on the phoneme budget per window — the largest budget that keeps the CTC lattice at stride 4, i.e. `chunking.stride4_max_phonemes(chunk_seconds)`. Derive it again if you change `chunk_seconds` (8 s → 152, 12 s → 228); the aligner warns if you don't. |
+| `chunk_phonemes_per_second` | `15.0` | Budget rate over **speech** seconds (a safe upper bound for English). |
+| `chunk_vad` | `True` | Energy VAD used to measure speech seconds per window and to land cuts in pauses. Independent of `silence_anchors`. |
 | `boost_targets` | `True` | Increases the acoustic probability of expected phonemes before Viterbi decoding. |
 | `enforce_minimum` | `True` | Prevents any target phoneme from being completely zeroed out by the model. |
-| `enforce_all_targets` | `True` | Enable "forced" alignment (according to the given true phoneme sequence) instead of most probable alignment (when `False`) according to the predicted phoneme probabilties. |
+| `enforce_all_targets` | `True` | Forced alignment: every phoneme of the transcript gets a timestamp. `False` follows the acoustic evidence instead: whole words the audio does not contain (clipped segment edges, transcript errors) can be skipped. See [Unreliable transcripts](#unreliable-transcripts). |
 | `ensure_completeness` | `False` | After decoding, inserts any missing phonemes at their best estimated position. Set `True` for extra completeness gaurantee. |
 | `ignore_noise` | `True` | Drops predicted noise/silence frames from output. Set `False` to include them as `"noise"` entries. |
 | `extend_soft_boundaries` | `True` | Extends phoneme boundaries into adjacent frames that still carry some acoustic evidence. |
@@ -856,6 +870,154 @@ aligner.convert_to_textgrid(result, output_file="recording.TextGrid", include_co
 
 ## 🔧 Advanced Usage
 
+<a id="long-audio"></a>
+### Decoders
+
+`decoder="segmental"` (the default) and `decoder="ctc"` read the same CUPE posteriors and
+differ in how they turn them into timestamps.
+
+- **`ctc`** — the original decoder. CTC posteriors are *peaky*: a phoneme shows up as a
+  one- or two-frame spike surrounded by blank, and the lattice places the spike, not the
+  onset. Onsets are then moved greedily to the nearest spectral-flux peak
+  (`boundary_snap_*`). On long segments it collapses without `chunk_audio`.
+- **`segmental`** — every frame belongs to a phoneme or a pause, each phoneme lasts at
+  least 2 frames, and every transition into a phoneme is rewarded by the acoustic change
+  at that frame (the same boundary tap the snapper reads). Posteriors and acoustic change
+  are weighed **in the same Viterbi pass**, so a bad early decision cannot push the rest of
+  the sentence off course. It does not collapse on long segments, so `chunk_audio` only
+  only kicks in above `segmental_max_seconds` (120 s), as a memory guard. On a single 225 s
+  Buckeye segment, whole-segment decoding scores 67.3, the chunked `segmental` decoder 54.7
+  and the chunked `ctc` decoder 45.3 — so raise the limit if memory allows. Memory stays
+  modest: CUPE runs in fixed-size window batches, and decoding a 225 s segment whole peaks at
+  766 MB of GPU memory and ~470 MB of extra RAM.
+
+Onset F1 at 25 ms on Buckeye conversational speech (`en-us` model3a checkpoint; scorer
+identical to the MFA comparison, see `tests/test_buckeye.py`):
+
+| sample | `ctc` | `segmental` |
+|---|---|---|
+| 200 random segments | 59.0 | **68.2** |
+| 40 random segments (full pipeline) | 58.1 | **69.2** |
+| `s0103a`, all 30 segments | 54.9 | **65.5** |
+| TIMIT test, 150 random utterances | 59.6 | **67.5** |
+
+Onset timing bias goes from +5 ms (late) to 0, recall no longer drops towards the end of
+long segments, and the segmental path is 2-3x faster (groups reuse the phoneme
+segmentation instead of running a second Viterbi). On the 32 s clean `30s.wav`, decoded in
+one shot, mean confidence is 0.728 (0.721 first half / 0.735 second half) where the
+one-shot CTC decoder stops placing phonemes at 19 s.
+
+The segmental decoder needs a boundary tap, so it falls back to `ctc` for
+`boundary_snap_source="none"` and for sub-state checkpoints. `boost_targets`,
+`enforce_minimum` and `silence_anchors` only apply to the `ctc` decoder.
+
+### Unreliable transcripts
+
+Forced alignment (`enforce_all_targets=True`, the default) must place every phoneme of the
+text. When the text holds words that are not in the audio — a segment clipped a word too
+early, or a transcription error — those phonemes are squeezed into the neighbouring audio.
+
+With `enforce_all_targets=False` the segmental decoder can skip up to 3 consecutive words
+at any position, including the start and end of the segment, and speech with no transcript
+can fall into the gap between words instead of dragging its neighbours. Skipped phonemes
+have no timestamp and are reported in `coverage_analysis`.
+
+```python
+aligner = PhonemeTimestampAligner(preset="en-us", enforce_all_targets=False)
+```
+
+Onset F1 at 25 ms on `s0103a`, same ground truth, with the transcript damaged:
+
+| transcript | `ctc` forced | `segmental` forced | `segmental`, `enforce_all_targets=False` |
+|---|---|---|---|
+| clean | 54.9 | **65.5** | 65.4 |
+| 2 extra words glued onto each end | 54.5 | 62.7 | **63.8** |
+| 2 interior words missing | 53.7 | **63.2** | 62.9 |
+
+Keep the default on clean data: it costs nothing there, and the skip is a trade-off that
+only pays when the text really does run past the audio.
+
+### 🕙 Long audio
+
+> The rest of this section describes the **`ctc` decoder**. The default `segmental`
+> decoder aligns segments up to `segmental_max_seconds` (120 s) in one pass without collapsing (see
+> [Decoders](#decoders)), and longer segments than `duration_max` are decoded on their own
+> audio rather than truncated.
+
+Forced alignment over a long clip in one pass does not degrade gracefully — it collapses,
+packing every phoneme into the first part of the clip and emitting the rest at one frame
+(13 ms) apiece with zero confidence.
+
+`silence_anchors` was the previous mitigation, and it works *when the transcript's
+punctuation sits where the speaker actually paused*. When it doesn't, there is nothing to
+anchor to. Strip the commas from a transcript and one-shot alignment drops to ~0.02 mean
+confidence over ~23 % of the audio at **every** `silence_anchors` value.
+
+`chunk_audio=True` (the default) handles this by walking the segment in overlapping
+windows. Each window gets a deliberately **over-provisioned** phoneme budget — more
+phonemes than its audio can hold. The ones that really are there get aligned; the surplus
+crams into the final frames at one frame apiece, and that cram marks exactly where the
+window's alignment stopped being trustworthy. BFA keeps everything before it and restarts
+the next window at the end of the last kept phoneme, so windows overlap by however much was
+discarded and no audio between two kept phonemes is ever skipped. Confidence collapse is
+used as a corroborating signal — the cut is walked back over the near-zero-confidence drift
+that precedes the cram.
+
+The budget is sized from **speech** seconds, not wall-clock seconds, at
+`chunk_phonemes_per_second` (15 /s, a safe upper bound for English). That is what
+`chunk_vad` is for: a window holding 4 s of speech and 6 s of pause contains ~60 phonemes,
+not ~150, and over-budgeting it would push the cut point past the end of the real content.
+
+```python
+aligner = PhonemeTimestampAligner(preset="en-us", duration_max=60)
+
+# Nothing to do — segments over 10 s are chunked automatically.
+result = aligner.process_sentence(long_text, wav, debug=True)
+#   window   0.00- 10.00s  speech  9.20s  budget 138  kept 105 (derailed at duration)  next cut 9.46s
+#   window   9.46- 19.46s  speech  8.68s  budget 131  kept  99 (derailed at duration)  next cut 18.23s
+#   window  18.23- 28.23s  speech  8.91s  budget 134  kept  95 (derailed at duration)  next cut 27.42s
+#   window  27.42- 31.95s  speech  4.28s  budget  57  kept  57 (kept whole window)     next cut 31.88s
+
+# Retune on a live aligner without rebuilding it:
+aligner.set_chunking(seconds=8.0, phonemes_per_second=13.0)
+
+# The VAD is a public utility too:
+speech_spans = aligner.detect_speech_segments(wav)   # [(start_sec, end_sec), ...]
+```
+
+Mean confidence (audio coverage in parentheses) on a 32 s clip and a 36.5 s LJSpeech
+concatenation, `en_libri1000_ua01c` model2i:
+
+| clip | `silence_anchors` | one-shot | chunked |
+|---|---|---|---|
+| 32 s, punctuated | 0 | 0.021 (22 %) | **0.399** (100 %) |
+| | 10 *(default)* | 0.402 (100 %) | **0.399** (100 %) |
+| 32 s, punctuation stripped | any | 0.011 (24 %) | **0.408** (100 %) |
+| 36.5 s, punctuated | 0 | 0.016 (21 %) | **0.417** (99 %) |
+| | 10 *(default)* | 0.380 (99 %) | **0.417** (99 %) |
+| 36.5 s, punctuation stripped | any | 0.019 (23 %) | **0.385** (100 %) |
+
+**The gain is robustness, not a higher ceiling.** On a well-punctuated clip whose commas
+land on the speaker's actual pauses, one-shot alignment at the default `silence_anchors=10`
+is already fine (0.402, against chunked's 0.399) — and it falls off a cliff the moment that
+stops being true. Chunked alignment sits at 0.385–0.417 across every row, and gives the same
+answer whatever `silence_anchors` is set to.
+
+Segments shorter than `chunk_seconds` take the single-shot path unchanged, so short-clip
+results are unaffected. If a segment still comes out badly, `coverage_analysis["bad_alignment"]`
+is set and a warning names the knob to reach for.
+
+> **`chunk_audio` vs `silence_anchors`.** Different mechanisms for the same problem.
+> `silence_anchors` matches `SIL` tokens from the transcript's *punctuation* to
+> silence-looking regions in the posteriors and splits the target sequence there — so it
+> depends on punctuation and pauses corresponding one-to-one. `chunk_audio` never looks at
+> punctuation and never splits the target sequence; it cuts where the alignment itself
+> demonstrably fails.
+>
+> They do **not** stack: `silence_anchors` is switched off inside a chunk window, because a
+> 10 s window does not need splitting and doing it anyway only cost accuracy (0.330 and a
+> `bad_alignment` flag at `silence_anchors=3`, vs 0.403 with it off). It still applies when
+> `chunk_audio=False`, and to segments below the chunking threshold.
 
 ### 🎙️ Mel-Spectrogram Alignment
 
@@ -1089,8 +1251,16 @@ for f in *.wav; do balign "$f" "${f%.wav}.srt.json" "${f%.wav}.vs.json" --preset
 | `--lang CODE` | *(from preset)* | Override the espeak-ng language code only. |
 | `--model NAME` | *(from preset)* | Override the CUPE model name (advanced). |
 | `--duration-max FLOAT` | `10.0` | Max segment length in seconds for windowed processing. |
-| `--boost-targets / --no-boost-targets` | on | Boost expected phoneme probabilities before Viterbi. |
-| `--debug` | off | Print segment-by-segment progress. |
+| `--decoder segmental\|ctc` | `segmental` | Phoneme decoder. See [Decoders](#decoders). |
+| `--segmental-max-seconds FLOAT` | `120` | Segmental decoder: decode whole up to this length, chunk beyond. |
+| `--enforce-all-targets / --no-enforce-all-targets` | on | Off: skip words the audio does not contain. See [Unreliable transcripts](#unreliable-transcripts). |
+| `--boost-targets / --no-boost-targets` | on | Boost expected phoneme probabilities before Viterbi (ctc decoder). |
+| `--chunk-audio / --no-chunk-audio` | on | Walk long segments in overlapping windows instead of decoding them in one shot. See [Long audio](#long-audio). |
+| `--chunk-seconds FLOAT` | `10.0` | Window length. Only segments longer than this are chunked. |
+| `--chunk-max-phonemes INT` | `190` | Cap on the phoneme budget per window (the stride-4 lattice bound for a 10 s window). |
+| `--chunk-pps FLOAT` | `15.0` | Budget rate, in phonemes per second of **speech**. |
+| `--chunk-vad / --no-chunk-vad` | on | Energy VAD for per-window speech seconds and cut placement. |
+| `--debug` | off | Print segment-by-segment progress (and per-window chunk decisions). |
 | `--list-presets` | — | Print all supported language codes and exit. |
 | `--version` | — | Print version and exit. |
 
