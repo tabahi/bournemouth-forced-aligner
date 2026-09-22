@@ -76,18 +76,22 @@ class TestPhonemeTimestampAligner:
     # ---- chop_wav ----
 
     def test_chop_wav(self, aligner, dummy_audio):
-        """Test audio chopping returns correct length."""
+        """Chopping returns the segment, its true length, and an error code."""
         start_frame = 0
         end_frame = 8000  # 0.5 seconds
-        chopped_wav, wav_len = aligner.chop_wav(dummy_audio, start_frame, end_frame)
+        chopped_wav, wav_len, err = aligner.chop_wav(dummy_audio, start_frame, end_frame)
+        assert err == 0
         assert chopped_wav is not None
         assert wav_len == end_frame - start_frame
+        # The returned tensor is padded out to `duration_max`, so its length is NOT wav_len.
+        assert chopped_wav.shape[0] == aligner.wav_len_max
 
-    def test_chop_wav_too_short_raises(self, aligner):
-        """Test that chopping a too-short segment raises ValueError."""
+    def test_chop_wav_too_short_reports_an_error_code(self, aligner):
+        """A too-short segment is reported, not raised: the caller skips it and carries on."""
         short_audio = torch.randn(1, 16000)
-        with pytest.raises(ValueError, match="Segment too short"):
-            aligner.chop_wav(short_audio, 0, 100)  # 100 samples < min
+        chopped_wav, wav_len, err = aligner.chop_wav(short_audio, 0, 100)
+        assert chopped_wav is None and wav_len is None
+        assert err < 0
 
     # ---- process_sentence ----
 

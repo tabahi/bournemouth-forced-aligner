@@ -499,9 +499,9 @@
                         "phoneme_id": 28,
                         "phoneme_label": "p",
                         "ipa_label": "p",
-                        "start_ms": 0.0,
-                        "end_ms": 32.18333435058594,
-                        "confidence": 0.9304989576339722,
+                        "start_ms": 14.319162368774414,
+                        "end_ms": 52.5,
+                        "confidence": 0.06976429373025894,
                         "is_estimated": false,
                         "target_seq_idx": 0,
                         "index": 0
@@ -510,9 +510,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 32.18333435058594,
-                        "end_ms": 64.36666870117188,
-                        "confidence": 0.6583980917930603,
+                        "start_ms": 52.5,
+                        "end_ms": 82.5,
+                        "confidence": 0.07776357233524323,
                         "is_estimated": false,
                         "target_seq_idx": 1,
                         "index": 1
@@ -521,9 +521,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 64.36666870117188,
-                        "end_ms": 112.64167022705078,
-                        "confidence": 0.8265697956085205,
+                        "start_ms": 82.5,
+                        "end_ms": 142.50000000000003,
+                        "confidence": 0.03609613701701164,
                         "is_estimated": false,
                         "target_seq_idx": 2,
                         "index": 2
@@ -532,9 +532,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 112.64167022705078,
-                        "end_ms": 144.82501220703125,
-                        "confidence": 0.3939913213253021,
+                        "start_ms": 142.50000000000003,
+                        "end_ms": 199.12149429321292,
+                        "confidence": 0.3127877712249756,
                         "is_estimated": false,
                         "target_seq_idx": 3,
                         "index": 3
@@ -543,9 +543,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 144.82501220703125,
-                        "end_ms": 209.19168090820312,
-                        "confidence": 0.4655003845691681,
+                        "start_ms": 199.12149429321292,
+                        "end_ms": 287.9996681213379,
+                        "confidence": 0.42419350147247314,
                         "is_estimated": false,
                         "target_seq_idx": 4,
                         "index": 4
@@ -554,9 +554,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 209.19168090820312,
-                        "end_ms": 354.01666259765625,
-                        "confidence": 0.6444862484931946,
+                        "start_ms": 287.9996681213379,
+                        "end_ms": 468.9872360229492,
+                        "confidence": 0.06351117789745331,
                         "is_estimated": false,
                         "target_seq_idx": 5,
                         "index": 5
@@ -565,9 +565,9 @@
                         "phoneme_id": 55,
                         "phoneme_label": "\u014b",
                         "ipa_label": "\u014b",
-                        "start_ms": 354.01666259765625,
-                        "end_ms": 466.6583557128906,
-                        "confidence": 0.9301547408103943,
+                        "start_ms": 468.9872360229492,
+                        "end_ms": 580.3762054443359,
+                        "confidence": 0.31993788480758667,
                         "is_estimated": false,
                         "target_seq_idx": 6,
                         "index": 6
@@ -576,9 +576,9 @@
                         "phoneme_id": 0,
                         "phoneme_label": "SIL",
                         "ipa_label": "SIL",
-                        "start_ms": 466.6583557128906,
-                        "end_ms": 691.941650390625,
-                        "confidence": 0.02475021779537201,
+                        "start_ms": 580.3762054443359,
+                        "end_ms": 837.5,
+                        "confidence": 0.11554490029811859,
                         "is_estimated": false,
                         "target_seq_idx": 7,
                         "index": 7
@@ -587,9 +587,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 691.941650390625,
-                        "end_ms": 933.3167114257812,
-                        "confidence": 0.9812672138214111,
+                        "start_ms": 837.5,
+                        "end_ms": 947.5,
+                        "confidence": 0.11276539415121078,
                         "is_estimated": false,
                         "target_seq_idx": 8,
                         "index": 8
@@ -598,9 +598,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 933.3167114257812,
-                        "end_ms": 965.5,
-                        "confidence": 0.9254111647605896,
+                        "start_ms": 947.5,
+                        "end_ms": 997.5,
+                        "confidence": 0.7482182383537292,
                         "is_estimated": false,
                         "target_seq_idx": 9,
                         "index": 9
@@ -609,9 +609,9 @@
                         "phoneme_id": 46,
                         "phoneme_label": "\u00f0",
                         "ipa_label": "\u00f0",
-                        "start_ms": 965.5,
-                        "end_ms": 1013.7749633789062,
-                        "confidence": 0.2294962853193283,
+                        "start_ms": 997.5,
+                        "end_ms": 1037.5,
+                        "confidence": 0.013030212372541428,
                         "is_estimated": false,
                         "target_seq_idx": 10,
                         "index": 10
@@ -620,9 +620,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 1013.7749633789062,
-                        "end_ms": 1078.1417236328125,
-                        "confidence": 0.1748831868171692,
+                        "start_ms": 1037.5,
+                        "end_ms": 1067.5000000000002,
+                        "confidence": 0.0015001086285337806,
                         "is_estimated": false,
                         "target_seq_idx": 11,
                         "index": 11
@@ -631,9 +631,9 @@
                         "phoneme_id": 26,
                         "phoneme_label": "o\u028a",
                         "ipa_label": "o\u028a",
-                        "start_ms": 1078.1417236328125,
-                        "end_ms": 1174.691650390625,
-                        "confidence": 0.707343578338623,
+                        "start_ms": 1067.5000000000002,
+                        "end_ms": 1112.5,
+                        "confidence": 0.0002813597093336284,
                         "is_estimated": false,
                         "target_seq_idx": 12,
                         "index": 12
@@ -642,9 +642,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 1174.691650390625,
-                        "end_ms": 1319.5166015625,
-                        "confidence": 0.9638904929161072,
+                        "start_ms": 1112.5,
+                        "end_ms": 1142.5,
+                        "confidence": 0.0011325801024213433,
                         "is_estimated": false,
                         "target_seq_idx": 13,
                         "index": 13
@@ -653,9 +653,9 @@
                         "phoneme_id": 56,
                         "phoneme_label": "l",
                         "ipa_label": "l",
-                        "start_ms": 1319.5166015625,
-                        "end_ms": 1351.7000732421875,
-                        "confidence": 0.8375873565673828,
+                        "start_ms": 1142.5,
+                        "end_ms": 1371.8501281738281,
+                        "confidence": 0.6106188893318176,
                         "is_estimated": false,
                         "target_seq_idx": 14,
                         "index": 14
@@ -664,9 +664,9 @@
                         "phoneme_id": 1,
                         "phoneme_label": "i",
                         "ipa_label": "i",
-                        "start_ms": 1351.7000732421875,
-                        "end_ms": 1416.066650390625,
-                        "confidence": 0.9942694902420044,
+                        "start_ms": 1371.8501281738281,
+                        "end_ms": 1472.5,
+                        "confidence": 0.43653807044029236,
                         "is_estimated": false,
                         "target_seq_idx": 15,
                         "index": 15
@@ -675,9 +675,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 1416.066650390625,
-                        "end_ms": 1512.61669921875,
-                        "confidence": 0.9644433856010437,
+                        "start_ms": 1472.5,
+                        "end_ms": 1638.80859375,
+                        "confidence": 0.8769451379776001,
                         "is_estimated": false,
                         "target_seq_idx": 16,
                         "index": 16
@@ -686,9 +686,9 @@
                         "phoneme_id": 7,
                         "phoneme_label": "\u025b",
                         "ipa_label": "\u025b",
-                        "start_ms": 1512.61669921875,
-                        "end_ms": 1721.8084716796875,
-                        "confidence": 0.7122015953063965,
+                        "start_ms": 1638.80859375,
+                        "end_ms": 1772.1452331542969,
+                        "confidence": 0.5944570302963257,
                         "is_estimated": false,
                         "target_seq_idx": 17,
                         "index": 17
@@ -697,9 +697,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 1721.8084716796875,
-                        "end_ms": 1753.99169921875,
-                        "confidence": 0.9623556733131409,
+                        "start_ms": 1772.1452331542969,
+                        "end_ms": 1843.4761047363281,
+                        "confidence": 0.9196043610572815,
                         "is_estimated": false,
                         "target_seq_idx": 18,
                         "index": 18
@@ -708,9 +708,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 1753.99169921875,
-                        "end_ms": 1850.541748046875,
-                        "confidence": 0.9565884470939636,
+                        "start_ms": 1843.4761047363281,
+                        "end_ms": 1987.5,
+                        "confidence": 0.6431344747543335,
                         "is_estimated": false,
                         "target_seq_idx": 19,
                         "index": 19
@@ -719,9 +719,9 @@
                         "phoneme_id": 61,
                         "phoneme_label": "w",
                         "ipa_label": "w",
-                        "start_ms": 1850.541748046875,
-                        "end_ms": 1995.36669921875,
-                        "confidence": 0.9695149660110474,
+                        "start_ms": 1987.5,
+                        "end_ms": 2017.5,
+                        "confidence": 0.05410412698984146,
                         "is_estimated": false,
                         "target_seq_idx": 20,
                         "index": 20
@@ -730,9 +730,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 1995.36669921875,
-                        "end_ms": 2043.641845703125,
-                        "confidence": 0.8170746564865112,
+                        "start_ms": 2017.5,
+                        "end_ms": 2057.5,
+                        "confidence": 0.0513363815844059,
                         "is_estimated": false,
                         "target_seq_idx": 21,
                         "index": 21
@@ -741,9 +741,9 @@
                         "phoneme_id": 46,
                         "phoneme_label": "\u00f0",
                         "ipa_label": "\u00f0",
-                        "start_ms": 2043.641845703125,
-                        "end_ms": 2124.099853515625,
-                        "confidence": 0.06723964959383011,
+                        "start_ms": 2057.5,
+                        "end_ms": 2097.5,
+                        "confidence": 0.00239254510961473,
                         "is_estimated": false,
                         "target_seq_idx": 22,
                         "index": 22
@@ -752,9 +752,9 @@
                         "phoneme_id": 61,
                         "phoneme_label": "w",
                         "ipa_label": "w",
-                        "start_ms": 2124.099853515625,
-                        "end_ms": 2204.558349609375,
-                        "confidence": 0.9929869771003723,
+                        "start_ms": 2097.5,
+                        "end_ms": 2217.5000000000005,
+                        "confidence": 0.5437807440757751,
                         "is_estimated": false,
                         "target_seq_idx": 23,
                         "index": 23
@@ -763,9 +763,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 2204.558349609375,
-                        "end_ms": 2220.64990234375,
-                        "confidence": 0.9352253079414368,
+                        "start_ms": 2217.5000000000005,
+                        "end_ms": 2268.8137817382812,
+                        "confidence": 0.10399244725704193,
                         "is_estimated": false,
                         "target_seq_idx": 24,
                         "index": 24
@@ -774,9 +774,9 @@
                         "phoneme_id": 38,
                         "phoneme_label": "t\u0283",
                         "ipa_label": "t\u0283",
-                        "start_ms": 2220.64990234375,
-                        "end_ms": 2301.1083984375,
-                        "confidence": 0.9705017805099487,
+                        "start_ms": 2268.8137817382812,
+                        "end_ms": 2362.5000000000005,
+                        "confidence": 0.8480958938598633,
                         "is_estimated": false,
                         "target_seq_idx": 25,
                         "index": 25
@@ -785,9 +785,9 @@
                         "phoneme_id": 61,
                         "phoneme_label": "w",
                         "ipa_label": "w",
-                        "start_ms": 2301.1083984375,
-                        "end_ms": 2445.933349609375,
-                        "confidence": 0.99826979637146,
+                        "start_ms": 2362.5000000000005,
+                        "end_ms": 2472.5,
+                        "confidence": 0.425483763217926,
                         "is_estimated": false,
                         "target_seq_idx": 26,
                         "index": 26
@@ -796,9 +796,9 @@
                         "phoneme_id": 2,
                         "phoneme_label": "i:",
                         "ipa_label": "i\u02d0",
-                        "start_ms": 2445.933349609375,
-                        "end_ms": 2462.025146484375,
-                        "confidence": 0.8682908415794373,
+                        "start_ms": 2472.5,
+                        "end_ms": 2568.1643676757812,
+                        "confidence": 0.023834222927689552,
                         "is_estimated": false,
                         "target_seq_idx": 27,
                         "index": 27
@@ -807,9 +807,9 @@
                         "phoneme_id": 19,
                         "phoneme_label": "a:",
                         "ipa_label": "\u0251\u02d0\u0279",
-                        "start_ms": 2462.025146484375,
-                        "end_ms": 2606.85009765625,
-                        "confidence": 0.878899335861206,
+                        "start_ms": 2568.1643676757812,
+                        "end_ms": 2662.5,
+                        "confidence": 0.011326076462864876,
                         "is_estimated": false,
                         "target_seq_idx": 28,
                         "index": 28
@@ -818,9 +818,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "-",
-                        "start_ms": 2606.85009765625,
-                        "end_ms": 2719.49169921875,
-                        "confidence": 0.4712603688240051,
+                        "start_ms": 2662.5,
+                        "end_ms": 2767.5,
+                        "confidence": 0.5586003065109253,
                         "is_estimated": false,
                         "target_seq_idx": 29,
                         "index": 29
@@ -829,9 +829,9 @@
                         "phoneme_id": 20,
                         "phoneme_label": "\u00e6",
                         "ipa_label": "\u00e6",
-                        "start_ms": 2719.49169921875,
-                        "end_ms": 2767.7666015625,
-                        "confidence": 0.14568442106246948,
+                        "start_ms": 2767.5,
+                        "end_ms": 2797.5,
+                        "confidence": 8.517789683537558e-05,
                         "is_estimated": false,
                         "target_seq_idx": 30,
                         "index": 30
@@ -840,9 +840,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 2767.7666015625,
-                        "end_ms": 2799.9501953125,
-                        "confidence": 0.20791983604431152,
+                        "start_ms": 2797.5,
+                        "end_ms": 2827.5,
+                        "confidence": 0.4381652772426605,
                         "is_estimated": false,
                         "target_seq_idx": 31,
                         "index": 31
@@ -851,9 +851,9 @@
                         "phoneme_id": 28,
                         "phoneme_label": "p",
                         "ipa_label": "p",
-                        "start_ms": 2799.9501953125,
-                        "end_ms": 2944.775146484375,
-                        "confidence": 0.5710175633430481,
+                        "start_ms": 2827.5,
+                        "end_ms": 2877.5,
+                        "confidence": 0.23614154756069183,
                         "is_estimated": false,
                         "target_seq_idx": 32,
                         "index": 32
@@ -862,9 +862,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 2944.775146484375,
-                        "end_ms": 2976.95849609375,
-                        "confidence": 0.9424604773521423,
+                        "start_ms": 2877.5,
+                        "end_ms": 2962.5,
+                        "confidence": 0.17041856050491333,
                         "is_estimated": false,
                         "target_seq_idx": 33,
                         "index": 33
@@ -873,9 +873,9 @@
                         "phoneme_id": 7,
                         "phoneme_label": "\u025b",
                         "ipa_label": "\u025b",
-                        "start_ms": 2976.95849609375,
-                        "end_ms": 3025.2333984375,
-                        "confidence": 0.9643036723136902,
+                        "start_ms": 2962.5,
+                        "end_ms": 3057.5,
+                        "confidence": 0.6009945273399353,
                         "is_estimated": false,
                         "target_seq_idx": 34,
                         "index": 34
@@ -884,9 +884,9 @@
                         "phoneme_id": 37,
                         "phoneme_label": "z",
                         "ipa_label": "z",
-                        "start_ms": 3025.2333984375,
-                        "end_ms": 3057.416748046875,
-                        "confidence": 0.9087834358215332,
+                        "start_ms": 3057.5,
+                        "end_ms": 3149.5480346679688,
+                        "confidence": 0.5222734212875366,
                         "is_estimated": false,
                         "target_seq_idx": 35,
                         "index": 35
@@ -895,9 +895,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 3057.416748046875,
-                        "end_ms": 3121.783447265625,
-                        "confidence": 0.09406506270170212,
+                        "start_ms": 3149.5480346679688,
+                        "end_ms": 3182.5,
+                        "confidence": 0.2211342602968216,
                         "is_estimated": false,
                         "target_seq_idx": 36,
                         "index": 36
@@ -906,9 +906,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 3121.783447265625,
-                        "end_ms": 3202.24169921875,
-                        "confidence": 0.8485870361328125,
+                        "start_ms": 3182.5,
+                        "end_ms": 3212.9129028320312,
+                        "confidence": 0.37389159202575684,
                         "is_estimated": false,
                         "target_seq_idx": 37,
                         "index": 37
@@ -917,9 +917,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 3202.24169921875,
-                        "end_ms": 3266.6083984375,
-                        "confidence": 0.3296315371990204,
+                        "start_ms": 3212.9129028320312,
+                        "end_ms": 3259.5867919921875,
+                        "confidence": 0.7988200783729553,
                         "is_estimated": false,
                         "target_seq_idx": 38,
                         "index": 38
@@ -928,9 +928,9 @@
                         "phoneme_id": 32,
                         "phoneme_label": "k",
                         "ipa_label": "k",
-                        "start_ms": 3266.6083984375,
-                        "end_ms": 3347.06689453125,
-                        "confidence": 0.9942016005516052,
+                        "start_ms": 3259.5867919921875,
+                        "end_ms": 3308.1802368164062,
+                        "confidence": 0.509229302406311,
                         "is_estimated": false,
                         "target_seq_idx": 39,
                         "index": 39
@@ -939,9 +939,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 3347.06689453125,
-                        "end_ms": 3363.158447265625,
-                        "confidence": 0.9395496249198914,
+                        "start_ms": 3308.1802368164062,
+                        "end_ms": 3387.5,
+                        "confidence": 0.5205187201499939,
                         "is_estimated": false,
                         "target_seq_idx": 40,
                         "index": 40
@@ -950,9 +950,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 3363.158447265625,
-                        "end_ms": 3427.525146484375,
-                        "confidence": 0.9970341920852661,
+                        "start_ms": 3387.5,
+                        "end_ms": 3443.3154296875,
+                        "confidence": 0.8844969272613525,
                         "is_estimated": false,
                         "target_seq_idx": 41,
                         "index": 41
@@ -961,9 +961,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 3427.525146484375,
-                        "end_ms": 3507.9833984375,
-                        "confidence": 0.9346871972084045,
+                        "start_ms": 3443.3154296875,
+                        "end_ms": 3573.1411743164062,
+                        "confidence": 0.7955510020256042,
                         "is_estimated": false,
                         "target_seq_idx": 42,
                         "index": 42
@@ -972,9 +972,9 @@
                         "phoneme_id": 10,
                         "phoneme_label": "\u028c",
                         "ipa_label": "\u025c\u02d0",
-                        "start_ms": 3507.9833984375,
-                        "end_ms": 3797.63330078125,
-                        "confidence": 0.24342626333236694,
+                        "start_ms": 3573.1411743164062,
+                        "end_ms": 3762.5,
+                        "confidence": 0.14248058199882507,
                         "is_estimated": false,
                         "target_seq_idx": 43,
                         "index": 43
@@ -983,9 +983,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 3797.63330078125,
-                        "end_ms": 3845.908447265625,
-                        "confidence": 0.9041822552680969,
+                        "start_ms": 3762.5,
+                        "end_ms": 3897.5,
+                        "confidence": 0.8976728916168213,
                         "is_estimated": false,
                         "target_seq_idx": 44,
                         "index": 44
@@ -994,9 +994,9 @@
                         "phoneme_id": 31,
                         "phoneme_label": "d",
                         "ipa_label": "d",
-                        "start_ms": 3845.908447265625,
-                        "end_ms": 3926.36669921875,
-                        "confidence": 0.6904744505882263,
+                        "start_ms": 3897.5,
+                        "end_ms": 3947.5000000000005,
+                        "confidence": 0.25763997435569763,
                         "is_estimated": false,
                         "target_seq_idx": 45,
                         "index": 45
@@ -1005,9 +1005,9 @@
                         "phoneme_id": 0,
                         "phoneme_label": "SIL",
                         "ipa_label": "SIL",
-                        "start_ms": 3926.36669921875,
-                        "end_ms": 4006.824951171875,
-                        "confidence": 0.2134292721748352,
+                        "start_ms": 3947.5000000000005,
+                        "end_ms": 4417.085876464844,
+                        "confidence": 0.18257498741149902,
                         "is_estimated": false,
                         "target_seq_idx": 46,
                         "index": 46
@@ -1016,9 +1016,9 @@
                         "phoneme_id": 31,
                         "phoneme_label": "d",
                         "ipa_label": "d",
-                        "start_ms": 4006.824951171875,
-                        "end_ms": 4473.4833984375,
-                        "confidence": 0.8904566168785095,
+                        "start_ms": 4417.085876464844,
+                        "end_ms": 4467.5,
+                        "confidence": 0.1536853313446045,
                         "is_estimated": false,
                         "target_seq_idx": 47,
                         "index": 47
@@ -1027,9 +1027,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 4473.4833984375,
-                        "end_ms": 4553.94189453125,
-                        "confidence": 0.9707047343254089,
+                        "start_ms": 4467.5,
+                        "end_ms": 4540.442199707031,
+                        "confidence": 0.027928253635764122,
                         "is_estimated": false,
                         "target_seq_idx": 48,
                         "index": 48
@@ -1038,9 +1038,9 @@
                         "phoneme_id": 43,
                         "phoneme_label": "f",
                         "ipa_label": "f",
-                        "start_ms": 4553.94189453125,
-                        "end_ms": 4586.125,
-                        "confidence": 0.9787585735321045,
+                        "start_ms": 4540.442199707031,
+                        "end_ms": 4672.5,
+                        "confidence": 0.894106388092041,
                         "is_estimated": false,
                         "target_seq_idx": 49,
                         "index": 49
@@ -1049,9 +1049,9 @@
                         "phoneme_id": 9,
                         "phoneme_label": "\u025a",
                         "ipa_label": "\u025a",
-                        "start_ms": 4586.125,
-                        "end_ms": 4714.8583984375,
-                        "confidence": 0.12426118552684784,
+                        "start_ms": 4672.5,
+                        "end_ms": 4702.5,
+                        "confidence": 1.3526958355214447e-05,
                         "is_estimated": false,
                         "target_seq_idx": 50,
                         "index": 50
@@ -1060,9 +1060,9 @@
                         "phoneme_id": 37,
                         "phoneme_label": "z",
                         "ipa_label": "z",
-                        "start_ms": 4714.8583984375,
-                        "end_ms": 4811.40869140625,
-                        "confidence": 0.10055847465991974,
+                        "start_ms": 4702.5,
+                        "end_ms": 4940.6842041015625,
+                        "confidence": 0.06021583452820778,
                         "is_estimated": false,
                         "target_seq_idx": 51,
                         "index": 51
@@ -1071,9 +1071,9 @@
                         "phoneme_id": 43,
                         "phoneme_label": "f",
                         "ipa_label": "f",
-                        "start_ms": 4811.40869140625,
-                        "end_ms": 5117.150390625,
-                        "confidence": 0.24118830263614655,
+                        "start_ms": 4940.6842041015625,
+                        "end_ms": 5117.5,
+                        "confidence": 0.8991218209266663,
                         "is_estimated": false,
                         "target_seq_idx": 52,
                         "index": 52
@@ -1082,9 +1082,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 5117.150390625,
-                        "end_ms": 5181.5166015625,
-                        "confidence": 0.9952064156532288,
+                        "start_ms": 5117.5,
+                        "end_ms": 5147.5,
+                        "confidence": 0.01973223313689232,
                         "is_estimated": false,
                         "target_seq_idx": 53,
                         "index": 53
@@ -1093,9 +1093,9 @@
                         "phoneme_id": 10,
                         "phoneme_label": "\u028c",
                         "ipa_label": "\u028c",
-                        "start_ms": 5181.5166015625,
-                        "end_ms": 5197.6083984375,
-                        "confidence": 0.8322508335113525,
+                        "start_ms": 5147.5,
+                        "end_ms": 5177.5,
+                        "confidence": 0.14809353649616241,
                         "is_estimated": false,
                         "target_seq_idx": 54,
                         "index": 54
@@ -1104,9 +1104,9 @@
                         "phoneme_id": 52,
                         "phoneme_label": "m",
                         "ipa_label": "m",
-                        "start_ms": 5197.6083984375,
-                        "end_ms": 5229.79150390625,
-                        "confidence": 0.6879653930664062,
+                        "start_ms": 5177.5,
+                        "end_ms": 5230.0,
+                        "confidence": 0.9227853417396545,
                         "is_estimated": false,
                         "target_seq_idx": 55,
                         "index": 55
@@ -1115,9 +1115,9 @@
                         "phoneme_id": 52,
                         "phoneme_label": "m",
                         "ipa_label": "m",
-                        "start_ms": 5229.79150390625,
-                        "end_ms": 5294.15869140625,
-                        "confidence": 0.26264488697052,
+                        "start_ms": 5230.0,
+                        "end_ms": 5357.5,
+                        "confidence": 0.8416092395782471,
                         "is_estimated": false,
                         "target_seq_idx": 56,
                         "index": 56
@@ -1126,9 +1126,9 @@
                         "phoneme_id": 26,
                         "phoneme_label": "o\u028a",
                         "ipa_label": "o\u028a",
-                        "start_ms": 5294.15869140625,
-                        "end_ms": 5374.61669921875,
-                        "confidence": 0.5007884502410889,
+                        "start_ms": 5357.5,
+                        "end_ms": 5497.500000000001,
+                        "confidence": 0.0019837459549307823,
                         "is_estimated": false,
                         "target_seq_idx": 57,
                         "index": 57
@@ -1137,9 +1137,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 5374.61669921875,
-                        "end_ms": 5535.533203125,
-                        "confidence": 0.8519597053527832,
+                        "start_ms": 5497.500000000001,
+                        "end_ms": 5602.5,
+                        "confidence": 0.9343560934066772,
                         "is_estimated": false,
                         "target_seq_idx": 58,
                         "index": 58
@@ -1148,9 +1148,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 5535.533203125,
-                        "end_ms": 5680.3583984375,
-                        "confidence": 0.44541195034980774,
+                        "start_ms": 5602.5,
+                        "end_ms": 5652.5,
+                        "confidence": 0.5168947577476501,
                         "is_estimated": false,
                         "target_seq_idx": 59,
                         "index": 59
@@ -1159,9 +1159,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 5680.3583984375,
-                        "end_ms": 5696.4501953125,
-                        "confidence": 0.8690245747566223,
+                        "start_ms": 5652.5,
+                        "end_ms": 5706.041259765625,
+                        "confidence": 0.09270770102739334,
                         "is_estimated": false,
                         "target_seq_idx": 60,
                         "index": 60
@@ -1170,9 +1170,9 @@
                         "phoneme_id": 43,
                         "phoneme_label": "f",
                         "ipa_label": "f",
-                        "start_ms": 5696.4501953125,
-                        "end_ms": 5776.908203125,
-                        "confidence": 0.9915306568145752,
+                        "start_ms": 5706.041259765625,
+                        "end_ms": 5805.583496093751,
+                        "confidence": 0.8988242149353027,
                         "is_estimated": false,
                         "target_seq_idx": 61,
                         "index": 61
@@ -1181,9 +1181,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 5776.908203125,
-                        "end_ms": 5921.7333984375,
-                        "confidence": 0.9936157464981079,
+                        "start_ms": 5805.583496093751,
+                        "end_ms": 5884.8870849609375,
+                        "confidence": 0.9320611357688904,
                         "is_estimated": false,
                         "target_seq_idx": 62,
                         "index": 62
@@ -1192,9 +1192,9 @@
                         "phoneme_id": 19,
                         "phoneme_label": "a:",
                         "ipa_label": "\u0251\u02d0",
-                        "start_ms": 5921.7333984375,
-                        "end_ms": 5986.10009765625,
-                        "confidence": 0.4769948720932007,
+                        "start_ms": 5884.8870849609375,
+                        "end_ms": 6010.3448486328125,
+                        "confidence": 0.08151718974113464,
                         "is_estimated": false,
                         "target_seq_idx": 63,
                         "index": 63
@@ -1203,9 +1203,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 5986.10009765625,
-                        "end_ms": 6082.650390625,
-                        "confidence": 0.8270742297172546,
+                        "start_ms": 6010.3448486328125,
+                        "end_ms": 6092.5,
+                        "confidence": 0.45323070883750916,
                         "is_estimated": false,
                         "target_seq_idx": 64,
                         "index": 64
@@ -1214,9 +1214,9 @@
                         "phoneme_id": 43,
                         "phoneme_label": "f",
                         "ipa_label": "f",
-                        "start_ms": 6082.650390625,
-                        "end_ms": 6163.1083984375,
-                        "confidence": 0.9609168171882629,
+                        "start_ms": 6092.5,
+                        "end_ms": 6162.500000000001,
+                        "confidence": 0.8691374063491821,
                         "is_estimated": false,
                         "target_seq_idx": 65,
                         "index": 65
@@ -1225,9 +1225,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 6163.1083984375,
-                        "end_ms": 6227.47509765625,
-                        "confidence": 0.9817372560501099,
+                        "start_ms": 6162.500000000001,
+                        "end_ms": 6192.5,
+                        "confidence": 0.014561059884727001,
                         "is_estimated": false,
                         "target_seq_idx": 66,
                         "index": 66
@@ -1236,9 +1236,9 @@
                         "phoneme_id": 10,
                         "phoneme_label": "\u028c",
                         "ipa_label": "\u028c",
-                        "start_ms": 6227.47509765625,
-                        "end_ms": 6243.56689453125,
-                        "confidence": 0.9818006753921509,
+                        "start_ms": 6192.5,
+                        "end_ms": 6222.5,
+                        "confidence": 0.11933863908052444,
                         "is_estimated": false,
                         "target_seq_idx": 67,
                         "index": 67
@@ -1247,9 +1247,9 @@
                         "phoneme_id": 52,
                         "phoneme_label": "m",
                         "ipa_label": "m",
-                        "start_ms": 6243.56689453125,
-                        "end_ms": 6468.85009765625,
-                        "confidence": 0.8580993413925171,
+                        "start_ms": 6222.5,
+                        "end_ms": 6312.5,
+                        "confidence": 0.9156014919281006,
                         "is_estimated": false,
                         "target_seq_idx": 68,
                         "index": 68
@@ -1258,9 +1258,9 @@
                         "phoneme_id": 17,
                         "phoneme_label": "\u0254",
                         "ipa_label": "\u0254\u02d0",
-                        "start_ms": 6533.216796875,
-                        "end_ms": 6549.30810546875,
-                        "confidence": 0.8278080821037292,
+                        "start_ms": 6312.5,
+                        "end_ms": 6602.5,
+                        "confidence": 0.6148954033851624,
                         "is_estimated": false,
                         "target_seq_idx": 69,
                         "index": 69
@@ -1269,9 +1269,9 @@
                         "phoneme_id": 56,
                         "phoneme_label": "l",
                         "ipa_label": "l",
-                        "start_ms": 6549.30810546875,
-                        "end_ms": 6581.4921875,
-                        "confidence": 0.5831966996192932,
+                        "start_ms": 6602.5,
+                        "end_ms": 6647.5,
+                        "confidence": 0.14020951092243195,
                         "is_estimated": false,
                         "target_seq_idx": 70,
                         "index": 70
@@ -1280,9 +1280,9 @@
                         "phoneme_id": 46,
                         "phoneme_label": "\u00f0",
                         "ipa_label": "\u00f0",
-                        "start_ms": 6581.4921875,
-                        "end_ms": 6726.31689453125,
-                        "confidence": 0.4028690755367279,
+                        "start_ms": 6647.5,
+                        "end_ms": 6677.5,
+                        "confidence": 0.004051614552736282,
                         "is_estimated": false,
                         "target_seq_idx": 71,
                         "index": 71
@@ -1291,9 +1291,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 6726.31689453125,
-                        "end_ms": 6742.40869140625,
-                        "confidence": 0.3212532699108124,
+                        "start_ms": 6677.5,
+                        "end_ms": 6727.5,
+                        "confidence": 0.004558410029858351,
                         "is_estimated": false,
                         "target_seq_idx": 72,
                         "index": 72
@@ -1302,9 +1302,9 @@
                         "phoneme_id": 19,
                         "phoneme_label": "a:",
                         "ipa_label": "\u0251\u02d0\u0279",
-                        "start_ms": 6742.40869140625,
-                        "end_ms": 6871.14208984375,
-                        "confidence": 0.6051410436630249,
+                        "start_ms": 6727.5,
+                        "end_ms": 6807.5,
+                        "confidence": 0.0013233521021902561,
                         "is_estimated": false,
                         "target_seq_idx": 73,
                         "index": 73
@@ -1313,9 +1313,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "-",
-                        "start_ms": 6871.14208984375,
-                        "end_ms": 6903.3251953125,
-                        "confidence": 0.7585773468017578,
+                        "start_ms": 6807.5,
+                        "end_ms": 6957.500000000001,
+                        "confidence": 0.27153903245925903,
                         "is_estimated": false,
                         "target_seq_idx": 74,
                         "index": 74
@@ -1324,9 +1324,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 6903.3251953125,
-                        "end_ms": 7048.14990234375,
-                        "confidence": 0.09249689429998398,
+                        "start_ms": 6957.500000000001,
+                        "end_ms": 6992.5,
+                        "confidence": 0.12222889810800552,
                         "is_estimated": false,
                         "target_seq_idx": 75,
                         "index": 75
@@ -1335,9 +1335,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 7048.14990234375,
-                        "end_ms": 7064.24169921875,
-                        "confidence": 0.7975848317146301,
+                        "start_ms": 6992.5,
+                        "end_ms": 7097.5,
+                        "confidence": 0.7439888715744019,
                         "is_estimated": false,
                         "target_seq_idx": 76,
                         "index": 76
@@ -1346,9 +1346,9 @@
                         "phoneme_id": 20,
                         "phoneme_label": "\u00e6",
                         "ipa_label": "\u00e6",
-                        "start_ms": 7064.24169921875,
-                        "end_ms": 7128.60888671875,
-                        "confidence": 0.33715131878852844,
+                        "start_ms": 7097.5,
+                        "end_ms": 7127.5,
+                        "confidence": 7.696723332628608e-05,
                         "is_estimated": false,
                         "target_seq_idx": 77,
                         "index": 77
@@ -1357,9 +1357,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 7128.60888671875,
-                        "end_ms": 7144.7001953125,
-                        "confidence": 0.9229833483695984,
+                        "start_ms": 7127.5,
+                        "end_ms": 7172.5,
+                        "confidence": 0.15509313344955444,
                         "is_estimated": false,
                         "target_seq_idx": 78,
                         "index": 78
@@ -1368,9 +1368,9 @@
                         "phoneme_id": 31,
                         "phoneme_label": "d",
                         "ipa_label": "d",
-                        "start_ms": 7144.7001953125,
-                        "end_ms": 7225.15869140625,
-                        "confidence": 0.0652916356921196,
+                        "start_ms": 7172.5,
+                        "end_ms": 7202.500000000001,
+                        "confidence": 0.05092379078269005,
                         "is_estimated": false,
                         "target_seq_idx": 79,
                         "index": 79
@@ -1379,9 +1379,9 @@
                         "phoneme_id": 32,
                         "phoneme_label": "k",
                         "ipa_label": "k",
-                        "start_ms": 7225.15869140625,
-                        "end_ms": 7289.52490234375,
-                        "confidence": 0.02391858398914337,
+                        "start_ms": 7202.500000000001,
+                        "end_ms": 7336.710205078125,
+                        "confidence": 0.5157153010368347,
                         "is_estimated": false,
                         "target_seq_idx": 80,
                         "index": 80
@@ -1390,9 +1390,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 7289.52490234375,
-                        "end_ms": 7402.1669921875,
-                        "confidence": 0.9740835428237915,
+                        "start_ms": 7336.710205078125,
+                        "end_ms": 7492.5,
+                        "confidence": 0.0561332181096077,
                         "is_estimated": false,
                         "target_seq_idx": 81,
                         "index": 81
@@ -1401,9 +1401,9 @@
                         "phoneme_id": 20,
                         "phoneme_label": "\u00e6",
                         "ipa_label": "\u00e6",
-                        "start_ms": 7402.1669921875,
-                        "end_ms": 7434.35009765625,
-                        "confidence": 0.3390856385231018,
+                        "start_ms": 7492.5,
+                        "end_ms": 7522.5,
+                        "confidence": 4.689672641688958e-05,
                         "is_estimated": false,
                         "target_seq_idx": 82,
                         "index": 82
@@ -1412,9 +1412,9 @@
                         "phoneme_id": 43,
                         "phoneme_label": "f",
                         "ipa_label": "f",
-                        "start_ms": 7434.35009765625,
-                        "end_ms": 7595.2666015625,
-                        "confidence": 0.9284564852714539,
+                        "start_ms": 7522.5,
+                        "end_ms": 7597.5,
+                        "confidence": 0.8599192500114441,
                         "is_estimated": false,
                         "target_seq_idx": 83,
                         "index": 83
@@ -1423,9 +1423,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 7595.2666015625,
-                        "end_ms": 7627.4501953125,
-                        "confidence": 0.026813434436917305,
+                        "start_ms": 7597.5,
+                        "end_ms": 7627.5,
+                        "confidence": 0.18976528942584991,
                         "is_estimated": false,
                         "target_seq_idx": 84,
                         "index": 84
@@ -1434,9 +1434,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 7627.4501953125,
-                        "end_ms": 7724.0,
-                        "confidence": 0.9069691896438599,
+                        "start_ms": 7627.5,
+                        "end_ms": 7807.5,
+                        "confidence": 0.6648194193840027,
                         "is_estimated": false,
                         "target_seq_idx": 85,
                         "index": 85
@@ -1445,9 +1445,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 7724.0,
-                        "end_ms": 7917.1005859375,
-                        "confidence": 0.9988700747489929,
+                        "start_ms": 7807.5,
+                        "end_ms": 7867.500000000001,
+                        "confidence": 0.0903489738702774,
                         "is_estimated": false,
                         "target_seq_idx": 86,
                         "index": 86
@@ -1456,9 +1456,9 @@
                         "phoneme_id": 7,
                         "phoneme_label": "\u025b",
                         "ipa_label": "\u025b",
-                        "start_ms": 7917.1005859375,
-                        "end_ms": 7933.19189453125,
-                        "confidence": 0.5797567367553711,
+                        "start_ms": 7867.500000000001,
+                        "end_ms": 7941.8792724609375,
+                        "confidence": 0.19268402457237244,
                         "is_estimated": false,
                         "target_seq_idx": 87,
                         "index": 87
@@ -1467,9 +1467,9 @@
                         "phoneme_id": 28,
                         "phoneme_label": "p",
                         "ipa_label": "p",
-                        "start_ms": 7933.19189453125,
-                        "end_ms": 8013.64990234375,
-                        "confidence": 0.9346811175346375,
+                        "start_ms": 7941.8792724609375,
+                        "end_ms": 8002.499999999999,
+                        "confidence": 0.49230602383613586,
                         "is_estimated": false,
                         "target_seq_idx": 88,
                         "index": 88
@@ -1478,9 +1478,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 8013.64990234375,
-                        "end_ms": 8094.1083984375,
-                        "confidence": 0.912445604801178,
+                        "start_ms": 8002.499999999999,
+                        "end_ms": 8037.617797851563,
+                        "confidence": 0.06107143312692642,
                         "is_estimated": false,
                         "target_seq_idx": 89,
                         "index": 89
@@ -1489,9 +1489,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u1d7b",
-                        "start_ms": 8094.1083984375,
-                        "end_ms": 8110.19970703125,
-                        "confidence": 0.35035422444343567,
+                        "start_ms": 8037.617797851563,
+                        "end_ms": 8087.5,
+                        "confidence": 0.07901075482368469,
                         "is_estimated": false,
                         "target_seq_idx": 90,
                         "index": 90
@@ -1500,9 +1500,9 @@
                         "phoneme_id": 37,
                         "phoneme_label": "z",
                         "ipa_label": "z",
-                        "start_ms": 8110.19970703125,
-                        "end_ms": 8174.5673828125,
-                        "confidence": 0.9515313506126404,
+                        "start_ms": 8087.5,
+                        "end_ms": 8172.499999999999,
+                        "confidence": 0.5624645352363586,
                         "is_estimated": false,
                         "target_seq_idx": 91,
                         "index": 91
@@ -1511,9 +1511,9 @@
                         "phoneme_id": 7,
                         "phoneme_label": "\u025b",
                         "ipa_label": "\u025b",
-                        "start_ms": 8174.5673828125,
-                        "end_ms": 8255.025390625,
-                        "confidence": 0.15619587898254395,
+                        "start_ms": 8172.499999999999,
+                        "end_ms": 8252.5,
+                        "confidence": 0.2657437324523926,
                         "is_estimated": false,
                         "target_seq_idx": 92,
                         "index": 92
@@ -1522,9 +1522,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 8255.025390625,
-                        "end_ms": 8271.1171875,
-                        "confidence": 0.9106622338294983,
+                        "start_ms": 8252.5,
+                        "end_ms": 8282.5,
+                        "confidence": 0.39401647448539734,
                         "is_estimated": false,
                         "target_seq_idx": 93,
                         "index": 93
@@ -1533,9 +1533,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 8271.1171875,
-                        "end_ms": 8351.5751953125,
-                        "confidence": 0.9848944544792175,
+                        "start_ms": 8282.5,
+                        "end_ms": 8339.750366210938,
+                        "confidence": 0.667844295501709,
                         "is_estimated": false,
                         "target_seq_idx": 94,
                         "index": 94
@@ -1544,9 +1544,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u1d7b",
-                        "start_ms": 8351.5751953125,
-                        "end_ms": 8415.9423828125,
-                        "confidence": 0.6529744267463684,
+                        "start_ms": 8339.750366210938,
+                        "end_ms": 8402.5,
+                        "confidence": 0.08363296836614609,
                         "is_estimated": false,
                         "target_seq_idx": 95,
                         "index": 95
@@ -1555,9 +1555,9 @@
                         "phoneme_id": 31,
                         "phoneme_label": "d",
                         "ipa_label": "d",
-                        "start_ms": 8415.9423828125,
-                        "end_ms": 8496.3994140625,
-                        "confidence": 0.4538925886154175,
+                        "start_ms": 8402.5,
+                        "end_ms": 8452.5,
+                        "confidence": 0.08003414422273636,
                         "is_estimated": false,
                         "target_seq_idx": 96,
                         "index": 96
@@ -1566,9 +1566,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 8496.3994140625,
-                        "end_ms": 8657.3173828125,
-                        "confidence": 0.9192695617675781,
+                        "start_ms": 8452.5,
+                        "end_ms": 8622.5,
+                        "confidence": 0.1365250051021576,
                         "is_estimated": false,
                         "target_seq_idx": 97,
                         "index": 97
@@ -1577,9 +1577,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 8657.3173828125,
-                        "end_ms": 8673.408203125,
-                        "confidence": 0.9751777648925781,
+                        "start_ms": 8622.5,
+                        "end_ms": 8682.500000000002,
+                        "confidence": 0.8561405539512634,
                         "is_estimated": false,
                         "target_seq_idx": 98,
                         "index": 98
@@ -1588,9 +1588,9 @@
                         "phoneme_id": 46,
                         "phoneme_label": "\u00f0",
                         "ipa_label": "\u00f0",
-                        "start_ms": 8673.408203125,
-                        "end_ms": 8737.7744140625,
-                        "confidence": 0.8758017420768738,
+                        "start_ms": 8682.500000000002,
+                        "end_ms": 8732.5,
+                        "confidence": 0.0031833667308092117,
                         "is_estimated": false,
                         "target_seq_idx": 99,
                         "index": 99
@@ -1599,9 +1599,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 8737.7744140625,
-                        "end_ms": 8753.8671875,
-                        "confidence": 0.7230310440063477,
+                        "start_ms": 8732.5,
+                        "end_ms": 8762.500000000002,
+                        "confidence": 0.0013331640511751175,
                         "is_estimated": false,
                         "target_seq_idx": 100,
                         "index": 100
@@ -1610,9 +1610,9 @@
                         "phoneme_id": 7,
                         "phoneme_label": "\u025b",
                         "ipa_label": "\u025b",
-                        "start_ms": 8753.8671875,
-                        "end_ms": 8882.599609375,
-                        "confidence": 0.19541321694850922,
+                        "start_ms": 8762.500000000002,
+                        "end_ms": 8868.860473632812,
+                        "confidence": 0.24932904541492462,
                         "is_estimated": false,
                         "target_seq_idx": 101,
                         "index": 101
@@ -1621,9 +1621,9 @@
                         "phoneme_id": 32,
                         "phoneme_label": "k",
                         "ipa_label": "k",
-                        "start_ms": 8882.599609375,
-                        "end_ms": 8979.1494140625,
-                        "confidence": 0.5581589937210083,
+                        "start_ms": 8868.860473632812,
+                        "end_ms": 8927.5,
+                        "confidence": 0.2138863503932953,
                         "is_estimated": false,
                         "target_seq_idx": 102,
                         "index": 102
@@ -1632,9 +1632,9 @@
                         "phoneme_id": 36,
                         "phoneme_label": "s",
                         "ipa_label": "s",
-                        "start_ms": 8979.1494140625,
-                        "end_ms": 8995.2421875,
-                        "confidence": 0.9054090976715088,
+                        "start_ms": 8927.5,
+                        "end_ms": 9038.28857421875,
+                        "confidence": 0.7175686359405518,
                         "is_estimated": false,
                         "target_seq_idx": 103,
                         "index": 103
@@ -1643,9 +1643,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 8995.2421875,
-                        "end_ms": 9075.7001953125,
-                        "confidence": 0.28248095512390137,
+                        "start_ms": 9038.28857421875,
+                        "end_ms": 9068.106079101562,
+                        "confidence": 0.07016509771347046,
                         "is_estimated": false,
                         "target_seq_idx": 104,
                         "index": 104
@@ -1654,9 +1654,9 @@
                         "phoneme_id": 29,
                         "phoneme_label": "b",
                         "ipa_label": "b",
-                        "start_ms": 9075.7001953125,
-                        "end_ms": 9204.43359375,
-                        "confidence": 0.9926313161849976,
+                        "start_ms": 9068.106079101562,
+                        "end_ms": 9137.841796875,
+                        "confidence": 0.0582842193543911,
                         "is_estimated": false,
                         "target_seq_idx": 105,
                         "index": 105
@@ -1665,9 +1665,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 9204.43359375,
-                        "end_ms": 9220.5244140625,
-                        "confidence": 0.8240821957588196,
+                        "start_ms": 9137.841796875,
+                        "end_ms": 9226.831665039062,
+                        "confidence": 0.06213853508234024,
                         "is_estimated": false,
                         "target_seq_idx": 106,
                         "index": 106
@@ -1676,9 +1676,9 @@
                         "phoneme_id": 40,
                         "phoneme_label": "\u0283",
                         "ipa_label": "\u0283",
-                        "start_ms": 9220.5244140625,
-                        "end_ms": 9317.076171875,
-                        "confidence": 0.5799365639686584,
+                        "start_ms": 9226.831665039062,
+                        "end_ms": 9363.602294921875,
+                        "confidence": 0.8232266306877136,
                         "is_estimated": false,
                         "target_seq_idx": 107,
                         "index": 107
@@ -1687,9 +1687,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 9317.076171875,
-                        "end_ms": 9445.80859375,
-                        "confidence": 0.9271972179412842,
+                        "start_ms": 9363.602294921875,
+                        "end_ms": 9432.500000000002,
+                        "confidence": 0.12746542692184448,
                         "is_estimated": false,
                         "target_seq_idx": 108,
                         "index": 108
@@ -1698,9 +1698,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 9445.80859375,
-                        "end_ms": 9976.8330078125,
-                        "confidence": 0.6660688519477844,
+                        "start_ms": 9432.500000000002,
+                        "end_ms": 9552.5,
+                        "confidence": 0.8642722964286804,
                         "is_estimated": false,
                         "target_seq_idx": 109,
                         "index": 109
@@ -1710,9 +1710,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 0.0,
-                        "end_ms": 32.18333435058594,
-                        "confidence": 0.8500149250030518,
+                        "start_ms": 14.319162368774414,
+                        "end_ms": 52.5,
+                        "confidence": 0.3680064380168915,
                         "is_estimated": false,
                         "target_seq_idx": 0,
                         "index": 0
@@ -1720,9 +1720,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 32.18333435058594,
-                        "end_ms": 64.36666870117188,
-                        "confidence": 0.6455590128898621,
+                        "start_ms": 52.5,
+                        "end_ms": 82.5,
+                        "confidence": 0.14482536911964417,
                         "is_estimated": false,
                         "target_seq_idx": 1,
                         "index": 1
@@ -1730,9 +1730,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 64.36666870117188,
-                        "end_ms": 112.64167022705078,
-                        "confidence": 0.46929875016212463,
+                        "start_ms": 82.5,
+                        "end_ms": 142.50000000000003,
+                        "confidence": 0.7281585931777954,
                         "is_estimated": false,
                         "target_seq_idx": 2,
                         "index": 2
@@ -1740,9 +1740,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 112.64167022705078,
-                        "end_ms": 144.82501220703125,
-                        "confidence": 0.7324222326278687,
+                        "start_ms": 142.50000000000003,
+                        "end_ms": 199.12149429321292,
+                        "confidence": 0.5762998461723328,
                         "is_estimated": false,
                         "target_seq_idx": 3,
                         "index": 3
@@ -1750,9 +1750,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 144.82501220703125,
-                        "end_ms": 209.19168090820312,
-                        "confidence": 0.4532628655433655,
+                        "start_ms": 199.12149429321292,
+                        "end_ms": 287.9996681213379,
+                        "confidence": 0.5516912937164307,
                         "is_estimated": false,
                         "target_seq_idx": 4,
                         "index": 4
@@ -1760,9 +1760,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 209.19168090820312,
-                        "end_ms": 386.20001220703125,
-                        "confidence": 0.6854841709136963,
+                        "start_ms": 287.9996681213379,
+                        "end_ms": 468.9872360229492,
+                        "confidence": 0.8706803321838379,
                         "is_estimated": false,
                         "target_seq_idx": 5,
                         "index": 5
@@ -1770,9 +1770,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 386.20001220703125,
-                        "end_ms": 466.6583557128906,
-                        "confidence": 0.5391523241996765,
+                        "start_ms": 468.9872360229492,
+                        "end_ms": 580.3762054443359,
+                        "confidence": 0.8253443837165833,
                         "is_estimated": false,
                         "target_seq_idx": 6,
                         "index": 6
@@ -1780,9 +1780,9 @@
                     {
                         "group_id": 0,
                         "group_label": "SIL",
-                        "start_ms": 466.6583557128906,
-                        "end_ms": 627.5750122070312,
-                        "confidence": 0.015501992776989937,
+                        "start_ms": 580.3762054443359,
+                        "end_ms": 837.5,
+                        "confidence": 0.10091472417116165,
                         "is_estimated": false,
                         "target_seq_idx": 7,
                         "index": 7
@@ -1790,9 +1790,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 627.5750122070312,
-                        "end_ms": 933.3167114257812,
-                        "confidence": 0.9910270571708679,
+                        "start_ms": 837.5,
+                        "end_ms": 947.5,
+                        "confidence": 0.9288506507873535,
                         "is_estimated": false,
                         "target_seq_idx": 8,
                         "index": 8
@@ -1800,9 +1800,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 933.3167114257812,
-                        "end_ms": 965.5,
-                        "confidence": 0.6261609792709351,
+                        "start_ms": 947.5,
+                        "end_ms": 997.5,
+                        "confidence": 0.966410219669342,
                         "is_estimated": false,
                         "target_seq_idx": 9,
                         "index": 9
@@ -1810,9 +1810,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 965.5,
-                        "end_ms": 1013.7749633789062,
-                        "confidence": 0.26886436343193054,
+                        "start_ms": 997.5,
+                        "end_ms": 1037.5,
+                        "confidence": 0.12320863455533981,
                         "is_estimated": false,
                         "target_seq_idx": 10,
                         "index": 10
@@ -1820,9 +1820,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 1013.7749633789062,
-                        "end_ms": 1078.1417236328125,
-                        "confidence": 0.13319501280784607,
+                        "start_ms": 1037.5,
+                        "end_ms": 1067.5000000000002,
+                        "confidence": 0.014036419801414013,
                         "is_estimated": false,
                         "target_seq_idx": 11,
                         "index": 11
@@ -1830,9 +1830,9 @@
                     {
                         "group_id": 5,
                         "group_label": "diphthongs",
-                        "start_ms": 1078.1417236328125,
-                        "end_ms": 1174.691650390625,
-                        "confidence": 0.6215590238571167,
+                        "start_ms": 1067.5000000000002,
+                        "end_ms": 1112.5,
+                        "confidence": 0.5326758027076721,
                         "is_estimated": false,
                         "target_seq_idx": 12,
                         "index": 12
@@ -1840,9 +1840,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 1174.691650390625,
-                        "end_ms": 1319.5166015625,
-                        "confidence": 0.9749651551246643,
+                        "start_ms": 1112.5,
+                        "end_ms": 1142.5,
+                        "confidence": 0.0035234473180025816,
                         "is_estimated": false,
                         "target_seq_idx": 13,
                         "index": 13
@@ -1850,9 +1850,9 @@
                     {
                         "group_id": 13,
                         "group_label": "laterals",
-                        "start_ms": 1319.5166015625,
-                        "end_ms": 1351.7000732421875,
-                        "confidence": 0.9122162461280823,
+                        "start_ms": 1142.5,
+                        "end_ms": 1371.8501281738281,
+                        "confidence": 0.5999927520751953,
                         "is_estimated": false,
                         "target_seq_idx": 14,
                         "index": 14
@@ -1860,9 +1860,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 1351.7000732421875,
-                        "end_ms": 1416.066650390625,
-                        "confidence": 0.9974997639656067,
+                        "start_ms": 1371.8501281738281,
+                        "end_ms": 1472.5,
+                        "confidence": 0.7689282894134521,
                         "is_estimated": false,
                         "target_seq_idx": 15,
                         "index": 15
@@ -1870,9 +1870,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 1416.066650390625,
-                        "end_ms": 1512.61669921875,
-                        "confidence": 0.9675502181053162,
+                        "start_ms": 1472.5,
+                        "end_ms": 1638.80859375,
+                        "confidence": 0.96261066198349,
                         "is_estimated": false,
                         "target_seq_idx": 16,
                         "index": 16
@@ -1880,9 +1880,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 1512.61669921875,
-                        "end_ms": 1721.8084716796875,
-                        "confidence": 0.833381175994873,
+                        "start_ms": 1638.80859375,
+                        "end_ms": 1772.1452331542969,
+                        "confidence": 0.9084285497665405,
                         "is_estimated": false,
                         "target_seq_idx": 17,
                         "index": 17
@@ -1890,9 +1890,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 1721.8084716796875,
-                        "end_ms": 1753.99169921875,
-                        "confidence": 0.5842458009719849,
+                        "start_ms": 1772.1452331542969,
+                        "end_ms": 1843.4761047363281,
+                        "confidence": 0.9155994653701782,
                         "is_estimated": false,
                         "target_seq_idx": 18,
                         "index": 18
@@ -1900,9 +1900,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 1753.99169921875,
-                        "end_ms": 1850.541748046875,
-                        "confidence": 0.9349913001060486,
+                        "start_ms": 1843.4761047363281,
+                        "end_ms": 1987.5,
+                        "confidence": 0.7660790085792542,
                         "is_estimated": false,
                         "target_seq_idx": 19,
                         "index": 19
@@ -1910,9 +1910,9 @@
                     {
                         "group_id": 15,
                         "group_label": "glides",
-                        "start_ms": 1850.541748046875,
-                        "end_ms": 1979.275146484375,
-                        "confidence": 0.9633537530899048,
+                        "start_ms": 1987.5,
+                        "end_ms": 2017.5,
+                        "confidence": 0.07383330911397934,
                         "is_estimated": false,
                         "target_seq_idx": 20,
                         "index": 20
@@ -1920,9 +1920,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 1979.275146484375,
-                        "end_ms": 2043.641845703125,
-                        "confidence": 0.3428938388824463,
+                        "start_ms": 2017.5,
+                        "end_ms": 2057.5,
+                        "confidence": 0.35916706919670105,
                         "is_estimated": false,
                         "target_seq_idx": 21,
                         "index": 21
@@ -1930,9 +1930,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 2043.641845703125,
-                        "end_ms": 2124.099853515625,
-                        "confidence": 0.03653305396437645,
+                        "start_ms": 2057.5,
+                        "end_ms": 2097.5,
+                        "confidence": 0.030595706775784492,
                         "is_estimated": false,
                         "target_seq_idx": 22,
                         "index": 22
@@ -1940,9 +1940,9 @@
                     {
                         "group_id": 15,
                         "group_label": "glides",
-                        "start_ms": 2124.099853515625,
-                        "end_ms": 2204.558349609375,
-                        "confidence": 0.49638205766677856,
+                        "start_ms": 2097.5,
+                        "end_ms": 2217.5000000000005,
+                        "confidence": 0.4504329264163971,
                         "is_estimated": false,
                         "target_seq_idx": 23,
                         "index": 23
@@ -1950,9 +1950,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 2204.558349609375,
-                        "end_ms": 2220.64990234375,
-                        "confidence": 0.9937750101089478,
+                        "start_ms": 2217.5000000000005,
+                        "end_ms": 2268.8137817382812,
+                        "confidence": 0.8153766393661499,
                         "is_estimated": false,
                         "target_seq_idx": 24,
                         "index": 24
@@ -1960,9 +1960,9 @@
                     {
                         "group_id": 10,
                         "group_label": "voiceless_affricates",
-                        "start_ms": 2220.64990234375,
-                        "end_ms": 2301.1083984375,
-                        "confidence": 0.9673819541931152,
+                        "start_ms": 2268.8137817382812,
+                        "end_ms": 2362.5000000000005,
+                        "confidence": 0.8494343161582947,
                         "is_estimated": false,
                         "target_seq_idx": 25,
                         "index": 25
@@ -1970,9 +1970,9 @@
                     {
                         "group_id": 15,
                         "group_label": "glides",
-                        "start_ms": 2301.1083984375,
-                        "end_ms": 2445.933349609375,
-                        "confidence": 0.9974226951599121,
+                        "start_ms": 2362.5000000000005,
+                        "end_ms": 2472.5,
+                        "confidence": 0.33738255500793457,
                         "is_estimated": false,
                         "target_seq_idx": 26,
                         "index": 26
@@ -1980,9 +1980,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 2445.933349609375,
-                        "end_ms": 2462.025146484375,
-                        "confidence": 0.9898824095726013,
+                        "start_ms": 2472.5,
+                        "end_ms": 2568.1643676757812,
+                        "confidence": 0.7276355624198914,
                         "is_estimated": false,
                         "target_seq_idx": 27,
                         "index": 27
@@ -1990,9 +1990,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 2462.025146484375,
-                        "end_ms": 2606.85009765625,
-                        "confidence": 0.8249362707138062,
+                        "start_ms": 2568.1643676757812,
+                        "end_ms": 2662.5,
+                        "confidence": 0.10109022259712219,
                         "is_estimated": false,
                         "target_seq_idx": 28,
                         "index": 28
@@ -2000,9 +2000,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 2606.85009765625,
-                        "end_ms": 2719.49169921875,
-                        "confidence": 0.35760581493377686,
+                        "start_ms": 2662.5,
+                        "end_ms": 2767.5,
+                        "confidence": 0.5143520832061768,
                         "is_estimated": false,
                         "target_seq_idx": 29,
                         "index": 29
@@ -2010,9 +2010,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 2719.49169921875,
-                        "end_ms": 2767.7666015625,
-                        "confidence": 0.14254818856716156,
+                        "start_ms": 2767.5,
+                        "end_ms": 2797.5,
+                        "confidence": 0.25932279229164124,
                         "is_estimated": false,
                         "target_seq_idx": 30,
                         "index": 30
@@ -2020,9 +2020,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 2767.7666015625,
-                        "end_ms": 2816.041748046875,
-                        "confidence": 0.5376741290092468,
+                        "start_ms": 2797.5,
+                        "end_ms": 2827.5,
+                        "confidence": 0.7925887703895569,
                         "is_estimated": false,
                         "target_seq_idx": 31,
                         "index": 31
@@ -2030,9 +2030,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 2816.041748046875,
-                        "end_ms": 2944.775146484375,
-                        "confidence": 0.9687778949737549,
+                        "start_ms": 2827.5,
+                        "end_ms": 2877.5,
+                        "confidence": 0.7432856559753418,
                         "is_estimated": false,
                         "target_seq_idx": 32,
                         "index": 32
@@ -2040,9 +2040,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 2944.775146484375,
-                        "end_ms": 2976.95849609375,
-                        "confidence": 0.9439528584480286,
+                        "start_ms": 2877.5,
+                        "end_ms": 2962.5,
+                        "confidence": 0.16459691524505615,
                         "is_estimated": false,
                         "target_seq_idx": 33,
                         "index": 33
@@ -2050,9 +2050,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 2976.95849609375,
-                        "end_ms": 3025.2333984375,
-                        "confidence": 0.9841518402099609,
+                        "start_ms": 2962.5,
+                        "end_ms": 3057.5,
+                        "confidence": 0.7734430432319641,
                         "is_estimated": false,
                         "target_seq_idx": 34,
                         "index": 34
@@ -2060,9 +2060,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 3025.2333984375,
-                        "end_ms": 3041.3251953125,
-                        "confidence": 0.9574968814849854,
+                        "start_ms": 3057.5,
+                        "end_ms": 3149.5480346679688,
+                        "confidence": 0.5801068544387817,
                         "is_estimated": false,
                         "target_seq_idx": 35,
                         "index": 35
@@ -2070,9 +2070,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 3041.3251953125,
-                        "end_ms": 3089.60009765625,
-                        "confidence": 0.15024720132350922,
+                        "start_ms": 3149.5480346679688,
+                        "end_ms": 3182.5,
+                        "confidence": 0.2114631086587906,
                         "is_estimated": false,
                         "target_seq_idx": 36,
                         "index": 36
@@ -2080,9 +2080,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 3089.60009765625,
-                        "end_ms": 3202.24169921875,
-                        "confidence": 0.9450868368148804,
+                        "start_ms": 3182.5,
+                        "end_ms": 3212.9129028320312,
+                        "confidence": 0.8138886094093323,
                         "is_estimated": false,
                         "target_seq_idx": 37,
                         "index": 37
@@ -2090,9 +2090,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 3202.24169921875,
-                        "end_ms": 3266.6083984375,
-                        "confidence": 0.49073705077171326,
+                        "start_ms": 3212.9129028320312,
+                        "end_ms": 3259.5867919921875,
+                        "confidence": 0.8331215977668762,
                         "is_estimated": false,
                         "target_seq_idx": 38,
                         "index": 38
@@ -2100,9 +2100,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 3266.6083984375,
-                        "end_ms": 3347.06689453125,
-                        "confidence": 0.9890060424804688,
+                        "start_ms": 3259.5867919921875,
+                        "end_ms": 3308.1802368164062,
+                        "confidence": 0.9084166288375854,
                         "is_estimated": false,
                         "target_seq_idx": 39,
                         "index": 39
@@ -2110,9 +2110,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 3347.06689453125,
-                        "end_ms": 3363.158447265625,
-                        "confidence": 0.8895754814147949,
+                        "start_ms": 3308.1802368164062,
+                        "end_ms": 3387.5,
+                        "confidence": 0.5353626012802124,
                         "is_estimated": false,
                         "target_seq_idx": 40,
                         "index": 40
@@ -2120,9 +2120,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 3363.158447265625,
-                        "end_ms": 3427.525146484375,
-                        "confidence": 0.9962615370750427,
+                        "start_ms": 3387.5,
+                        "end_ms": 3443.3154296875,
+                        "confidence": 0.938814103603363,
                         "is_estimated": false,
                         "target_seq_idx": 41,
                         "index": 41
@@ -2130,9 +2130,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 3427.525146484375,
-                        "end_ms": 3507.9833984375,
-                        "confidence": 0.9378465414047241,
+                        "start_ms": 3443.3154296875,
+                        "end_ms": 3573.1411743164062,
+                        "confidence": 0.8730125427246094,
                         "is_estimated": false,
                         "target_seq_idx": 42,
                         "index": 42
@@ -2140,9 +2140,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 3507.9833984375,
-                        "end_ms": 3604.533447265625,
-                        "confidence": 0.3897160291671753,
+                        "start_ms": 3573.1411743164062,
+                        "end_ms": 3762.5,
+                        "confidence": 0.16183412075042725,
                         "is_estimated": false,
                         "target_seq_idx": 43,
                         "index": 43
@@ -2150,9 +2150,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 3604.533447265625,
-                        "end_ms": 3862.0,
-                        "confidence": 0.8125547766685486,
+                        "start_ms": 3762.5,
+                        "end_ms": 3897.5,
+                        "confidence": 0.8846781253814697,
                         "is_estimated": false,
                         "target_seq_idx": 44,
                         "index": 44
@@ -2160,9 +2160,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 3862.0,
-                        "end_ms": 3926.36669921875,
-                        "confidence": 0.7218995690345764,
+                        "start_ms": 3897.5,
+                        "end_ms": 3947.5000000000005,
+                        "confidence": 0.22967052459716797,
                         "is_estimated": false,
                         "target_seq_idx": 45,
                         "index": 45
@@ -2170,9 +2170,9 @@
                     {
                         "group_id": 0,
                         "group_label": "SIL",
-                        "start_ms": 3926.36669921875,
-                        "end_ms": 4006.824951171875,
-                        "confidence": 0.1905539184808731,
+                        "start_ms": 3947.5000000000005,
+                        "end_ms": 4417.085876464844,
+                        "confidence": 0.2050401121377945,
                         "is_estimated": false,
                         "target_seq_idx": 46,
                         "index": 46
@@ -2180,9 +2180,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 4006.824951171875,
-                        "end_ms": 4473.4833984375,
-                        "confidence": 0.9190837740898132,
+                        "start_ms": 4417.085876464844,
+                        "end_ms": 4467.5,
+                        "confidence": 0.13364729285240173,
                         "is_estimated": false,
                         "target_seq_idx": 47,
                         "index": 47
@@ -2190,9 +2190,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 4473.4833984375,
-                        "end_ms": 4553.94189453125,
-                        "confidence": 0.9566650986671448,
+                        "start_ms": 4467.5,
+                        "end_ms": 4540.442199707031,
+                        "confidence": 0.8537693023681641,
                         "is_estimated": false,
                         "target_seq_idx": 48,
                         "index": 48
@@ -2200,9 +2200,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 4553.94189453125,
-                        "end_ms": 4634.400390625,
-                        "confidence": 0.5416932702064514,
+                        "start_ms": 4540.442199707031,
+                        "end_ms": 4672.5,
+                        "confidence": 0.9108307957649231,
                         "is_estimated": false,
                         "target_seq_idx": 49,
                         "index": 49
@@ -2210,9 +2210,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 4634.400390625,
-                        "end_ms": 4714.8583984375,
-                        "confidence": 0.7523833513259888,
+                        "start_ms": 4672.5,
+                        "end_ms": 4702.5,
+                        "confidence": 0.0038420618511736393,
                         "is_estimated": false,
                         "target_seq_idx": 50,
                         "index": 50
@@ -2220,9 +2220,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 4714.8583984375,
-                        "end_ms": 4956.2333984375,
-                        "confidence": 0.11189009249210358,
+                        "start_ms": 4702.5,
+                        "end_ms": 4940.6842041015625,
+                        "confidence": 0.09011489152908325,
                         "is_estimated": false,
                         "target_seq_idx": 51,
                         "index": 51
@@ -2230,9 +2230,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 4972.3251953125,
-                        "end_ms": 5117.150390625,
-                        "confidence": 0.19723954796791077,
+                        "start_ms": 4940.6842041015625,
+                        "end_ms": 5117.5,
+                        "confidence": 0.9061852097511292,
                         "is_estimated": false,
                         "target_seq_idx": 52,
                         "index": 52
@@ -2240,9 +2240,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 5117.150390625,
-                        "end_ms": 5181.5166015625,
-                        "confidence": 0.9946544170379639,
+                        "start_ms": 5117.5,
+                        "end_ms": 5147.5,
+                        "confidence": 0.028501620516180992,
                         "is_estimated": false,
                         "target_seq_idx": 53,
                         "index": 53
@@ -2250,9 +2250,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 5181.5166015625,
-                        "end_ms": 5197.6083984375,
-                        "confidence": 0.8852113485336304,
+                        "start_ms": 5147.5,
+                        "end_ms": 5177.5,
+                        "confidence": 0.21985696256160736,
                         "is_estimated": false,
                         "target_seq_idx": 54,
                         "index": 54
@@ -2260,9 +2260,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 5197.6083984375,
-                        "end_ms": 5229.79150390625,
-                        "confidence": 0.8513705730438232,
+                        "start_ms": 5177.5,
+                        "end_ms": 5230.0,
+                        "confidence": 0.9567381143569946,
                         "is_estimated": false,
                         "target_seq_idx": 55,
                         "index": 55
@@ -2270,9 +2270,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 5229.79150390625,
-                        "end_ms": 5342.43359375,
-                        "confidence": 0.2245994508266449,
+                        "start_ms": 5230.0,
+                        "end_ms": 5357.5,
+                        "confidence": 0.9114903807640076,
                         "is_estimated": false,
                         "target_seq_idx": 56,
                         "index": 56
@@ -2280,9 +2280,9 @@
                     {
                         "group_id": 5,
                         "group_label": "diphthongs",
-                        "start_ms": 5342.43359375,
-                        "end_ms": 5374.61669921875,
-                        "confidence": 0.3270837366580963,
+                        "start_ms": 5357.5,
+                        "end_ms": 5497.500000000001,
+                        "confidence": 0.6260170340538025,
                         "is_estimated": false,
                         "target_seq_idx": 57,
                         "index": 57
@@ -2290,9 +2290,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 5374.61669921875,
-                        "end_ms": 5535.533203125,
-                        "confidence": 0.8558515310287476,
+                        "start_ms": 5497.500000000001,
+                        "end_ms": 5602.5,
+                        "confidence": 0.9348746538162231,
                         "is_estimated": false,
                         "target_seq_idx": 58,
                         "index": 58
@@ -2300,9 +2300,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 5535.533203125,
-                        "end_ms": 5680.3583984375,
-                        "confidence": 0.7776468992233276,
+                        "start_ms": 5602.5,
+                        "end_ms": 5652.5,
+                        "confidence": 0.7387346625328064,
                         "is_estimated": false,
                         "target_seq_idx": 59,
                         "index": 59
@@ -2310,9 +2310,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 5680.3583984375,
-                        "end_ms": 5696.4501953125,
-                        "confidence": 0.895298182964325,
+                        "start_ms": 5652.5,
+                        "end_ms": 5706.041259765625,
+                        "confidence": 0.6544972062110901,
                         "is_estimated": false,
                         "target_seq_idx": 60,
                         "index": 60
@@ -2320,9 +2320,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 5696.4501953125,
-                        "end_ms": 5776.908203125,
-                        "confidence": 0.9894556403160095,
+                        "start_ms": 5706.041259765625,
+                        "end_ms": 5805.583496093751,
+                        "confidence": 0.9595524668693542,
                         "is_estimated": false,
                         "target_seq_idx": 61,
                         "index": 61
@@ -2330,9 +2330,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 5776.908203125,
-                        "end_ms": 5921.7333984375,
-                        "confidence": 0.9945971965789795,
+                        "start_ms": 5805.583496093751,
+                        "end_ms": 5884.8870849609375,
+                        "confidence": 0.8854216933250427,
                         "is_estimated": false,
                         "target_seq_idx": 62,
                         "index": 62
@@ -2340,9 +2340,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 5921.7333984375,
-                        "end_ms": 5986.10009765625,
-                        "confidence": 0.47162213921546936,
+                        "start_ms": 5884.8870849609375,
+                        "end_ms": 6010.3448486328125,
+                        "confidence": 0.6324202418327332,
                         "is_estimated": false,
                         "target_seq_idx": 63,
                         "index": 63
@@ -2350,9 +2350,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 5986.10009765625,
-                        "end_ms": 6082.650390625,
-                        "confidence": 0.7411376237869263,
+                        "start_ms": 6010.3448486328125,
+                        "end_ms": 6092.5,
+                        "confidence": 0.8215286731719971,
                         "is_estimated": false,
                         "target_seq_idx": 64,
                         "index": 64
@@ -2360,9 +2360,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 6082.650390625,
-                        "end_ms": 6179.2001953125,
-                        "confidence": 0.9386640787124634,
+                        "start_ms": 6092.5,
+                        "end_ms": 6162.500000000001,
+                        "confidence": 0.8933749198913574,
                         "is_estimated": false,
                         "target_seq_idx": 65,
                         "index": 65
@@ -2370,9 +2370,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 6179.2001953125,
-                        "end_ms": 6227.47509765625,
-                        "confidence": 0.4877849221229553,
+                        "start_ms": 6162.500000000001,
+                        "end_ms": 6192.5,
+                        "confidence": 0.021713675931096077,
                         "is_estimated": false,
                         "target_seq_idx": 66,
                         "index": 66
@@ -2380,9 +2380,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 6227.47509765625,
-                        "end_ms": 6243.56689453125,
-                        "confidence": 0.9902348518371582,
+                        "start_ms": 6192.5,
+                        "end_ms": 6222.5,
+                        "confidence": 0.14281146228313446,
                         "is_estimated": false,
                         "target_seq_idx": 67,
                         "index": 67
@@ -2390,9 +2390,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 6243.56689453125,
-                        "end_ms": 6468.85009765625,
-                        "confidence": 0.8521808385848999,
+                        "start_ms": 6222.5,
+                        "end_ms": 6312.5,
+                        "confidence": 0.897861897945404,
                         "is_estimated": false,
                         "target_seq_idx": 68,
                         "index": 68
@@ -2400,9 +2400,9 @@
                     {
                         "group_id": 3,
                         "group_label": "back_vowels",
-                        "start_ms": 6533.216796875,
-                        "end_ms": 6549.30810546875,
-                        "confidence": 0.8605141043663025,
+                        "start_ms": 6312.5,
+                        "end_ms": 6602.5,
+                        "confidence": 0.9088510274887085,
                         "is_estimated": false,
                         "target_seq_idx": 69,
                         "index": 69
@@ -2410,9 +2410,9 @@
                     {
                         "group_id": 13,
                         "group_label": "laterals",
-                        "start_ms": 6549.30810546875,
-                        "end_ms": 6581.4921875,
-                        "confidence": 0.6075205206871033,
+                        "start_ms": 6602.5,
+                        "end_ms": 6647.5,
+                        "confidence": 0.14244601130485535,
                         "is_estimated": false,
                         "target_seq_idx": 70,
                         "index": 70
@@ -2420,9 +2420,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 6581.4921875,
-                        "end_ms": 6726.31689453125,
-                        "confidence": 0.566737711429596,
+                        "start_ms": 6647.5,
+                        "end_ms": 6677.5,
+                        "confidence": 0.1780189573764801,
                         "is_estimated": false,
                         "target_seq_idx": 71,
                         "index": 71
@@ -2430,9 +2430,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 6726.31689453125,
-                        "end_ms": 6742.40869140625,
-                        "confidence": 0.26420891284942627,
+                        "start_ms": 6677.5,
+                        "end_ms": 6727.5,
+                        "confidence": 0.03179009631276131,
                         "is_estimated": false,
                         "target_seq_idx": 72,
                         "index": 72
@@ -2440,9 +2440,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 6742.40869140625,
-                        "end_ms": 6871.14208984375,
-                        "confidence": 0.4598654806613922,
+                        "start_ms": 6727.5,
+                        "end_ms": 6807.5,
+                        "confidence": 0.05590337887406349,
                         "is_estimated": false,
                         "target_seq_idx": 73,
                         "index": 73
@@ -2450,9 +2450,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 6871.14208984375,
-                        "end_ms": 6903.3251953125,
-                        "confidence": 0.7217654585838318,
+                        "start_ms": 6807.5,
+                        "end_ms": 6957.500000000001,
+                        "confidence": 0.47817179560661316,
                         "is_estimated": false,
                         "target_seq_idx": 74,
                         "index": 74
@@ -2460,9 +2460,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 6903.3251953125,
-                        "end_ms": 7032.05859375,
-                        "confidence": 0.12856069207191467,
+                        "start_ms": 6957.500000000001,
+                        "end_ms": 6992.5,
+                        "confidence": 0.4333670735359192,
                         "is_estimated": false,
                         "target_seq_idx": 75,
                         "index": 75
@@ -2470,9 +2470,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 7032.05859375,
-                        "end_ms": 7064.24169921875,
-                        "confidence": 0.40973109006881714,
+                        "start_ms": 6992.5,
+                        "end_ms": 7097.5,
+                        "confidence": 0.7906079292297363,
                         "is_estimated": false,
                         "target_seq_idx": 76,
                         "index": 76
@@ -2480,9 +2480,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 7064.24169921875,
-                        "end_ms": 7128.60888671875,
-                        "confidence": 0.3641012907028198,
+                        "start_ms": 7097.5,
+                        "end_ms": 7127.5,
+                        "confidence": 0.020115822553634644,
                         "is_estimated": false,
                         "target_seq_idx": 77,
                         "index": 77
@@ -2490,9 +2490,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 7128.60888671875,
-                        "end_ms": 7144.7001953125,
-                        "confidence": 0.9823254942893982,
+                        "start_ms": 7127.5,
+                        "end_ms": 7172.5,
+                        "confidence": 0.3339211940765381,
                         "is_estimated": false,
                         "target_seq_idx": 78,
                         "index": 78
@@ -2500,9 +2500,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 7144.7001953125,
-                        "end_ms": 7225.15869140625,
-                        "confidence": 0.0922514945268631,
+                        "start_ms": 7172.5,
+                        "end_ms": 7202.500000000001,
+                        "confidence": 0.0722537487745285,
                         "is_estimated": false,
                         "target_seq_idx": 79,
                         "index": 79
@@ -2510,9 +2510,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 7225.15869140625,
-                        "end_ms": 7353.89208984375,
-                        "confidence": 0.6290830969810486,
+                        "start_ms": 7202.500000000001,
+                        "end_ms": 7336.710205078125,
+                        "confidence": 0.915309488773346,
                         "is_estimated": false,
                         "target_seq_idx": 80,
                         "index": 80
@@ -2520,9 +2520,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 7353.89208984375,
-                        "end_ms": 7402.1669921875,
-                        "confidence": 0.9902904629707336,
+                        "start_ms": 7336.710205078125,
+                        "end_ms": 7492.5,
+                        "confidence": 0.08316763490438461,
                         "is_estimated": false,
                         "target_seq_idx": 81,
                         "index": 81
@@ -2530,9 +2530,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 7402.1669921875,
-                        "end_ms": 7434.35009765625,
-                        "confidence": 0.2712866961956024,
+                        "start_ms": 7492.5,
+                        "end_ms": 7522.5,
+                        "confidence": 0.8999763131141663,
                         "is_estimated": false,
                         "target_seq_idx": 82,
                         "index": 82
@@ -2540,9 +2540,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 7434.35009765625,
-                        "end_ms": 7595.2666015625,
-                        "confidence": 0.9464694261550903,
+                        "start_ms": 7522.5,
+                        "end_ms": 7597.5,
+                        "confidence": 0.8200464844703674,
                         "is_estimated": false,
                         "target_seq_idx": 83,
                         "index": 83
@@ -2550,9 +2550,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 7595.2666015625,
-                        "end_ms": 7691.81689453125,
-                        "confidence": 0.008257224224507809,
+                        "start_ms": 7597.5,
+                        "end_ms": 7627.5,
+                        "confidence": 0.20211546123027802,
                         "is_estimated": false,
                         "target_seq_idx": 84,
                         "index": 84
@@ -2560,9 +2560,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 7691.81689453125,
-                        "end_ms": 7724.0,
-                        "confidence": 0.9076477885246277,
+                        "start_ms": 7627.5,
+                        "end_ms": 7807.5,
+                        "confidence": 0.9109135866165161,
                         "is_estimated": false,
                         "target_seq_idx": 85,
                         "index": 85
@@ -2570,9 +2570,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 7724.0,
-                        "end_ms": 7917.1005859375,
-                        "confidence": 0.9988945126533508,
+                        "start_ms": 7807.5,
+                        "end_ms": 7867.500000000001,
+                        "confidence": 0.15100105106830597,
                         "is_estimated": false,
                         "target_seq_idx": 86,
                         "index": 86
@@ -2580,9 +2580,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 7917.1005859375,
-                        "end_ms": 7949.28369140625,
-                        "confidence": 0.9959182143211365,
+                        "start_ms": 7867.500000000001,
+                        "end_ms": 7941.8792724609375,
+                        "confidence": 0.8457562327384949,
                         "is_estimated": false,
                         "target_seq_idx": 87,
                         "index": 87
@@ -2590,9 +2590,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 7949.28369140625,
-                        "end_ms": 8013.64990234375,
-                        "confidence": 0.890229344367981,
+                        "start_ms": 7941.8792724609375,
+                        "end_ms": 8002.499999999999,
+                        "confidence": 0.8680822849273682,
                         "is_estimated": false,
                         "target_seq_idx": 88,
                         "index": 88
@@ -2600,9 +2600,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 8013.64990234375,
-                        "end_ms": 8094.1083984375,
-                        "confidence": 0.8984540104866028,
+                        "start_ms": 8002.499999999999,
+                        "end_ms": 8037.617797851563,
+                        "confidence": 0.14227287471294403,
                         "is_estimated": false,
                         "target_seq_idx": 89,
                         "index": 89
@@ -2610,9 +2610,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 8094.1083984375,
-                        "end_ms": 8110.19970703125,
-                        "confidence": 0.5251122713088989,
+                        "start_ms": 8037.617797851563,
+                        "end_ms": 8087.5,
+                        "confidence": 0.8252385854721069,
                         "is_estimated": false,
                         "target_seq_idx": 90,
                         "index": 90
@@ -2620,9 +2620,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 8110.19970703125,
-                        "end_ms": 8174.5673828125,
-                        "confidence": 0.9458547830581665,
+                        "start_ms": 8087.5,
+                        "end_ms": 8172.499999999999,
+                        "confidence": 0.7094438076019287,
                         "is_estimated": false,
                         "target_seq_idx": 91,
                         "index": 91
@@ -2630,9 +2630,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 8174.5673828125,
-                        "end_ms": 8255.025390625,
-                        "confidence": 0.24831953644752502,
+                        "start_ms": 8172.499999999999,
+                        "end_ms": 8252.5,
+                        "confidence": 0.8916851878166199,
                         "is_estimated": false,
                         "target_seq_idx": 92,
                         "index": 92
@@ -2640,9 +2640,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 8255.025390625,
-                        "end_ms": 8271.1171875,
-                        "confidence": 0.9128116965293884,
+                        "start_ms": 8252.5,
+                        "end_ms": 8282.5,
+                        "confidence": 0.39487236738204956,
                         "is_estimated": false,
                         "target_seq_idx": 93,
                         "index": 93
@@ -2650,9 +2650,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 8271.1171875,
-                        "end_ms": 8351.5751953125,
-                        "confidence": 0.9820030927658081,
+                        "start_ms": 8282.5,
+                        "end_ms": 8339.750366210938,
+                        "confidence": 0.7449345588684082,
                         "is_estimated": false,
                         "target_seq_idx": 94,
                         "index": 94
@@ -2660,9 +2660,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 8351.5751953125,
-                        "end_ms": 8415.9423828125,
-                        "confidence": 0.3746602535247803,
+                        "start_ms": 8339.750366210938,
+                        "end_ms": 8402.5,
+                        "confidence": 0.7919225692749023,
                         "is_estimated": false,
                         "target_seq_idx": 95,
                         "index": 95
@@ -2670,9 +2670,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 8415.9423828125,
-                        "end_ms": 8496.3994140625,
-                        "confidence": 0.4773854911327362,
+                        "start_ms": 8402.5,
+                        "end_ms": 8452.5,
+                        "confidence": 0.08614210784435272,
                         "is_estimated": false,
                         "target_seq_idx": 96,
                         "index": 96
@@ -2680,9 +2680,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 8496.3994140625,
-                        "end_ms": 8657.3173828125,
-                        "confidence": 0.9606879353523254,
+                        "start_ms": 8452.5,
+                        "end_ms": 8622.5,
+                        "confidence": 0.9451422095298767,
                         "is_estimated": false,
                         "target_seq_idx": 97,
                         "index": 97
@@ -2690,9 +2690,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 8657.3173828125,
-                        "end_ms": 8689.5,
-                        "confidence": 0.9950615763664246,
+                        "start_ms": 8622.5,
+                        "end_ms": 8682.500000000002,
+                        "confidence": 0.9353055953979492,
                         "is_estimated": false,
                         "target_seq_idx": 98,
                         "index": 98
@@ -2700,9 +2700,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 8689.5,
-                        "end_ms": 8737.7744140625,
-                        "confidence": 0.8008915781974792,
+                        "start_ms": 8682.500000000002,
+                        "end_ms": 8732.5,
+                        "confidence": 0.01604584790766239,
                         "is_estimated": false,
                         "target_seq_idx": 99,
                         "index": 99
@@ -2710,9 +2710,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 8737.7744140625,
-                        "end_ms": 8753.8671875,
-                        "confidence": 0.48371753096580505,
+                        "start_ms": 8732.5,
+                        "end_ms": 8762.500000000002,
+                        "confidence": 0.03298221528530121,
                         "is_estimated": false,
                         "target_seq_idx": 100,
                         "index": 100
@@ -2720,9 +2720,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 8753.8671875,
-                        "end_ms": 8882.599609375,
-                        "confidence": 0.18409696221351624,
+                        "start_ms": 8762.500000000002,
+                        "end_ms": 8868.860473632812,
+                        "confidence": 0.8866250514984131,
                         "is_estimated": false,
                         "target_seq_idx": 101,
                         "index": 101
@@ -2730,9 +2730,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 8882.599609375,
-                        "end_ms": 8979.1494140625,
-                        "confidence": 0.3851573169231415,
+                        "start_ms": 8868.860473632812,
+                        "end_ms": 8927.5,
+                        "confidence": 0.5179319977760315,
                         "is_estimated": false,
                         "target_seq_idx": 102,
                         "index": 102
@@ -2740,9 +2740,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 8979.1494140625,
-                        "end_ms": 9011.3330078125,
-                        "confidence": 0.9282782077789307,
+                        "start_ms": 8927.5,
+                        "end_ms": 9038.28857421875,
+                        "confidence": 0.8147832751274109,
                         "is_estimated": false,
                         "target_seq_idx": 103,
                         "index": 103
@@ -2750,9 +2750,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 9011.3330078125,
-                        "end_ms": 9075.7001953125,
-                        "confidence": 0.18368174135684967,
+                        "start_ms": 9038.28857421875,
+                        "end_ms": 9068.106079101562,
+                        "confidence": 0.6011714935302734,
                         "is_estimated": false,
                         "target_seq_idx": 104,
                         "index": 104
@@ -2760,9 +2760,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 9075.7001953125,
-                        "end_ms": 9204.43359375,
-                        "confidence": 0.9887147545814514,
+                        "start_ms": 9068.106079101562,
+                        "end_ms": 9137.841796875,
+                        "confidence": 0.5566353797912598,
                         "is_estimated": false,
                         "target_seq_idx": 105,
                         "index": 105
@@ -2770,9 +2770,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 9204.43359375,
-                        "end_ms": 9220.5244140625,
-                        "confidence": 0.99254310131073,
+                        "start_ms": 9137.841796875,
+                        "end_ms": 9226.831665039062,
+                        "confidence": 0.9064001441001892,
                         "is_estimated": false,
                         "target_seq_idx": 106,
                         "index": 106
@@ -2780,9 +2780,9 @@
                     {
                         "group_id": 8,
                         "group_label": "voiceless_fricatives",
-                        "start_ms": 9220.5244140625,
-                        "end_ms": 9317.076171875,
-                        "confidence": 0.9244551658630371,
+                        "start_ms": 9226.831665039062,
+                        "end_ms": 9363.602294921875,
+                        "confidence": 0.838118314743042,
                         "is_estimated": false,
                         "target_seq_idx": 107,
                         "index": 107
@@ -2790,9 +2790,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 9317.076171875,
-                        "end_ms": 9445.80859375,
-                        "confidence": 0.9050008058547974,
+                        "start_ms": 9363.602294921875,
+                        "end_ms": 9432.500000000002,
+                        "confidence": 0.1551877111196518,
                         "is_estimated": false,
                         "target_seq_idx": 108,
                         "index": 108
@@ -2800,9 +2800,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 9445.80859375,
-                        "end_ms": 9976.8330078125,
-                        "confidence": 0.7142425775527954,
+                        "start_ms": 9432.500000000002,
+                        "end_ms": 9552.5,
+                        "confidence": 0.8611805438995361,
                         "is_estimated": false,
                         "target_seq_idx": 109,
                         "index": 109
@@ -2811,9 +2811,9 @@
                 "words_ts": [
                     {
                         "word": "Printing",
-                        "start_ms": 0.0,
-                        "end_ms": 466.6583557128906,
-                        "confidence": 0.6927999343190875,
+                        "start_ms": 14.319162368774414,
+                        "end_ms": 580.3762054443359,
+                        "confidence": 0.18629347692642892,
                         "ph66": [
                             28,
                             59,
@@ -2835,9 +2835,9 @@
                     },
                     {
                         "word": "<sil>",
-                        "start_ms": 466.6583557128906,
-                        "end_ms": 691.941650390625,
-                        "confidence": 0.02475021779537201,
+                        "start_ms": 580.3762054443359,
+                        "end_ms": 837.5,
+                        "confidence": 0.11554490029811859,
                         "ph66": [
                             0
                         ],
@@ -2847,9 +2847,9 @@
                     },
                     {
                         "word": "in",
-                        "start_ms": 691.941650390625,
-                        "end_ms": 965.5,
-                        "confidence": 0.9533391892910004,
+                        "start_ms": 837.5,
+                        "end_ms": 997.5,
+                        "confidence": 0.43049181625247,
                         "ph66": [
                             4,
                             53
@@ -2861,9 +2861,9 @@
                     },
                     {
                         "word": "the",
-                        "start_ms": 965.5,
-                        "end_ms": 1078.1417236328125,
-                        "confidence": 0.20218973606824875,
+                        "start_ms": 997.5,
+                        "end_ms": 1067.5000000000002,
+                        "confidence": 0.007265160500537604,
                         "ph66": [
                             46,
                             8
@@ -2875,9 +2875,9 @@
                     },
                     {
                         "word": "only",
-                        "start_ms": 1078.1417236328125,
-                        "end_ms": 1416.066650390625,
-                        "confidence": 0.8757727295160294,
+                        "start_ms": 1067.5000000000002,
+                        "end_ms": 1472.5,
+                        "confidence": 0.26214272489596624,
                         "ph66": [
                             26,
                             53,
@@ -2893,9 +2893,9 @@
                     },
                     {
                         "word": "sense",
-                        "start_ms": 1416.066650390625,
-                        "end_ms": 1850.541748046875,
-                        "confidence": 0.8988972753286362,
+                        "start_ms": 1472.5,
+                        "end_ms": 1987.5,
+                        "confidence": 0.7585352510213852,
                         "ph66": [
                             36,
                             7,
@@ -2911,9 +2911,9 @@
                     },
                     {
                         "word": "with",
-                        "start_ms": 1850.541748046875,
-                        "end_ms": 2124.099853515625,
-                        "confidence": 0.6179430906971296,
+                        "start_ms": 1987.5,
+                        "end_ms": 2097.5,
+                        "confidence": 0.03594435122795403,
                         "ph66": [
                             61,
                             4,
@@ -2927,9 +2927,9 @@
                     },
                     {
                         "word": "which",
-                        "start_ms": 2124.099853515625,
-                        "end_ms": 2301.1083984375,
-                        "confidence": 0.9662380218505859,
+                        "start_ms": 2097.5,
+                        "end_ms": 2362.5000000000005,
+                        "confidence": 0.4986230283975601,
                         "ph66": [
                             61,
                             4,
@@ -2943,9 +2943,9 @@
                     },
                     {
                         "word": "we",
-                        "start_ms": 2301.1083984375,
-                        "end_ms": 2462.025146484375,
-                        "confidence": 0.9332803189754486,
+                        "start_ms": 2362.5000000000005,
+                        "end_ms": 2568.1643676757812,
+                        "confidence": 0.2246589930728078,
                         "ph66": [
                             61,
                             2
@@ -2957,9 +2957,9 @@
                     },
                     {
                         "word": "are",
-                        "start_ms": 2462.025146484375,
-                        "end_ms": 2719.49169921875,
-                        "confidence": 0.6750798523426056,
+                        "start_ms": 2568.1643676757812,
+                        "end_ms": 2767.5,
+                        "confidence": 0.2849631914868951,
                         "ph66": [
                             19,
                             59
@@ -2971,9 +2971,9 @@
                     },
                     {
                         "word": "at",
-                        "start_ms": 2719.49169921875,
-                        "end_ms": 2799.9501953125,
-                        "confidence": 0.1768021285533905,
+                        "start_ms": 2767.5,
+                        "end_ms": 2827.5,
+                        "confidence": 0.21912522756974795,
                         "ph66": [
                             20,
                             30
@@ -2985,9 +2985,9 @@
                     },
                     {
                         "word": "present",
-                        "start_ms": 2799.9501953125,
-                        "end_ms": 3266.6083984375,
-                        "confidence": 0.6655498264091355,
+                        "start_ms": 2827.5,
+                        "end_ms": 3259.5867919921875,
+                        "confidence": 0.41766771248408724,
                         "ph66": [
                             28,
                             59,
@@ -3009,9 +3009,9 @@
                     },
                     {
                         "word": "concerned",
-                        "start_ms": 3266.6083984375,
-                        "end_ms": 3926.36669921875,
-                        "confidence": 0.8147936548505511,
+                        "start_ms": 3259.5867919921875,
+                        "end_ms": 3947.5000000000005,
+                        "confidence": 0.5725127714020866,
                         "ph66": [
                             32,
                             8,
@@ -3033,9 +3033,9 @@
                     },
                     {
                         "word": "<sil>",
-                        "start_ms": 3926.36669921875,
-                        "end_ms": 4006.824951171875,
-                        "confidence": 0.2134292721748352,
+                        "start_ms": 3947.5000000000005,
+                        "end_ms": 4417.085876464844,
+                        "confidence": 0.18257498741149902,
                         "ph66": [
                             0
                         ],
@@ -3045,9 +3045,9 @@
                     },
                     {
                         "word": "differs",
-                        "start_ms": 4006.824951171875,
-                        "end_ms": 4811.40869140625,
-                        "confidence": 0.6129479169845581,
+                        "start_ms": 4417.085876464844,
+                        "end_ms": 4940.6842041015625,
+                        "confidence": 0.22718986691179452,
                         "ph66": [
                             31,
                             4,
@@ -3065,9 +3065,9 @@
                     },
                     {
                         "word": "from",
-                        "start_ms": 4811.40869140625,
-                        "end_ms": 5229.79150390625,
-                        "confidence": 0.6891527362167835,
+                        "start_ms": 4940.6842041015625,
+                        "end_ms": 5230.0,
+                        "confidence": 0.4974332330748439,
                         "ph66": [
                             43,
                             59,
@@ -3083,9 +3083,9 @@
                     },
                     {
                         "word": "most",
-                        "start_ms": 5229.79150390625,
-                        "end_ms": 5680.3583984375,
-                        "confidence": 0.51520124822855,
+                        "start_ms": 5230.0,
+                        "end_ms": 5652.5,
+                        "confidence": 0.5737109591718763,
                         "ph66": [
                             52,
                             26,
@@ -3101,9 +3101,9 @@
                     },
                     {
                         "word": "if",
-                        "start_ms": 5680.3583984375,
-                        "end_ms": 5776.908203125,
-                        "confidence": 0.9302776157855988,
+                        "start_ms": 5652.5,
+                        "end_ms": 5805.583496093751,
+                        "confidence": 0.49576595798134804,
                         "ph66": [
                             4,
                             43
@@ -3115,9 +3115,9 @@
                     },
                     {
                         "word": "not",
-                        "start_ms": 5776.908203125,
-                        "end_ms": 6082.650390625,
-                        "confidence": 0.7658949494361877,
+                        "start_ms": 5805.583496093751,
+                        "end_ms": 6092.5,
+                        "confidence": 0.4889363447825114,
                         "ph66": [
                             53,
                             19,
@@ -3131,9 +3131,9 @@
                     },
                     {
                         "word": "from",
-                        "start_ms": 6082.650390625,
-                        "end_ms": 6468.85009765625,
-                        "confidence": 0.9456385225057602,
+                        "start_ms": 6092.5,
+                        "end_ms": 6312.5,
+                        "confidence": 0.47965964931063354,
                         "ph66": [
                             43,
                             59,
@@ -3149,9 +3149,9 @@
                     },
                     {
                         "word": "all",
-                        "start_ms": 6533.216796875,
-                        "end_ms": 6581.4921875,
-                        "confidence": 0.7055023908615112,
+                        "start_ms": 6312.5,
+                        "end_ms": 6647.5,
+                        "confidence": 0.37755245715379715,
                         "ph66": [
                             17,
                             56
@@ -3163,9 +3163,9 @@
                     },
                     {
                         "word": "the",
-                        "start_ms": 6581.4921875,
-                        "end_ms": 6742.40869140625,
-                        "confidence": 0.36206117272377014,
+                        "start_ms": 6647.5,
+                        "end_ms": 6727.5,
+                        "confidence": 0.0043050122912973166,
                         "ph66": [
                             46,
                             8
@@ -3177,9 +3177,9 @@
                     },
                     {
                         "word": "arts",
-                        "start_ms": 6742.40869140625,
-                        "end_ms": 7064.24169921875,
-                        "confidence": 0.5634500291198492,
+                        "start_ms": 6727.5,
+                        "end_ms": 7097.5,
+                        "confidence": 0.28477003856096417,
                         "ph66": [
                             19,
                             59,
@@ -3195,9 +3195,9 @@
                     },
                     {
                         "word": "and",
-                        "start_ms": 7064.24169921875,
-                        "end_ms": 7225.15869140625,
-                        "confidence": 0.4418087676167488,
+                        "start_ms": 7097.5,
+                        "end_ms": 7202.500000000001,
+                        "confidence": 0.06869796382185693,
                         "ph66": [
                             20,
                             53,
@@ -3211,9 +3211,9 @@
                     },
                     {
                         "word": "crafts",
-                        "start_ms": 7225.15869140625,
-                        "end_ms": 7724.0,
-                        "confidence": 0.5332211457813779,
+                        "start_ms": 7202.500000000001,
+                        "end_ms": 7807.5,
+                        "confidence": 0.381066562449026,
                         "ph66": [
                             32,
                             59,
@@ -3233,9 +3233,9 @@
                     },
                     {
                         "word": "represented",
-                        "start_ms": 7724.0,
-                        "end_ms": 8496.3994140625,
-                        "confidence": 0.7169326083226637,
+                        "start_ms": 7807.5,
+                        "end_ms": 8452.5,
+                        "confidence": 0.2699233964085579,
                         "ph66": [
                             59,
                             7,
@@ -3265,9 +3265,9 @@
                     },
                     {
                         "word": "in",
-                        "start_ms": 8496.3994140625,
-                        "end_ms": 8673.408203125,
-                        "confidence": 0.9472236633300781,
+                        "start_ms": 8452.5,
+                        "end_ms": 8682.500000000002,
+                        "confidence": 0.4963327795267105,
                         "ph66": [
                             4,
                             53
@@ -3279,9 +3279,9 @@
                     },
                     {
                         "word": "the",
-                        "start_ms": 8673.408203125,
-                        "end_ms": 8753.8671875,
-                        "confidence": 0.7994163930416107,
+                        "start_ms": 8682.500000000002,
+                        "end_ms": 8762.500000000002,
+                        "confidence": 0.0022582653909921646,
                         "ph66": [
                             46,
                             8
@@ -3293,9 +3293,9 @@
                     },
                     {
                         "word": "Exhibition",
-                        "start_ms": 8753.8671875,
-                        "end_ms": 9976.8330078125,
-                        "confidence": 0.6590420454740524,
+                        "start_ms": 8762.500000000002,
+                        "end_ms": 9552.5,
+                        "confidence": 0.3540373597708013,
                         "ph66": [
                             7,
                             32,
@@ -3455,9 +3455,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 0.0,
-                        "end_ms": 49.55217361450195,
-                        "confidence": 0.9898209571838379,
+                        "start_ms": 17.5,
+                        "end_ms": 77.5,
+                        "confidence": 0.05707394331693649,
                         "is_estimated": false,
                         "target_seq_idx": 0,
                         "index": 0
@@ -3466,9 +3466,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 49.55217361450195,
-                        "end_ms": 66.06956481933594,
-                        "confidence": 0.9927282333374023,
+                        "start_ms": 77.5,
+                        "end_ms": 127.5,
+                        "confidence": 0.713167130947113,
                         "is_estimated": false,
                         "target_seq_idx": 1,
                         "index": 1
@@ -3477,9 +3477,9 @@
                         "phoneme_id": 29,
                         "phoneme_label": "b",
                         "ipa_label": "b",
-                        "start_ms": 66.06956481933594,
-                        "end_ms": 198.2086944580078,
-                        "confidence": 0.9901002049446106,
+                        "start_ms": 127.5,
+                        "end_ms": 182.5,
+                        "confidence": 0.3146646022796631,
                         "is_estimated": false,
                         "target_seq_idx": 2,
                         "index": 2
@@ -3488,9 +3488,9 @@
                         "phoneme_id": 2,
                         "phoneme_label": "i:",
                         "ipa_label": "i\u02d0",
-                        "start_ms": 198.2086944580078,
-                        "end_ms": 214.72608947753906,
-                        "confidence": 0.8415278792381287,
+                        "start_ms": 182.5,
+                        "end_ms": 327.5,
+                        "confidence": 0.04915406554937363,
                         "is_estimated": false,
                         "target_seq_idx": 3,
                         "index": 3
@@ -3499,9 +3499,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 214.72608947753906,
-                        "end_ms": 363.3825988769531,
-                        "confidence": 0.3169691562652588,
+                        "start_ms": 327.5,
+                        "end_ms": 357.5,
+                        "confidence": 0.057565342634916306,
                         "is_estimated": false,
                         "target_seq_idx": 4,
                         "index": 4
@@ -3510,9 +3510,9 @@
                         "phoneme_id": 55,
                         "phoneme_label": "\u014b",
                         "ipa_label": "\u014b",
-                        "start_ms": 363.3825988769531,
-                        "end_ms": 379.8999938964844,
-                        "confidence": 0.6871638298034668,
+                        "start_ms": 357.5,
+                        "end_ms": 407.50000000000006,
+                        "confidence": 0.5311039686203003,
                         "is_estimated": false,
                         "target_seq_idx": 5,
                         "index": 5
@@ -3521,9 +3521,9 @@
                         "phoneme_id": 32,
                         "phoneme_label": "k",
                         "ipa_label": "k",
-                        "start_ms": 379.8999938964844,
-                        "end_ms": 462.4869384765625,
-                        "confidence": 0.9963067770004272,
+                        "start_ms": 407.50000000000006,
+                        "end_ms": 479.0758514404297,
+                        "confidence": 0.5165436863899231,
                         "is_estimated": false,
                         "target_seq_idx": 6,
                         "index": 6
@@ -3532,9 +3532,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 462.4869384765625,
-                        "end_ms": 479.0043640136719,
-                        "confidence": 0.868285596370697,
+                        "start_ms": 479.0758514404297,
+                        "end_ms": 506.03027343749994,
+                        "confidence": 0.13428734242916107,
                         "is_estimated": false,
                         "target_seq_idx": 7,
                         "index": 7
@@ -3543,9 +3543,9 @@
                         "phoneme_id": 52,
                         "phoneme_label": "m",
                         "ipa_label": "m",
-                        "start_ms": 479.0043640136719,
-                        "end_ms": 561.59130859375,
-                        "confidence": 0.8916274905204773,
+                        "start_ms": 506.03027343749994,
+                        "end_ms": 558.5219192504883,
+                        "confidence": 0.24463877081871033,
                         "is_estimated": false,
                         "target_seq_idx": 8,
                         "index": 8
@@ -3554,9 +3554,9 @@
                         "phoneme_id": 28,
                         "phoneme_label": "p",
                         "ipa_label": "p",
-                        "start_ms": 561.59130859375,
-                        "end_ms": 627.660888671875,
-                        "confidence": 0.9991453886032104,
+                        "start_ms": 558.5219192504883,
+                        "end_ms": 612.5,
+                        "confidence": 0.7019543647766113,
                         "is_estimated": false,
                         "target_seq_idx": 9,
                         "index": 9
@@ -3565,9 +3565,9 @@
                         "phoneme_id": 20,
                         "phoneme_label": "\u00e6",
                         "ipa_label": "\u00e6",
-                        "start_ms": 627.660888671875,
-                        "end_ms": 710.247802734375,
-                        "confidence": 0.16925542056560516,
+                        "start_ms": 612.5,
+                        "end_ms": 642.5,
+                        "confidence": 0.00022083397198002785,
                         "is_estimated": false,
                         "target_seq_idx": 10,
                         "index": 10
@@ -3576,9 +3576,9 @@
                         "phoneme_id": 59,
                         "phoneme_label": "\u0279",
                         "ipa_label": "\u0279",
-                        "start_ms": 710.247802734375,
-                        "end_ms": 792.8347778320312,
-                        "confidence": 0.5669929385185242,
+                        "start_ms": 642.5,
+                        "end_ms": 877.5000000000001,
+                        "confidence": 0.41691961884498596,
                         "is_estimated": false,
                         "target_seq_idx": 11,
                         "index": 11
@@ -3587,9 +3587,9 @@
                         "phoneme_id": 8,
                         "phoneme_label": "\u0259",
                         "ipa_label": "\u0259",
-                        "start_ms": 792.8347778320312,
-                        "end_ms": 875.4217529296875,
-                        "confidence": 0.03244507312774658,
+                        "start_ms": 877.5000000000001,
+                        "end_ms": 907.5,
+                        "confidence": 0.01641710102558136,
                         "is_estimated": false,
                         "target_seq_idx": 12,
                         "index": 12
@@ -3598,9 +3598,9 @@
                         "phoneme_id": 30,
                         "phoneme_label": "t",
                         "ipa_label": "t",
-                        "start_ms": 875.4217529296875,
-                        "end_ms": 974.526123046875,
-                        "confidence": 0.6626991629600525,
+                        "start_ms": 907.5,
+                        "end_ms": 977.5,
+                        "confidence": 0.5348626375198364,
                         "is_estimated": false,
                         "target_seq_idx": 13,
                         "index": 13
@@ -3609,9 +3609,9 @@
                         "phoneme_id": 4,
                         "phoneme_label": "\u026a",
                         "ipa_label": "\u026a",
-                        "start_ms": 974.526123046875,
-                        "end_ms": 1040.595703125,
-                        "confidence": 0.7832416892051697,
+                        "start_ms": 977.5,
+                        "end_ms": 1040.4854583740234,
+                        "confidence": 0.03723675757646561,
                         "is_estimated": false,
                         "target_seq_idx": 14,
                         "index": 14
@@ -3620,9 +3620,9 @@
                         "phoneme_id": 44,
                         "phoneme_label": "v",
                         "ipa_label": "v",
-                        "start_ms": 1040.595703125,
-                        "end_ms": 1123.1826171875,
-                        "confidence": 0.9498008489608765,
+                        "start_ms": 1040.4854583740234,
+                        "end_ms": 1187.5,
+                        "confidence": 0.6629140377044678,
                         "is_estimated": false,
                         "target_seq_idx": 15,
                         "index": 15
@@ -3631,9 +3631,9 @@
                         "phoneme_id": 56,
                         "phoneme_label": "l",
                         "ipa_label": "l",
-                        "start_ms": 1123.1826171875,
-                        "end_ms": 1222.2869873046875,
-                        "confidence": 0.9994055032730103,
+                        "start_ms": 1187.5,
+                        "end_ms": 1217.5,
+                        "confidence": 0.025311371311545372,
                         "is_estimated": false,
                         "target_seq_idx": 16,
                         "index": 16
@@ -3642,9 +3642,9 @@
                         "phoneme_id": 1,
                         "phoneme_label": "i",
                         "ipa_label": "i",
-                        "start_ms": 1222.2869873046875,
-                        "end_ms": 1271.839111328125,
-                        "confidence": 0.2823638319969177,
+                        "start_ms": 1217.5,
+                        "end_ms": 1277.2283172607422,
+                        "confidence": 0.26422908902168274,
                         "is_estimated": false,
                         "target_seq_idx": 17,
                         "index": 17
@@ -3653,9 +3653,9 @@
                         "phoneme_id": 52,
                         "phoneme_label": "m",
                         "ipa_label": "m",
-                        "start_ms": 1271.839111328125,
-                        "end_ms": 1437.0130615234375,
-                        "confidence": 0.910923182964325,
+                        "start_ms": 1277.2283172607422,
+                        "end_ms": 1387.5,
+                        "confidence": 0.9745919108390808,
                         "is_estimated": false,
                         "target_seq_idx": 18,
                         "index": 18
@@ -3664,9 +3664,9 @@
                         "phoneme_id": 19,
                         "phoneme_label": "a:",
                         "ipa_label": "\u0251\u02d0",
-                        "start_ms": 1437.0130615234375,
-                        "end_ms": 1453.5303955078125,
-                        "confidence": 0.2993430495262146,
+                        "start_ms": 1387.5,
+                        "end_ms": 1577.5000000000002,
+                        "confidence": 0.028615642338991165,
                         "is_estimated": false,
                         "target_seq_idx": 19,
                         "index": 19
@@ -3675,9 +3675,9 @@
                         "phoneme_id": 31,
                         "phoneme_label": "d",
                         "ipa_label": "d",
-                        "start_ms": 1453.5303955078125,
-                        "end_ms": 1618.704345703125,
-                        "confidence": 0.4347687363624573,
+                        "start_ms": 1577.5000000000002,
+                        "end_ms": 1627.5,
+                        "confidence": 0.011229884810745716,
                         "is_estimated": false,
                         "target_seq_idx": 20,
                         "index": 20
@@ -3686,9 +3686,9 @@
                         "phoneme_id": 9,
                         "phoneme_label": "\u025a",
                         "ipa_label": "\u025a",
-                        "start_ms": 1618.704345703125,
-                        "end_ms": 1651.7391357421875,
-                        "confidence": 0.7858361005783081,
+                        "start_ms": 1627.5,
+                        "end_ms": 1657.5,
+                        "confidence": 0.0002609696821309626,
                         "is_estimated": false,
                         "target_seq_idx": 21,
                         "index": 21
@@ -3697,9 +3697,9 @@
                         "phoneme_id": 53,
                         "phoneme_label": "n",
                         "ipa_label": "n",
-                        "start_ms": 1651.7391357421875,
-                        "end_ms": 1783.8782958984375,
-                        "confidence": 0.022863255813717842,
+                        "start_ms": 1657.5,
+                        "end_ms": 1707.5,
+                        "confidence": 0.1871078461408615,
                         "is_estimated": false,
                         "target_seq_idx": 22,
                         "index": 22
@@ -3708,9 +3708,9 @@
                         "phoneme_id": 0,
                         "phoneme_label": "SIL",
                         "ipa_label": "SIL",
-                        "start_ms": 1783.8782958984375,
-                        "end_ms": 1899.5,
-                        "confidence": 0.13805580139160156,
+                        "start_ms": 1707.5,
+                        "end_ms": 1880.0000000000002,
+                        "confidence": 0.11399185657501221,
                         "is_estimated": false,
                         "target_seq_idx": 23,
                         "index": 23
@@ -3720,9 +3720,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 16.517391204833984,
-                        "end_ms": 49.55217361450195,
-                        "confidence": 0.4999296963214874,
+                        "start_ms": 17.5,
+                        "end_ms": 77.5,
+                        "confidence": 0.7076026797294617,
                         "is_estimated": false,
                         "target_seq_idx": 0,
                         "index": 0
@@ -3730,9 +3730,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 49.55217361450195,
-                        "end_ms": 82.58695983886719,
-                        "confidence": 0.9985846281051636,
+                        "start_ms": 77.5,
+                        "end_ms": 127.5,
+                        "confidence": 0.7708318829536438,
                         "is_estimated": false,
                         "target_seq_idx": 1,
                         "index": 1
@@ -3740,9 +3740,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 82.58695983886719,
-                        "end_ms": 198.2086944580078,
-                        "confidence": 0.9900374412536621,
+                        "start_ms": 127.5,
+                        "end_ms": 182.5,
+                        "confidence": 0.6538748145103455,
                         "is_estimated": false,
                         "target_seq_idx": 2,
                         "index": 2
@@ -3750,9 +3750,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 198.2086944580078,
-                        "end_ms": 214.72608947753906,
-                        "confidence": 0.9955257773399353,
+                        "start_ms": 182.5,
+                        "end_ms": 327.5,
+                        "confidence": 0.8862502574920654,
                         "is_estimated": false,
                         "target_seq_idx": 3,
                         "index": 3
@@ -3760,9 +3760,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 214.72608947753906,
-                        "end_ms": 346.8652038574219,
-                        "confidence": 0.0655728280544281,
+                        "start_ms": 327.5,
+                        "end_ms": 357.5,
+                        "confidence": 0.7749228477478027,
                         "is_estimated": false,
                         "target_seq_idx": 4,
                         "index": 4
@@ -3770,9 +3770,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 346.8652038574219,
-                        "end_ms": 396.4173889160156,
-                        "confidence": 0.9092327952384949,
+                        "start_ms": 357.5,
+                        "end_ms": 407.50000000000006,
+                        "confidence": 0.8583178520202637,
                         "is_estimated": false,
                         "target_seq_idx": 5,
                         "index": 5
@@ -3780,9 +3780,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 396.4173889160156,
-                        "end_ms": 462.4869384765625,
-                        "confidence": 0.9841826558113098,
+                        "start_ms": 407.50000000000006,
+                        "end_ms": 479.0758514404297,
+                        "confidence": 0.9109493494033813,
                         "is_estimated": false,
                         "target_seq_idx": 6,
                         "index": 6
@@ -3790,9 +3790,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 462.4869384765625,
-                        "end_ms": 479.0043640136719,
-                        "confidence": 0.8820220828056335,
+                        "start_ms": 479.0758514404297,
+                        "end_ms": 506.03027343749994,
+                        "confidence": 0.15010109543800354,
                         "is_estimated": false,
                         "target_seq_idx": 7,
                         "index": 7
@@ -3800,9 +3800,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 479.0043640136719,
-                        "end_ms": 561.59130859375,
-                        "confidence": 0.9806928038597107,
+                        "start_ms": 506.03027343749994,
+                        "end_ms": 558.5219192504883,
+                        "confidence": 0.7391970753669739,
                         "is_estimated": false,
                         "target_seq_idx": 8,
                         "index": 8
@@ -3810,9 +3810,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 561.59130859375,
-                        "end_ms": 627.660888671875,
-                        "confidence": 0.998281717300415,
+                        "start_ms": 558.5219192504883,
+                        "end_ms": 612.5,
+                        "confidence": 0.8937128782272339,
                         "is_estimated": false,
                         "target_seq_idx": 9,
                         "index": 9
@@ -3820,9 +3820,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 627.660888671875,
-                        "end_ms": 710.247802734375,
-                        "confidence": 0.14961044490337372,
+                        "start_ms": 612.5,
+                        "end_ms": 642.5,
+                        "confidence": 0.49426814913749695,
                         "is_estimated": false,
                         "target_seq_idx": 10,
                         "index": 10
@@ -3830,9 +3830,9 @@
                     {
                         "group_id": 14,
                         "group_label": "rhotics",
-                        "start_ms": 710.247802734375,
-                        "end_ms": 792.8347778320312,
-                        "confidence": 0.9880229234695435,
+                        "start_ms": 642.5,
+                        "end_ms": 877.5000000000001,
+                        "confidence": 0.5330216288566589,
                         "is_estimated": false,
                         "target_seq_idx": 11,
                         "index": 11
@@ -3840,9 +3840,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 792.8347778320312,
-                        "end_ms": 875.4217529296875,
-                        "confidence": 0.04843052476644516,
+                        "start_ms": 877.5000000000001,
+                        "end_ms": 907.5,
+                        "confidence": 0.035149361938238144,
                         "is_estimated": false,
                         "target_seq_idx": 12,
                         "index": 12
@@ -3850,9 +3850,9 @@
                     {
                         "group_id": 6,
                         "group_label": "voiceless_stops",
-                        "start_ms": 875.4217529296875,
-                        "end_ms": 1024.0782470703125,
-                        "confidence": 0.7750211954116821,
+                        "start_ms": 907.5,
+                        "end_ms": 977.5,
+                        "confidence": 0.810142993927002,
                         "is_estimated": false,
                         "target_seq_idx": 13,
                         "index": 13
@@ -3860,9 +3860,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 1024.0782470703125,
-                        "end_ms": 1040.595703125,
-                        "confidence": 0.7544817328453064,
+                        "start_ms": 977.5,
+                        "end_ms": 1040.4854583740234,
+                        "confidence": 0.7241675853729248,
                         "is_estimated": false,
                         "target_seq_idx": 14,
                         "index": 14
@@ -3870,9 +3870,9 @@
                     {
                         "group_id": 9,
                         "group_label": "voiced_fricatives",
-                        "start_ms": 1040.595703125,
-                        "end_ms": 1123.1826171875,
-                        "confidence": 0.5872032642364502,
+                        "start_ms": 1040.4854583740234,
+                        "end_ms": 1187.5,
+                        "confidence": 0.6227811574935913,
                         "is_estimated": false,
                         "target_seq_idx": 15,
                         "index": 15
@@ -3880,9 +3880,9 @@
                     {
                         "group_id": 13,
                         "group_label": "laterals",
-                        "start_ms": 1123.1826171875,
-                        "end_ms": 1222.2869873046875,
-                        "confidence": 0.9989396929740906,
+                        "start_ms": 1187.5,
+                        "end_ms": 1217.5,
+                        "confidence": 0.023132815957069397,
                         "is_estimated": false,
                         "target_seq_idx": 16,
                         "index": 16
@@ -3890,9 +3890,9 @@
                     {
                         "group_id": 1,
                         "group_label": "front_vowels",
-                        "start_ms": 1222.2869873046875,
-                        "end_ms": 1271.839111328125,
-                        "confidence": 0.4951610863208771,
+                        "start_ms": 1217.5,
+                        "end_ms": 1277.2283172607422,
+                        "confidence": 0.7646176815032959,
                         "is_estimated": false,
                         "target_seq_idx": 17,
                         "index": 17
@@ -3900,9 +3900,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 1271.839111328125,
-                        "end_ms": 1321.391357421875,
-                        "confidence": 0.8920723795890808,
+                        "start_ms": 1277.2283172607422,
+                        "end_ms": 1387.5,
+                        "confidence": 0.9604610204696655,
                         "is_estimated": false,
                         "target_seq_idx": 18,
                         "index": 18
@@ -3910,9 +3910,9 @@
                     {
                         "group_id": 4,
                         "group_label": "low_vowels",
-                        "start_ms": 1321.391357421875,
-                        "end_ms": 1453.5303955078125,
-                        "confidence": 0.27889135479927063,
+                        "start_ms": 1387.5,
+                        "end_ms": 1577.5000000000002,
+                        "confidence": 0.7001630067825317,
                         "is_estimated": false,
                         "target_seq_idx": 19,
                         "index": 19
@@ -3920,9 +3920,9 @@
                     {
                         "group_id": 7,
                         "group_label": "voiced_stops",
-                        "start_ms": 1453.5303955078125,
-                        "end_ms": 1618.704345703125,
-                        "confidence": 0.527889609336853,
+                        "start_ms": 1577.5000000000002,
+                        "end_ms": 1627.5,
+                        "confidence": 0.01756029762327671,
                         "is_estimated": false,
                         "target_seq_idx": 20,
                         "index": 20
@@ -3930,9 +3930,9 @@
                     {
                         "group_id": 2,
                         "group_label": "central_vowels",
-                        "start_ms": 1618.704345703125,
-                        "end_ms": 1651.7391357421875,
-                        "confidence": 0.7624173164367676,
+                        "start_ms": 1627.5,
+                        "end_ms": 1657.5,
+                        "confidence": 0.08948498964309692,
                         "is_estimated": false,
                         "target_seq_idx": 21,
                         "index": 21
@@ -3940,9 +3940,9 @@
                     {
                         "group_id": 12,
                         "group_label": "nasals",
-                        "start_ms": 1651.7391357421875,
-                        "end_ms": 1783.8782958984375,
-                        "confidence": 0.03990883380174637,
+                        "start_ms": 1657.5,
+                        "end_ms": 1707.5,
+                        "confidence": 0.25039640069007874,
                         "is_estimated": false,
                         "target_seq_idx": 22,
                         "index": 22
@@ -3950,9 +3950,9 @@
                     {
                         "group_id": 0,
                         "group_label": "SIL",
-                        "start_ms": 1783.8782958984375,
-                        "end_ms": 1882.982666015625,
-                        "confidence": 0.17923672497272491,
+                        "start_ms": 1707.5,
+                        "end_ms": 1880.0000000000002,
+                        "confidence": 0.10782509297132492,
                         "is_estimated": false,
                         "target_seq_idx": 23,
                         "index": 23
@@ -3961,9 +3961,9 @@
                 "words_ts": [
                     {
                         "word": "in",
-                        "start_ms": 0.0,
-                        "end_ms": 66.06956481933594,
-                        "confidence": 0.9912745952606201,
+                        "start_ms": 17.5,
+                        "end_ms": 127.5,
+                        "confidence": 0.38512053713202477,
                         "ph66": [
                             4,
                             53
@@ -3975,9 +3975,9 @@
                     },
                     {
                         "word": "being",
-                        "start_ms": 66.06956481933594,
-                        "end_ms": 379.8999938964844,
-                        "confidence": 0.7089402675628662,
+                        "start_ms": 127.5,
+                        "end_ms": 407.50000000000006,
+                        "confidence": 0.23812199477106333,
                         "ph66": [
                             29,
                             2,
@@ -3993,9 +3993,9 @@
                     },
                     {
                         "word": "comparatively",
-                        "start_ms": 379.8999938964844,
-                        "end_ms": 1271.839111328125,
-                        "confidence": 0.6834641434252262,
+                        "start_ms": 407.50000000000006,
+                        "end_ms": 1277.2283172607422,
+                        "confidence": 0.29629463428257924,
                         "ph66": [
                             32,
                             8,
@@ -4027,9 +4027,9 @@
                     },
                     {
                         "word": "modern",
-                        "start_ms": 1271.839111328125,
-                        "end_ms": 1783.8782958984375,
-                        "confidence": 0.49074686504900455,
+                        "start_ms": 1277.2283172607422,
+                        "end_ms": 1707.5,
+                        "confidence": 0.24036125076236203,
                         "ph66": [
                             52,
                             19,
@@ -4043,6 +4043,18 @@
                             "d",
                             "\u025a",
                             "n"
+                        ]
+                    },
+                    {
+                        "word": "<sil>",
+                        "start_ms": 1707.5,
+                        "end_ms": 1880.0000000000002,
+                        "confidence": 0.11399185657501221,
+                        "ph66": [
+                            0
+                        ],
+                        "ipa": [
+                            "SIL"
                         ]
                     }
                 ]

@@ -1,54 +1,49 @@
 '''
-Adaptive chunking for long-form forced alignment.
+Chunked alignment for very long segments.
 
-## The problem this replaces
+## When this runs, and why it is not the main path
 
-Viterbi forced alignment over a whole 30 s clip with ~350 target phonemes does not
-degrade gracefully - it collapses. On `30s.wav` (32 s, 353 phonemes) the decoder packed
-every phoneme into the first 18.3 s and left 14 s of audio unused; the last ~200 phonemes
-came out at exactly one frame (13.125 ms) each with confidence 0.000.
+The segmental decoder in `p3cupe/aligner.py` does not collapse on long audio: it has no band
+constraint and no lattice to compress, and every phone is placed in one global search. What it
+does have is a python loop over frames, so a segment costs time and memory in proportion to its
+length. `core.PhonemeTimestampAligner` therefore decodes whole segments up to
+`segment_max_seconds` and only hands longer ones to this module. Chunking is strictly worse
+when it is not needed - a cut can land mid-phone - so the threshold is a resource bound, not a
+quality one.
 
-The previous mitigation was *silence anchoring*: find SIL groups in the phonemized text
-(i.e. punctuation), find silence-looking regions in the posteriors, match them up by
-proportional position, and decode each span separately. It fails whenever the text's
-punctuation and the speaker's pauses do not correspond one-to-one, which is most of the
-time - on the clip above it produced two spans, one of which still held 303 phonemes.
+## What it does
 
-## What this does instead
+Walk the segment forward in overlapping windows of `chunk_seconds` of audio, giving each window
+a slice of the remaining phonemes sized from its SPEECH seconds:
 
-Walk the clip forward in overlapping windows of `chunk_seconds` of audio, feeding each
-window a DELIBERATELY OVER-PROVISIONED slice of the remaining phonemes. Over-provisioning
-is the whole trick: when a window is handed more phonemes than its audio actually
-contains, the forced decoder aligns the ones that are really there and then crams the
-surplus into the final frames at one frame apiece. That cram is a loud, unambiguous
-signal, and it marks exactly where the window's trustworthy alignment ends.
-
-So each iteration:
-
-  1. estimate a phoneme budget for this window from its SPEECH seconds (see the VAD
-     below) at `phonemes_per_second`, capped at `max_phonemes`;
+  1. estimate a phoneme budget from `phonemes_per_second` over the window's speech seconds,
+     capped at `max_phonemes` and at what the window's frames can hold at the duration floor;
   2. align the window;
-  3. find the first run of `derail_run` consecutive phonemes whose duration is
-     `<= derail_frames` frames - the cram - and back off from it over the preceding
-     near-zero-confidence drift (confidence collapses alongside duration, and slightly
-     earlier, so it is a second clue for the same event; see `find_derailment`);
-  4. keep everything before that, and restart the next window at the end of the last
-     kept phoneme, with the phonemes that were not kept.
+  3. decide where the window stops being trustworthy (`find_derailment`);
+  4. keep everything before that, and restart the next window at the end of the last kept
+     phoneme, with the phonemes that were not kept.
 
-Because step 4 restarts at a *phoneme* boundary rather than at a fixed offset, the
-windows overlap by however much of the previous window was untrustworthy, and no audio
-between two kept phonemes is ever skipped.
+Because step 4 restarts at a *phoneme* boundary rather than at a fixed offset, the windows
+overlap by however much of the previous window was untrustworthy, and no audio between two kept
+phonemes is ever skipped.
+
+## What "derailment" means for this decoder
+
+CONFIDENCE is the signal that matters here. The old CTC lattice announced a window whose text
+outran its audio by cramming the surplus into one frame apiece - a loud duration signal - but
+this decoder enforces a minimum phone duration and simply reports the alignment as infeasible
+instead, which `core._align_chunk` catches and retries with a smaller budget. So a window that
+goes wrong here goes wrong quietly: it drifts onto the wrong audio, and its confidences collapse
+while its durations stay plausible. The duration rule is kept because it costs nothing and still
+catches a decoder that has been forced down to a one-frame floor.
 
 ## What the VAD is for
 
-`phonemes_per_second` (15 /s is a safe upper bound for English) is a rate over SPEECH, not
-over wall-clock time. A window holding 4 s of speech and 6 s of pause contains ~60
-phonemes, not ~150, and budgeting 150 for it would push the cram point so far past the end
-of the real content that step 3 cuts in the wrong place. `detect_speech_segments` is a
-plain energy VAD whose only jobs are to measure speech seconds per window and to let
-`snap_cut_to_silence` move a cut into a nearby pause. It is deliberately NOT the silence
-anchoring described above: it never splits the target sequence and never touches the
-posteriors.
+`phonemes_per_second` is a rate over SPEECH, not over wall-clock time. A window holding 4 s of
+speech and 6 s of pause contains ~60 phonemes, not ~150, and over-budgeting it pushes phonemes
+into audio that does not contain them. `detect_speech_segments` is a plain energy VAD whose only
+jobs are to measure speech seconds per window and to let `snap_cut_to_silence` move a cut into a
+nearby pause. It never splits the target sequence and never touches the posteriors.
 '''
 
 import torch
@@ -60,112 +55,77 @@ import torch
 DEFAULT_CHUNK_SECONDS = 10.0
 
 # Phonemes per second of SPEECH used to size a window's budget. English runs ~10-13 /s in
-# normal delivery, so 15 over-provisions by ~20-50% - which is the point (see module docs).
+# normal delivery, so 15 leaves ~20-50% of headroom.
 #
-# Over-provisioning is NOT free, and more is not better. MEASURED against Buckeye
-# ground-truth phone boundaries (s0103a, 2267 boundaries, median absolute onset error and
-# the share of boundaries within 25 ms):
-#
-#   phonemes/s    12       15       18       20
-#   median err  16.4ms   16.8ms   17.8ms   17.8ms
-#   within 25ms  64.6%    63.2%    60.3%    59.9%
-#   worst decile  19ms     21ms     42ms     31ms
-#
-# Monotonic: the less a window is over-provisioned, the better it aligns. The same shows up
-# far more violently on a 36.5 s LJSpeech concatenation, where 15 -> 20 took mean confidence
-# from 0.417 to 0.212, audio coverage from 99% to 88%, and DOUBLED the share of one-frame
-# phonemes (16.7% -> 35.8%).
-#
-# THE MECHANISM IS NOT THE CTC LATTICE. That was the first guess and it is wrong: at 20 /s
-# the LJ budget is ~186 phonemes in a 761-frame window, so `4*S+1 = 745 <= 761` and the
-# decode stays at stride 4 in both configurations. What actually happens is simpler and
-# worse. `enforce_all_targets` means the forced path must emit EVERY target inside the
-# window. Surplus targets cannot be declined; they take frames from the phonemes that are
-# genuinely there. So over-provisioning does not merely append a detectable tail - it
-# distorts the whole window, and the distortion grows with the surplus.
-#
-# That is the tension the whole design sits on: the cram has to be big enough to SEE (it is
-# the cut signal) and small enough not to corrupt what precedes it. 15 /s is the compromise;
-# 12 /s measured marginally better on the one conversational file above, which is not enough
-# evidence to move a default that has to work on read speech too.
-#
-# Under-provisioning is the safe direction and is already handled: a window with no cram
-# and audio still to come takes the `NO_DERAIL_TRIM_FRACTION` path, drops a short tail, and
-# the next window re-decodes those phonemes.
+# Over-budgeting is not free: the forced path must place EVERY target it is given inside the
+# window, so surplus targets cannot be declined and take frames from the phonemes that are
+# genuinely there. Under-budgeting is the safe direction and is already handled - a window with
+# no derailment and audio still to come takes the `NO_DERAIL_TRIM_FRACTION` path, drops a short
+# tail, and the next window re-decodes those phonemes.
 DEFAULT_PHONEMES_PER_SECOND = 15.0
 
-# Upper bound on the phoneme budget for ONE window, derived rather than chosen.
+# Upper bound on the phoneme budget for ONE window. Deliberately independent of
+# `DEFAULT_PHONEMES_PER_SECOND`: tying the two together (max = pps * seconds) would make it
+# unreachable by construction, since the budget is `pps * speech_seconds` and speech_seconds
+# never exceeds chunk_seconds. A cap that can never bind is not a cap.
 #
-# `ViterbiDecoder.decode_with_forced_alignment` builds a CTC lattice of `stride * S + 1`
-# states and walks `stride` down from 4 until it fits the window's frames. Stride 4 is what
-# leaves room for blanks between phones; below it the lattice is compressed and placement
-# degrades. So the largest budget a window can take WITHOUT forcing that compression is
-#
-#     S_max = (frames_in_window - 1) // 4,    frames = chunk_seconds * 16000 / 210
-#
-# 190 for a 10 s window at the 210-sample stride; the previous hand-picked 200 sat just
-# over the line. A DERIVED bound beats a round number here because it tracks
-# `chunk_seconds`: an 8 s window only holds 152, a 12 s window 228, and nothing warns you
-# when a shortened window quietly crosses over. `stride4_max_phonemes` is that arithmetic,
-# and `PhonemeTimestampAligner._warn_if_budget_overruns_lattice` checks it on every
-# construction and every `set_chunking` call.
-#
-# HONEST SCOPE. This is a guard, not the fix for anything measured so far. The stride drop
-# it prevents is real arithmetic, but it did not occur in any configuration tested: on the
-# Buckeye ground-truth sweep, cap 190 and cap 210 gave byte-identical results at 20 /s
-# (17.8 ms median, 59.9% within 25 ms) because the rate, not the cap, was binding. What
-# actually degrades a window at a high rate is described on DEFAULT_PHONEMES_PER_SECOND.
-#
-# This is a CAP, deliberately independent of `DEFAULT_PHONEMES_PER_SECOND`: tying the two
-# together (max = pps * seconds) makes it unreachable by construction, since the budget is
-# `pps * speech_seconds` and speech_seconds <= chunk_seconds. A cap that can never bind is
-# not a cap.
-_FRAMES_PER_SECOND = 16000 / 210.0          # the stride every released checkpoint uses
-DEFAULT_MAX_PHONEMES = (int(DEFAULT_CHUNK_SECONDS * _FRAMES_PER_SECOND) - 1) // 4    # 190
+# `core.align_segment_chunked` applies a second, tighter bound that this one cannot express,
+# because it depends on the loaded checkpoint: a window's frames divided by the duration floor,
+# i.e. the most phones the audio can physically hold. That is the one that keeps a window
+# feasible; this is a blunt ceiling on memory and time.
+DEFAULT_MAX_PHONEMES = 200
 
-
-def stride4_max_phonemes(chunk_seconds, frames_per_second=_FRAMES_PER_SECOND):
-    '''
-    Largest phoneme budget a `chunk_seconds` window can hold while the CTC lattice still
-    fits at stride 4 - the cap explained on `DEFAULT_MAX_PHONEMES`.
-
-    Use it when changing `chunk_seconds`, because the two are not independent: an 8 s window
-    only supports 152 phonemes, a 12 s window 228. Pass `frames_per_second` for a model
-    whose feature extractor does not use the 210-sample stride.
-    '''
-    return max(1, (int(chunk_seconds * frames_per_second) - 1) // 4)
-
-# A phoneme this short (in frames) is not a phoneme, it is the decoder running out of
-# audio. 1 frame = 13.125 ms at the 210-sample stride; the shortest real phones (stop
-# bursts) measure 2-3 frames.
+# A phoneme this short (in frames) is not a phoneme, it is the decoder running out of audio.
+# The decoder's own duration floor normally keeps phones well above this, so the rule only
+# fires when that floor has been reduced to fit a clip whose text outruns its audio.
 DEFAULT_DERAIL_FRAMES = 1
-# How many consecutive short phonemes make a cram rather than one genuinely brief stop.
+# How many consecutive short phonemes make a derailment rather than one genuinely brief stop.
 DEFAULT_DERAIL_RUN = 3
-# Phonemes dropped before the detected cram. The alignment starts drifting slightly before
-# it visibly collapses, so the last couple of phonemes before the run are not trustworthy.
-# This is the MINIMUM backoff; `find_derailment` extends it backwards over any contiguous
-# run of near-zero-confidence phonemes immediately preceding the cram (see `conf_floor`).
+# Phonemes dropped before the detected derailment. The alignment starts drifting slightly
+# before it visibly collapses, so the last couple of phonemes before the run are not
+# trustworthy. This is the MINIMUM backoff; `find_derailment` extends it backwards over any
+# contiguous run of near-zero-confidence phonemes immediately preceding it (see `conf_floor`).
 DEFAULT_BACKOFF = 2
-# Confidence below this counts as "the decoder is not actually seeing this phoneme".
-# Confidence collapses alongside duration when a window derails - in the 30s.wav baseline
-# the crammed tail ran at 0.000-0.004 while the healthy head averaged 0.28 - so it is a
-# second, independent clue for the same event. It is NOT used on its own to trigger a cut:
-# individual real phonemes score 0.000 in perfectly good regions (the decoder is confident
-# about a neighbour instead), so only a sustained run of it means anything.
+# Confidence below this counts as "the decoder is not actually seeing this phoneme". It is
+# the primary derailment signal for this decoder (see the module docstring), but never on a
+# single phoneme: real phonemes score near zero in perfectly good regions, because the model
+# is confident about a neighbour instead. Only a sustained run of it means anything.
 DEFAULT_CONF_FLOOR = 0.02
 # How many consecutive near-zero-confidence phonemes count as a derailment on their own,
 # when durations still look plausible. Much longer than `derail_run`, precisely because
 # confidence is the noisier of the two signals.
 DEFAULT_WEAK_RUN = 12
-# Cap on how far the confidence-driven backoff may walk back from a detected cram, as a
+# Cap on how far the confidence-driven backoff may walk back from a detected derailment, as a
 # fraction of the window's budget. Without it, a window that was weak throughout would
 # back off to nothing and stall the walk.
 MAX_BACKOFF_FRACTION = 0.35
 # Fraction of the budget that must be kept from every window, so the walk always makes
 # progress even when a window's alignment is bad from the start.
 MIN_KEEP_FRACTION = 0.15
-# When no cram is found and audio remains, the budget was too SMALL for the window: its
-# last phonemes were stretched to fill the audio. Drop this fraction of the tail.
+# When no derailment is found and audio remains, a window is trusted only up to this fraction
+# of its own audio: every phoneme the aligner placed past that point is handed back to the next
+# window, which sees it with real audio on both sides instead of at its edge.
+#
+# A TIME fraction, not a count fraction, and applied as a CAP on top of `find_derailment`
+# rather than as a fallback when it finds nothing. That distinction is the whole point. The
+# old rule dropped 5% of the phoneme COUNT, which says nothing about whether the window's
+# phonemes actually reached the end of its audio. With a decoder that cannot cram - this one
+# enforces a minimum phone duration and reports infeasibility instead - an over-budgeted
+# window places its surplus phonemes early rather than announcing itself, and keeps nearly all
+# of them, so the walk runs AHEAD of the audio and the error compounds window after window.
+#
+# MEASURED on 30s.wav (31.95 s, 356 phonemes) forced through the chunker at 10 s windows:
+#
+#                        last phoneme ends   mean confidence   flagged bad
+#   count trim only           30.31 s             0.217            yes
+#   time cap                  31.87 s             0.317            no
+#   (whole-segment decode)    31.88 s             0.319            no
+#
+# i.e. the count rule finished the transcript 1.6 s before the end of the clip, and the time
+# cap brings the chunked result back to within 10 ms of the whole-segment one.
+TRUST_WINDOW_FRACTION = 0.75
+# Floor on how much of a window survives the time trim, as a fraction of its budget, so a
+# window whose audio the aligner barely used still makes progress.
 NO_DERAIL_TRIM_FRACTION = 0.05
 # How far a cut may be moved to land in a pause instead of mid-word.
 DEFAULT_SNAP_TO_SILENCE_SEC = 0.25
@@ -277,8 +237,8 @@ def speech_seconds(speech_spans, t0, t1):
     Seconds of speech inside `[t0, t1)`.
 
     With no VAD result at all the whole interval counts as speech - budgeting too many
-    phonemes is recoverable (the cram detector cuts the window short), budgeting too few
-    is not (the surplus audio silently stretches the last kept phoneme).
+    phonemes is recoverable (the derailment detector cuts the window short), budgeting too
+    few is not (the surplus audio silently stretches the last kept phoneme).
     '''
     if t1 <= t0:
         return 0.0
@@ -347,14 +307,15 @@ def find_derailment(durations, confidences=None, min_keep=1,
 
     Two signals, in priority order, because they fail in different ways:
 
-      1. **Duration** - a run of `derail_run` phonemes at `<= derail_frames` frames each.
-         This is the cram: the decoder ran out of audio and is emitting one frame per
-         leftover target. Unambiguous, and it is what the walk is normally cut by.
-      2. **Confidence** - a run of `weak_run` phonemes below `conf_floor`. Weaker
-         evidence, used only when (1) finds nothing: a window can drift onto the wrong
-         audio without the durations degenerating, and when it does the confidences go to
-         zero first. `weak_run` is deliberately much longer than `derail_run`, because
-         isolated real phonemes score 0.000 in healthy regions too.
+      1. **Duration** - a run of `derail_run` phonemes at `<= derail_frames` frames each: the
+         decoder emitting one frame per leftover target because it ran out of audio.
+         Unambiguous when it fires, but the segmental decoder's duration floor normally keeps
+         phones well clear of it, so it rarely does.
+      2. **Confidence** - a run of `weak_run` phonemes below `conf_floor`. This is the signal
+         that actually catches a bad window here: it drifts onto the wrong audio while its
+         durations stay plausible, and the confidences go to zero first. `weak_run` is
+         deliberately much longer than `derail_run`, because isolated real phonemes score
+         0.000 in healthy regions too.
 
     The cut is then walked BACKWARDS from whichever fired, over any contiguous run of
     below-`conf_floor` phonemes immediately preceding it, and at least `backoff` phonemes
@@ -371,7 +332,7 @@ def find_derailment(durations, confidences=None, min_keep=1,
             phonemes look derailed is a window with a bad start, not a window whose budget
             ran out, and cutting there would stall the walk.
         derail_frames: a duration `<= this` (in frames) is impossibly short.
-        derail_run: how many consecutive short phonemes constitute the cram.
+        derail_run: how many consecutive short phonemes constitute a derailment.
         conf_floor: confidence below this counts as "not actually seeing this phoneme".
         weak_run: how many consecutive weak phonemes derail a window on their own.
         backoff: minimum phonemes to drop before the detected point.

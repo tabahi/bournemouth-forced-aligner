@@ -111,7 +111,7 @@ class TestKeepCount:
         """Minimal 8-tuples: (id, start_frame, end_frame, target_idx, est, conf, s_ms, e_ms)."""
         out, f = [], 0
         for i, (d, c) in enumerate(zip(durations, confidences)):
-            out.append((1, f, f + d, i, False, c, f * 13.125, (f + d) * 13.125))
+            out.append((1, f, f + d, i, False, c, f * 5.0, (f + d) * 5.0))
             f += d
         return out
 
@@ -152,37 +152,13 @@ class TestKeepCount:
         assert keep >= max(1, int(chunking.MIN_KEEP_FRACTION * n))
 
 
-class TestLatticeCap:
+class TestPhonemeCap:
     """
-    `chunk_max_phonemes` is derived from the CTC lattice, not chosen.
-
-    `decode_with_forced_alignment` builds a `stride * S + 1` state lattice and walks
-    `stride` down from 4 until it fits the window's frames. Budgeting past what stride 4
-    can hold compresses the lattice and makes a window derail internally - measured at
-    20 phonemes/s, where the one-frame ratio doubled (16.7% -> 35.8%).
+    `chunk_max_phonemes` is a blunt ceiling on one window's budget. The bound that actually
+    keeps a window feasible is applied in `core.align_segment_chunked` and depends on the
+    loaded checkpoint (the window's frames divided by the duration floor), so it cannot live
+    here.
     """
-
-    def test_default_cap_is_the_stride4_bound(self):
-        assert chunking.DEFAULT_MAX_PHONEMES == \
-            chunking.stride4_max_phonemes(chunking.DEFAULT_CHUNK_SECONDS)
-        assert chunking.DEFAULT_MAX_PHONEMES == 190     # 10 s at a 210-sample stride
-
-    def test_cap_scales_with_window_length(self):
-        assert chunking.stride4_max_phonemes(8.0) == 152
-        assert chunking.stride4_max_phonemes(12.0) == 228
-
-    def test_the_cap_actually_fits_the_lattice(self):
-        # The property the number exists to guarantee: 4*S + 1 <= frames.
-        for cs in (4.0, 8.0, 10.0, 12.0, 30.0):
-            frames = int(cs * chunking._FRAMES_PER_SECOND)
-            s = chunking.stride4_max_phonemes(cs)
-            assert 4 * s + 1 <= frames
-            assert 4 * (s + 1) + 1 > frames          # and it is the LARGEST such S
-
-    def test_cap_honours_a_different_frame_rate(self):
-        # A cnn_last_stride:1 model has twice the frames, so twice the budget.
-        assert chunking.stride4_max_phonemes(10.0, 2 * chunking._FRAMES_PER_SECOND) > \
-            2 * chunking.stride4_max_phonemes(10.0) - 3
 
     def test_default_rate_stays_under_the_cap(self):
         # A full window at the default rate must not need the cap to rescue it.
@@ -198,9 +174,11 @@ class TestLatticeCap:
 
 class TestNeedsChunking:
     """
-    Which segments take the chunked path. `chunk_seconds` must mean what it says - the
-    threshold used to carry 10% slack, so a nominal 10 s really meant 11 s and a 10.2 s
-    segment collapsed on the single-shot path while the setting looked satisfied.
+    Which segments take the chunked path.
+
+    Length, and nothing else. The segmental decoder does not collapse on a long segment or on
+    a dense one, so chunking exists only to bound the DP's time and memory: it engages above
+    `segment_max_seconds` and is otherwise strictly worse, because a cut can land mid-phone.
     """
 
     @staticmethod
@@ -210,27 +188,97 @@ class TestNeedsChunking:
         obj.chunk_audio = kw.get('chunk_audio', True)
         obj.chunk_seconds = kw.get('chunk_seconds', 10.0)
         obj.chunk_max_phonemes = kw.get('chunk_max_phonemes', 200)
+        obj.segment_max_seconds = kw.get('segment_max_seconds', 120.0)
         return obj
 
     def test_exactly_at_the_threshold_stays_single_shot(self):
-        assert self._aligner()._needs_chunking(10.0, 150) is False
+        assert self._aligner()._needs_chunking(120.0, 1800) is False
 
     def test_just_over_the_threshold_is_chunked(self):
-        # The reported regression: 10.2 s took the single-shot path and collapsed.
-        assert self._aligner()._needs_chunking(10.2, 160) is True
+        assert self._aligner()._needs_chunking(120.5, 1800) is True
 
-    def test_phoneme_count_alone_triggers_it(self):
-        assert self._aligner()._needs_chunking(9.0, 240) is True
-        assert self._aligner()._needs_chunking(9.0, 200) is False
+    def test_phoneme_count_alone_does_not_trigger_it(self):
+        # A dense segment is not a reason to chunk: the decoder places every phone in one
+        # global search, and shortening the duration floor is how it copes when text
+        # outruns audio.
+        assert self._aligner()._needs_chunking(9.0, 2400) is False
 
     def test_disabled_means_never(self):
         a = self._aligner(chunk_audio=False)
-        assert a._needs_chunking(60.0, 900) is False
+        assert a._needs_chunking(600.0, 9000) is False
 
     def test_threshold_follows_the_setting(self):
-        a = self._aligner(chunk_seconds=6.0)
-        assert a._needs_chunking(6.5, 80) is True
-        assert a._needs_chunking(5.5, 80) is False
+        a = self._aligner(segment_max_seconds=30.0)
+        assert a._needs_chunking(30.5, 400) is True
+        assert a._needs_chunking(29.5, 400) is False
+
+
+class TestWindowTrustCap:
+    """
+    `_chunk_keep_count` - how much of a window is trusted.
+
+    The rule that matters for this decoder is the TIME cap: a window is never trusted past
+    `TRUST_WINDOW_FRACTION` of its own audio, whatever the derailment detector says. Without
+    it an over-budgeted window keeps phonemes it placed early, and the walk runs ahead of the
+    audio (measured: 1.6 s of drift over a 32 s clip).
+    """
+
+    @staticmethod
+    def _aligner():
+        from bournemouth_aligner.core import PhonemeTimestampAligner
+        obj = PhonemeTimestampAligner.__new__(PhonemeTimestampAligner)
+        obj.chunk_derail_frames = chunking.DEFAULT_DERAIL_FRAMES
+        obj.chunk_derail_run = chunking.DEFAULT_DERAIL_RUN
+        obj.chunk_conf_floor = chunking.DEFAULT_CONF_FLOOR
+        obj.chunk_weak_run = chunking.DEFAULT_WEAK_RUN
+        obj.chunk_backoff = chunking.DEFAULT_BACKOFF
+        return obj
+
+    @staticmethod
+    def _stamps(n, window_ms, span_ms, conf=0.7):
+        """n healthy phonemes evenly filling `span_ms` of a window starting at window_ms[0]."""
+        a = window_ms[0]
+        step = span_ms / n
+        return [(1, i * 2.0, (i + 1) * 2.0, i, False, conf, a + i * step, a + (i + 1) * step)
+                for i in range(n)]
+
+    def test_time_cap_trims_a_window_that_filled_its_audio(self):
+        a = self._aligner()
+        window = (0.0, 10000.0)
+        stamps = self._stamps(100, window, 10000.0)
+        keep, reason = a._chunk_keep_count(stamps, 100, final=False, window_ms=window)
+        assert reason == 'trim'
+        # 75% of the window's audio holds 75 of the 100 evenly spaced phonemes.
+        assert keep == 75
+
+    def test_time_cap_binds_even_when_a_derailment_is_detected_later(self):
+        # The window is healthy for 90 phonemes and only then goes weak, so the confidence
+        # rule would cut at ~88. The time cap at 75 must still win: it is a cap, not a
+        # fallback for when the detector finds nothing.
+        a = self._aligner()
+        window = (0.0, 10000.0)
+        stamps = self._stamps(100, window, 10000.0)
+        stamps = [t if i < 90 else (*t[:5], 0.0, *t[6:]) for i, t in enumerate(stamps)]
+        cut, reason = chunking.find_derailment(
+            [2.0] * 100, [0.7] * 90 + [0.0] * 10, min_keep=15,
+            weak_run=chunking.DEFAULT_WEAK_RUN, backoff=chunking.DEFAULT_BACKOFF)
+        assert cut is not None and cut > 75, "precondition: the detector cuts after the cap"
+        keep, _ = a._chunk_keep_count(stamps, 100, final=False, window_ms=window)
+        assert keep == 75
+
+    def test_final_window_keeps_everything(self):
+        a = self._aligner()
+        window = (0.0, 10000.0)
+        stamps = self._stamps(100, window, 10000.0)
+        keep, _ = a._chunk_keep_count(stamps, 100, final=True, window_ms=window)
+        assert keep == 100
+
+    def test_no_timing_falls_back_to_a_count_trim(self):
+        a = self._aligner()
+        stamps = self._stamps(100, (0.0, 10000.0), 10000.0)
+        keep, reason = a._chunk_keep_count(stamps, 100, final=False, window_ms=None)
+        assert reason == 'trim'
+        assert keep == 95
 
 
 class TestWindowLayout:

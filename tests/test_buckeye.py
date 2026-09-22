@@ -17,9 +17,9 @@ from.
 
 Usage:
     python tests/test_buckeye.py --n 40 --seed 0
-    python tests/test_buckeye.py --n 40 --min-dur 8 --cfg '{"enforce_all_targets": false}'
+    python tests/test_buckeye.py --n 40 --min-dur 8 --cfg '{"boundary_bonus_weight": 30}'
     python tests/test_buckeye.py --clip tmp/buckeye_samples/s0103a    # every segment of a clip
-    python tests/test_buckeye.py --n 40 --corrupt extra_ends --cfg '{"enforce_all_targets": false}'
+    python tests/test_buckeye.py --n 40 --corrupt extra_ends --cfg '{"min_phone_frames": 4}'
 
 `--corrupt` makes the transcript unreliable while scoring against the untouched ground truth:
   extra_ends   2 words from the neighbouring segments glued onto each end of the text (what a
@@ -44,8 +44,8 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 PATHS_LIST = "/mnt/intelpa-2/rehman/codes/speech_data_manager/paths_cache/paths_list_buckeye_all.json"
-LOCAL_CKPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'model3a_bin',
-                          'm_ue03c_epoch=81_step=39442_val_timit_lyr_fusion_f1_25ms=64.2429.ckpt')
+LOCAL_CKPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'p3cupe',
+                          'm_pa07b_final_e5_libri360h.pt')
 TOLERANCES = (10, 25, 50)
 MAX_DIST = 100.0
 NON_SPEECH_LABELS = {
@@ -224,7 +224,7 @@ def run(args):
 
     cfg = dict(preset="en-us", duration_max=30, device="cuda" if torch.cuda.is_available() else "cpu")
     if os.path.exists(LOCAL_CKPT):
-        # The en-us preset's model3a checkpoint is not on the hub yet; use the local copy.
+        # The p3cupe checkpoints are not on the hub yet; use the local copy.
         cfg["cupe_ckpt_path"] = LOCAL_CKPT
     cfg.update(json.loads(args.cfg))
     aligner = PhonemeTimestampAligner(**cfg)

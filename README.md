@@ -25,14 +25,17 @@ BFA takes two inputs — an **audio file** and its **text transcript** — and p
 Input:  🎵 audio.wav  +  📄 "butterfly"
 
 Output:
-  b  →  33 ms – 50 ms   (confidence: 0.99)
-  ʌ  →  100 ms – 117 ms (confidence: 0.84)
-  ɾ  →  134 ms – 151 ms (confidence: 0.29)
-  ɚ  →  285 ms – 302 ms (confidence: 0.74)
-  f  →  352 ms – 403 ms (confidence: 0.99)
-  l  →  520 ms – 554 ms (confidence: 0.92)
-  aɪ →  604 ms – 621 ms (confidence: 0.41)
+  b   →    1 ms –  52 ms  (confidence: 0.95)
+  ʌ   →   52 ms – 169 ms  (confidence: 0.39)
+  ɾ   →  169 ms – 257 ms  (confidence: 0.02)
+  ɚ   →  257 ms – 352 ms  (confidence: 0.20)
+  f   →  352 ms – 448 ms  (confidence: 0.95)
+  l   →  448 ms – 498 ms  (confidence: 0.94)
+  aɪ  →  498 ms – 828 ms  (confidence: 0.96)
 ```
+
+Every phone ends where the next begins — the alignment covers the audio with no gaps, and each
+onset is placed between frames rather than on them.
 
 The output can be exported as a **Praat TextGrid** file for visual inspection, or as **JSON** for use in scripts and TTS pipelines.
 
@@ -40,19 +43,32 @@ The output can be exported as a **Praat TextGrid** file for visual inspection, o
 
 | | |
 |---|---|
-| ⚡ Speed | ~0.2 seconds to align 10 seconds of audio (on CPU) |
+| ⚡ Speed | ~1 second to align 10 seconds of audio (on CPU) |
+| 🎯 Resolution | 5 ms frames, with sub-frame onsets read off the posteriors |
 | 🌍 Languages | 80+ languages — English, German, French, Spanish, Hindi, Arabic, and many more |
 | 📄 Output formats | JSON timestamps, Praat TextGrid, phoneme embeddings |
 | 🖥️ Runs on | Linux, macOS, Windows — CPU or GPU |
 
 ---
 
-## *What's new in v1.1.0* (February 2026)
+## *What's new in v2.0*
 
-- **Better long-sentence handling** — silence anchoring now splits long segments at pauses (like commas and full stops), making alignment significantly more accurate for full sentences.
-- **Original IPA labels preserved** — the output now includes both the standardised ph66 label and the original espeak-ng IPA form, which is useful for fine-grained phonetic analysis and TTS training.
-- **Improved quality checks** — `coverage_analysis` in the output now runs multiple alignment quality tests. If `"bad_confidence": true`, that segment is likely unreliable and should be discarded.
-- **⚠️ Breaking change** — v1.1.0 refactors the API for batch processing. Code written for v1.0.x will need minor updates (see [CHANGELOG](CHANGELOG.md)).
+**BFA v2 runs on p3cupe, a phoneme model whose output *is* the boundary detector.** Each
+phone's posterior is trained to hold across the interior of its own segment and fall to exactly
+0.5 at each of its two boundaries, where the neighbouring phone rises through 0.5 — so a
+boundary is the **crossing of two posteriors**: a continuous quantity, read off by
+interpolation rather than snapped to a frame.
+
+- **5 ms frames**, and sub-frame onsets on top of them.
+- **One decoder.** A segmental Viterbi: every frame belongs to a phone or a pause, with a soft
+  minimum phone duration. It is the *same* decoder that built the model's training targets, so
+  what you decode with is what was trained.
+- **One global search.** Posterior evidence and acoustic change are weighed together while the
+  path is chosen, not patched up afterwards.
+- **⚠️ Breaking change.** v2 does not load v1 checkpoints, and the settings that only served
+  them are gone. See the [CHANGELOG](CHANGELOG.md) for the full list and what replaced it.
+- **⚠️ Checkpoints are not published yet** — see [Language Presets](#-language-presets) for how
+  to point BFA at a local one in the meantime.
 
 ---
 
@@ -187,7 +203,6 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
 <summary>📋 Click to see the full JSON output for "butterfly"</summary>
 
 ```json
-
 {
     "segments": [
         {
@@ -219,7 +234,8 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 "extra_count": 0,
                 "coverage_ratio": 1.0,
                 "missing_phonemes": [],
-                "extra_phonemes": []
+                "extra_phonemes": [],
+                "bad_alignment": false
             },
             "ipa": [
                 "b",
@@ -247,9 +263,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 29,
                     "phoneme_label": "b",
                     "ipa_label": "b",
-                    "start_ms": 33.56833267211914,
-                    "end_ms": 50.35249710083008,
-                    "confidence": 0.9970603585243225,
+                    "start_ms": 1.046869084239006,
+                    "end_ms": 52.5,
+                    "confidence": 0.9456192255020142,
                     "is_estimated": false,
                     "target_seq_idx": 0,
                     "index": 0
@@ -258,9 +274,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 10,
                     "phoneme_label": "ʌ",
                     "ipa_label": "ʌ",
-                    "start_ms": 100.70499420166016,
-                    "end_ms": 117.48916625976562,
-                    "confidence": 0.8809734582901001,
+                    "start_ms": 52.5,
+                    "end_ms": 168.70805740356445,
+                    "confidence": 0.39453771710395813,
                     "is_estimated": false,
                     "target_seq_idx": 1,
                     "index": 1
@@ -269,9 +285,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 58,
                     "phoneme_label": "ɾ",
                     "ipa_label": "ɾ",
-                    "start_ms": 134.27333068847656,
-                    "end_ms": 151.0574951171875,
-                    "confidence": 0.07298105955123901,
+                    "start_ms": 168.70805740356445,
+                    "end_ms": 257.18225479125977,
+                    "confidence": 0.015983885154128075,
                     "is_estimated": false,
                     "target_seq_idx": 2,
                     "index": 2
@@ -280,9 +296,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 9,
                     "phoneme_label": "ɚ",
                     "ipa_label": "ɚ",
-                    "start_ms": 285.3308410644531,
-                    "end_ms": 302.114990234375,
-                    "confidence": 0.18375618755817413,
+                    "start_ms": 257.18225479125977,
+                    "end_ms": 352.5,
+                    "confidence": 0.20140987634658813,
                     "is_estimated": false,
                     "target_seq_idx": 3,
                     "index": 3
@@ -291,9 +307,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 43,
                     "phoneme_label": "f",
                     "ipa_label": "f",
-                    "start_ms": 369.2516784667969,
-                    "end_ms": 402.8199768066406,
-                    "confidence": 0.952548086643219,
+                    "start_ms": 352.5,
+                    "end_ms": 447.5,
+                    "confidence": 0.9529293775558472,
                     "is_estimated": false,
                     "target_seq_idx": 4,
                     "index": 4
@@ -302,9 +318,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 56,
                     "phoneme_label": "l",
                     "ipa_label": "l",
-                    "start_ms": 520.3091430664062,
-                    "end_ms": 553.8775024414062,
-                    "confidence": 0.9023684859275818,
+                    "start_ms": 447.5,
+                    "end_ms": 497.5,
+                    "confidence": 0.9412255883216858,
                     "is_estimated": false,
                     "target_seq_idx": 5,
                     "index": 5
@@ -313,9 +329,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                     "phoneme_id": 23,
                     "phoneme_label": "aɪ",
                     "ipa_label": "aɪ",
-                    "start_ms": 604.22998046875,
-                    "end_ms": 621.01416015625,
-                    "confidence": 0.11104730516672134,
+                    "start_ms": 497.5,
+                    "end_ms": 827.5,
+                    "confidence": 0.9648973345756531,
                     "is_estimated": false,
                     "target_seq_idx": 6,
                     "index": 6
@@ -325,9 +341,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 7,
                     "group_label": "voiced_stops",
-                    "start_ms": 33.56833267211914,
-                    "end_ms": 50.35249710083008,
-                    "confidence": 0.9979244470596313,
+                    "start_ms": 1.046869084239006,
+                    "end_ms": 52.5,
+                    "confidence": 0.8825665712356567,
                     "is_estimated": false,
                     "target_seq_idx": 0,
                     "index": 0
@@ -335,9 +351,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 2,
                     "group_label": "central_vowels",
-                    "start_ms": 100.70499420166016,
-                    "end_ms": 117.48916625976562,
-                    "confidence": 0.9000658392906189,
+                    "start_ms": 52.5,
+                    "end_ms": 168.70805740356445,
+                    "confidence": 0.333845853805542,
                     "is_estimated": false,
                     "target_seq_idx": 1,
                     "index": 1
@@ -345,9 +361,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 14,
                     "group_label": "rhotics",
-                    "start_ms": 117.48916625976562,
-                    "end_ms": 151.0574951171875,
-                    "confidence": 0.0318431481719017,
+                    "start_ms": 168.70805740356445,
+                    "end_ms": 257.18225479125977,
+                    "confidence": 0.06540156155824661,
                     "is_estimated": false,
                     "target_seq_idx": 2,
                     "index": 2
@@ -355,9 +371,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 2,
                     "group_label": "central_vowels",
-                    "start_ms": 285.3308410644531,
-                    "end_ms": 302.114990234375,
-                    "confidence": 0.5893039703369141,
+                    "start_ms": 257.18225479125977,
+                    "end_ms": 352.5,
+                    "confidence": 0.5041145086288452,
                     "is_estimated": false,
                     "target_seq_idx": 3,
                     "index": 3
@@ -365,9 +381,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 8,
                     "group_label": "voiceless_fricatives",
-                    "start_ms": 352.4674987792969,
-                    "end_ms": 402.8199768066406,
-                    "confidence": 0.9883034229278564,
+                    "start_ms": 352.5,
+                    "end_ms": 447.5,
+                    "confidence": 0.9766589999198914,
                     "is_estimated": false,
                     "target_seq_idx": 4,
                     "index": 4
@@ -375,9 +391,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 13,
                     "group_label": "laterals",
-                    "start_ms": 520.3091430664062,
-                    "end_ms": 553.8775024414062,
-                    "confidence": 0.8932946920394897,
+                    "start_ms": 447.5,
+                    "end_ms": 497.5,
+                    "confidence": 0.9302259087562561,
                     "is_estimated": false,
                     "target_seq_idx": 5,
                     "index": 5
@@ -385,9 +401,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
                 {
                     "group_id": 5,
                     "group_label": "diphthongs",
-                    "start_ms": 604.22998046875,
-                    "end_ms": 621.01416015625,
-                    "confidence": 0.42801225185394287,
+                    "start_ms": 497.5,
+                    "end_ms": 827.5,
+                    "confidence": 0.9568509459495544,
                     "is_estimated": false,
                     "target_seq_idx": 6,
                     "index": 6
@@ -396,9 +412,9 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
             "words_ts": [
                 {
                     "word": "butterfly",
-                    "start_ms": 33.56833267211914,
-                    "end_ms": 621.01416015625,
-                    "confidence": 0.585819277380194,
+                    "start_ms": 1.046869084239006,
+                    "end_ms": 827.5,
+                    "confidence": 0.6309432863656964,
                     "ph66": [
                         29,
                         10,
@@ -442,7 +458,7 @@ Every segment in the output contains the following keys:
 | `word_num` | Word index for each phoneme (parallel to `ph66`) | Maps each phoneme to its parent word |
 | `coverage_analysis` | Quality report: how many phonemes were aligned, missing, or estimated | Filtering out bad segments |
 
-**Reading `confidence`:** A value close to `1.0` means the model was very sure this phoneme occurred at this time. Values below `0.2` should be treated with caution. If `is_estimated` is `true`, the phoneme was placed by the recovery mechanism (not found by the primary Viterbi pass) — filter these out for high-precision work.
+**Reading `confidence`:** the peak posterior the model put on this phoneme inside its own segment. Higher is surer, but the scale is model-specific — see [Reading confidence](#reading-confidence) before setting a threshold. `is_estimated` is always `false`: forced alignment places every phoneme it reports, so nothing is inserted after the fact.
 
 ---
 
@@ -452,11 +468,17 @@ Every segment in the output contains the following keys:
 
 ### 🌍 Language Presets
 
-BFA supports **80+ languages**. Just pass the language code as `preset` and the right model is selected automatically. Phonemisation is handled by [espeak-ng](https://github.com/espeak-ng/espeak-ng), which is free and works offline.
+BFA supports **80+ languages**. Pass the language code as `preset` and phonemisation is handled by [espeak-ng](https://github.com/espeak-ng/espeak-ng), which is free and works offline.
+
+> **Note:** the preset picks both the checkpoint and the espeak-ng language. Two checkpoints
+> exist today — **English** and **Multilingual** — so every non-English preset resolves to the
+> Multilingual one. The Multilingual checkpoint covers 7 European languages, so for anything
+> further afield the "Model Used" column below is a statement of intent until the **Universal**
+> checkpoint is trained. See [Available checkpoints](#available-checkpoints).
 
 **Supported language families:** Indo-European (Germanic, Romance, Slavic, Indic, Iranian…), Turkic, Semitic, Dravidian, and several others.
 
-**Not supported:** Tonal languages — Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese — and isolating/agglutinative families such as Japanese and Korean, because the underlying acoustic model was not trained on them.
+**Not supported:** Tonal languages — Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese — and isolating/agglutinative families such as Japanese and Korean. That is a limit of the ph66 phoneme inventory, not just of the training data, so a different checkpoint will not fix it.
 
 ```python
 aligner = PhonemeTimestampAligner(preset="de")   # German
@@ -474,138 +496,143 @@ aligner = PhonemeTimestampAligner(preset="ru")   # Russian
 | **Language** | **Preset Code** | **Model Used** | **Language Family** |
 |--------------|-----------------|----------------|-------------------|
 | **🇺🇸 ENGLISH VARIANTS** | | |
-| English (US) | `en-us`, `en` | English Model | West Germanic |
-| English (UK) | `en-gb` | English Model | West Germanic |
-| English (Caribbean) | `en-029` | English Model | West Germanic |
-| English (Lancastrian) | `en-gb-x-gbclan` | English Model | West Germanic |
-| English (RP) | `en-gb-x-rp` | English Model | West Germanic |
-| English (Scottish) | `en-gb-scotland` | English Model | West Germanic |
-| English (West Midlands) | `en-gb-x-gbcwmd` | English Model | West Germanic |
-| **🇪🇺 EUROPEAN LANGUAGES (MLS8)** | | |
-| German | `de` | MLS8 Model | West Germanic |
-| French | `fr` | MLS8 Model | Romance |
-| French (Belgium) | `fr-be` | MLS8 Model | Romance |
-| French (Switzerland) | `fr-ch` | MLS8 Model | Romance |
-| Spanish | `es` | MLS8 Model | Romance |
-| Spanish (Latin America) | `es-419` | MLS8 Model | Romance |
-| Italian | `it` | MLS8 Model | Romance |
-| Portuguese | `pt` | MLS8 Model | Romance |
-| Portuguese (Brazil) | `pt-br` | MLS8 Model | Romance |
-| Polish | `pl` | MLS8 Model | West Slavic |
-| Dutch | `nl` | MLS8 Model | West Germanic |
-| Danish | `da` | MLS8 Model | North Germanic |
-| Swedish | `sv` | MLS8 Model | North Germanic |
-| Norwegian Bokmål | `nb` | MLS8 Model | North Germanic |
-| Icelandic | `is` | MLS8 Model | North Germanic |
-| Czech | `cs` | MLS8 Model | West Slavic |
-| Slovak | `sk` | MLS8 Model | West Slavic |
-| Slovenian | `sl` | MLS8 Model | South Slavic |
-| Croatian | `hr` | MLS8 Model | South Slavic |
-| Bosnian | `bs` | MLS8 Model | South Slavic |
-| Serbian | `sr` | MLS8 Model | South Slavic |
-| Macedonian | `mk` | MLS8 Model | South Slavic |
-| Bulgarian | `bg` | MLS8 Model | South Slavic |
-| Romanian | `ro` | MLS8 Model | Romance |
-| Hungarian | `hu` | MLS8 Model | Uralic |
-| Estonian | `et` | MLS8 Model | Uralic |
-| Latvian | `lv` | MLS8 Model | Baltic |
-| Lithuanian | `lt` | MLS8 Model | Baltic |
-| Catalan | `ca` | MLS8 Model | Romance |
-| Aragonese | `an` | MLS8 Model | Romance |
-| Papiamento | `pap` | MLS8 Model | Romance |
-| Haitian Creole | `ht` | MLS8 Model | Romance |
-| Afrikaans | `af` | MLS8 Model | West Germanic |
-| Luxembourgish | `lb` | MLS8 Model | West Germanic |
-| Irish Gaelic | `ga` | MLS8 Model | Celtic |
-| Scottish Gaelic | `gd` | MLS8 Model | Celtic |
-| Welsh | `cy` | MLS8 Model | Celtic |
+| English (US) | `en-us`, `en` | English | West Germanic |
+| English (UK) | `en-gb` | English | West Germanic |
+| English (Caribbean) | `en-029` | English | West Germanic |
+| English (Lancastrian) | `en-gb-x-gbclan` | English | West Germanic |
+| English (RP) | `en-gb-x-rp` | English | West Germanic |
+| English (Scottish) | `en-gb-scotland` | English | West Germanic |
+| English (West Midlands) | `en-gb-x-gbcwmd` | English | West Germanic |
+| **🇪🇺 EUROPEAN LANGUAGES** | | |
+| German | `de` | Multilingual | West Germanic |
+| French | `fr` | Multilingual | Romance |
+| French (Belgium) | `fr-be` | Multilingual | Romance |
+| French (Switzerland) | `fr-ch` | Multilingual | Romance |
+| Spanish | `es` | Multilingual | Romance |
+| Spanish (Latin America) | `es-419` | Multilingual | Romance |
+| Italian | `it` | Multilingual | Romance |
+| Portuguese | `pt` | Multilingual | Romance |
+| Portuguese (Brazil) | `pt-br` | Multilingual | Romance |
+| Polish | `pl` | Multilingual | West Slavic |
+| Dutch | `nl` | Multilingual | West Germanic |
+| Danish | `da` | Multilingual | North Germanic |
+| Swedish | `sv` | Multilingual | North Germanic |
+| Norwegian Bokmål | `nb` | Multilingual | North Germanic |
+| Icelandic | `is` | Multilingual | North Germanic |
+| Czech | `cs` | Multilingual | West Slavic |
+| Slovak | `sk` | Multilingual | West Slavic |
+| Slovenian | `sl` | Multilingual | South Slavic |
+| Croatian | `hr` | Multilingual | South Slavic |
+| Bosnian | `bs` | Multilingual | South Slavic |
+| Serbian | `sr` | Multilingual | South Slavic |
+| Macedonian | `mk` | Multilingual | South Slavic |
+| Bulgarian | `bg` | Multilingual | South Slavic |
+| Romanian | `ro` | Multilingual | Romance |
+| Hungarian | `hu` | Multilingual | Uralic |
+| Estonian | `et` | Multilingual | Uralic |
+| Latvian | `lv` | Multilingual | Baltic |
+| Lithuanian | `lt` | Multilingual | Baltic |
+| Catalan | `ca` | Multilingual | Romance |
+| Aragonese | `an` | Multilingual | Romance |
+| Papiamento | `pap` | Multilingual | Romance |
+| Haitian Creole | `ht` | Multilingual | Romance |
+| Afrikaans | `af` | Multilingual | West Germanic |
+| Luxembourgish | `lb` | Multilingual | West Germanic |
+| Irish Gaelic | `ga` | Multilingual | Celtic |
+| Scottish Gaelic | `gd` | Multilingual | Celtic |
+| Welsh | `cy` | Multilingual | Celtic |
 | **🌏 INDO-EUROPEAN LANGUAGES (Universal)** | | |
-| Russian | `ru` | Universal Model | East Slavic |
-| Russian (Latvia) | `ru-lv` | Universal Model | East Slavic |
-| Ukrainian | `uk` | Universal Model | East Slavic |
-| Belarusian | `be` | Universal Model | East Slavic |
-| Hindi | `hi` | Universal Model | Indic |
-| Bengali | `bn` | Universal Model | Indic |
-| Urdu | `ur` | Universal Model | Indic |
-| Punjabi | `pa` | Universal Model | Indic |
-| Gujarati | `gu` | Universal Model | Indic |
-| Marathi | `mr` | Universal Model | Indic |
-| Nepali | `ne` | Universal Model | Indic |
-| Assamese | `as` | Universal Model | Indic |
-| Oriya | `or` | Universal Model | Indic |
-| Sinhala | `si` | Universal Model | Indic |
-| Konkani | `kok` | Universal Model | Indic |
-| Bishnupriya Manipuri | `bpy` | Universal Model | Indic |
-| Sindhi | `sd` | Universal Model | Indic |
-| Persian | `fa` | Universal Model | Iranian |
-| Persian (Latin) | `fa-latn` | Universal Model | Iranian |
-| Kurdish | `ku` | Universal Model | Iranian |
-| Greek (Modern) | `el` | Universal Model | Greek |
-| Greek (Ancient) | `grc` | Universal Model | Greek |
-| Armenian (East) | `hy` | Universal Model | Indo-European |
-| Armenian (West) | `hyw` | Universal Model | Indo-European |
-| Albanian | `sq` | Universal Model | Indo-European |
-| Latin | `la` | Universal Model | Italic |
+| Russian | `ru` | Universal *(planned)* | East Slavic |
+| Russian (Latvia) | `ru-lv` | Universal *(planned)* | East Slavic |
+| Ukrainian | `uk` | Universal *(planned)* | East Slavic |
+| Belarusian | `be` | Universal *(planned)* | East Slavic |
+| Hindi | `hi` | Universal *(planned)* | Indic |
+| Bengali | `bn` | Universal *(planned)* | Indic |
+| Urdu | `ur` | Universal *(planned)* | Indic |
+| Punjabi | `pa` | Universal *(planned)* | Indic |
+| Gujarati | `gu` | Universal *(planned)* | Indic |
+| Marathi | `mr` | Universal *(planned)* | Indic |
+| Nepali | `ne` | Universal *(planned)* | Indic |
+| Assamese | `as` | Universal *(planned)* | Indic |
+| Oriya | `or` | Universal *(planned)* | Indic |
+| Sinhala | `si` | Universal *(planned)* | Indic |
+| Konkani | `kok` | Universal *(planned)* | Indic |
+| Bishnupriya Manipuri | `bpy` | Universal *(planned)* | Indic |
+| Sindhi | `sd` | Universal *(planned)* | Indic |
+| Persian | `fa` | Universal *(planned)* | Iranian |
+| Persian (Latin) | `fa-latn` | Universal *(planned)* | Iranian |
+| Kurdish | `ku` | Universal *(planned)* | Iranian |
+| Greek (Modern) | `el` | Universal *(planned)* | Greek |
+| Greek (Ancient) | `grc` | Universal *(planned)* | Greek |
+| Armenian (East) | `hy` | Universal *(planned)* | Indo-European |
+| Armenian (West) | `hyw` | Universal *(planned)* | Indo-European |
+| Albanian | `sq` | Universal *(planned)* | Indo-European |
+| Latin | `la` | Universal *(planned)* | Italic |
 | **🇹🇷 TURKIC LANGUAGES (Universal)** | | |
-| Turkish | `tr` | Universal Model | Turkic |
-| Azerbaijani | `az` | Universal Model | Turkic |
-| Kazakh | `kk` | Universal Model | Turkic |
-| Kyrgyz | `ky` | Universal Model | Turkic |
-| Uzbek | `uz` | Universal Model | Turkic |
-| Tatar | `tt` | Universal Model | Turkic |
-| Turkmen | `tk` | Universal Model | Turkic |
-| Uyghur | `ug` | Universal Model | Turkic |
-| Bashkir | `ba` | Universal Model | Turkic |
-| Chuvash | `cu` | Universal Model | Turkic |
-| Nogai | `nog` | Universal Model | Turkic |
+| Turkish | `tr` | Universal *(planned)* | Turkic |
+| Azerbaijani | `az` | Universal *(planned)* | Turkic |
+| Kazakh | `kk` | Universal *(planned)* | Turkic |
+| Kyrgyz | `ky` | Universal *(planned)* | Turkic |
+| Uzbek | `uz` | Universal *(planned)* | Turkic |
+| Tatar | `tt` | Universal *(planned)* | Turkic |
+| Turkmen | `tk` | Universal *(planned)* | Turkic |
+| Uyghur | `ug` | Universal *(planned)* | Turkic |
+| Bashkir | `ba` | Universal *(planned)* | Turkic |
+| Chuvash | `cu` | Universal *(planned)* | Turkic |
+| Nogai | `nog` | Universal *(planned)* | Turkic |
 | **🇫🇮 URALIC LANGUAGES (Universal)** | | |
-| Finnish | `fi` | Universal Model | Uralic |
-| Lule Saami | `smj` | Universal Model | Uralic |
+| Finnish | `fi` | Universal *(planned)* | Uralic |
+| Lule Saami | `smj` | Universal *(planned)* | Uralic |
 | **🕌 SEMITIC LANGUAGES (Universal)** | | |
-| Arabic | `ar` | Universal Model | Semitic |
-| Hebrew | `he` | Universal Model | Semitic |
-| Amharic | `am` | Universal Model | Semitic |
-| Maltese | `mt` | Universal Model | Semitic |
+| Arabic | `ar` | Universal *(planned)* | Semitic |
+| Hebrew | `he` | Universal *(planned)* | Semitic |
+| Amharic | `am` | Universal *(planned)* | Semitic |
+| Maltese | `mt` | Universal *(planned)* | Semitic |
 | **🏝️ MALAYO-POLYNESIAN LANGUAGES (Universal)** | | |
-| Indonesian | `id` | Universal Model | Malayo-Polynesian |
-| Malay | `ms` | Universal Model | Malayo-Polynesian |
+| Indonesian | `id` | Universal *(planned)* | Malayo-Polynesian |
+| Malay | `ms` | Universal *(planned)* | Malayo-Polynesian |
 | **🇮🇳 DRAVIDIAN LANGUAGES (Universal)** | | |
-| Tamil | `ta` | Universal Model | Dravidian |
-| Telugu | `te` | Universal Model | Dravidian |
-| Kannada | `kn` | Universal Model | Dravidian |
-| Malayalam | `ml` | Universal Model | Dravidian |
+| Tamil | `ta` | Universal *(planned)* | Dravidian |
+| Telugu | `te` | Universal *(planned)* | Dravidian |
+| Kannada | `kn` | Universal *(planned)* | Dravidian |
+| Malayalam | `ml` | Universal *(planned)* | Dravidian |
 | **🇬🇪 SOUTH CAUCASIAN LANGUAGES (Universal)** | | |
-| Georgian | `ka` | Universal Model | South Caucasian |
+| Georgian | `ka` | Universal *(planned)* | South Caucasian |
 | **🗾 LANGUAGE ISOLATES & OTHERS (Universal)** | | |
-| Basque | `eu` | Universal Model | Language Isolate |
-| Quechua | `qu` | Universal Model | Quechuan |
+| Basque | `eu` | Universal *(planned)* | Language Isolate |
+| Quechua | `qu` | Universal *(planned)* | Quechuan |
 | **🛸 CONSTRUCTED LANGUAGES (Universal)** | | |
-| Esperanto | `eo` | Universal Model | Constructed |
-| Interlingua | `ia` | Universal Model | Constructed |
-| Ido | `io` | Universal Model | Constructed |
-| Lingua Franca Nova | `lfn` | Universal Model | Constructed |
-| Lojban | `jbo` | Universal Model | Constructed |
-| Pyash | `py` | Universal Model | Constructed |
-| Lang Belta | `qdb` | Universal Model | Constructed |
-| Quenya | `qya` | Universal Model | Constructed |
-| Klingon | `piqd` | Universal Model | Constructed |
-| Sindarin | `sjn` | Universal Model | Constructed |
+| Esperanto | `eo` | Universal *(planned)* | Constructed |
+| Interlingua | `ia` | Universal *(planned)* | Constructed |
+| Ido | `io` | Universal *(planned)* | Constructed |
+| Lingua Franca Nova | `lfn` | Universal *(planned)* | Constructed |
+| Lojban | `jbo` | Universal *(planned)* | Constructed |
+| Pyash | `py` | Universal *(planned)* | Constructed |
+| Lang Belta | `qdb` | Universal *(planned)* | Constructed |
+| Quenya | `qya` | Universal *(planned)* | Constructed |
+| Klingon | `piqd` | Universal *(planned)* | Constructed |
+| Sindarin | `sjn` | Universal *(planned)* | Constructed |
 
 </details>
 
 #### 🔧 Model Selection Guide
 
-| **Model** | **Languages** | **Use Case** | **Performance** |
-|-----------|---------------|--------------|-----------------|
-| **English Model** | English variants | Best for English | Highest accuracy for English |
-| **MLS8 Model** | 8 European + similar | European languages | High accuracy for European |
-| **Universal Model** | 60+ Indo-European + related | Other supported languages | Good for Indo-European families |
+| **Family** | **Covers** | **Status** |
+|---|---|---|
+| **English** | English variants | available |
+| **Multilingual** | 7 European languages | available |
+| **Universal** | the wider preset table above | *not trained yet* |
+
+Non-English presets fall back to **Multilingual** until **Universal** exists, so a preset for a
+language outside those 7 currently loads a model that has never heard it. The "Model Used"
+column above says where each preset is *headed*, not what loads today.
 
 **⚠️ Unsupported Language Types:**
 - **Tonal languages**: Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese
 - **Distant families**: Japanese, Korean, most African languages (Swahili, etc.)
 - **Indigenous languages**: Most Native American, Polynesian (except Indonesian/Malay)
-- **Recommendation**: For unsupported languages, use explicit `model_name` parameter with caution
+- **Recommendation**: these are limits of the ph66 phoneme inventory, not just of the training
+  data, so a different checkpoint will not fix them
 
 ### Initialization
 
@@ -615,55 +642,52 @@ PhonemeTimestampAligner(
     model_name=None,              # Override the model by name (optional)
     cupe_ckpt_path=None,          # Override with a local model file path (optional)
     lang="en-us",                 # espeak-ng language code for phonemisation
-    duration_max=10,              # Max segment length in seconds (used for padding)
+    duration_max=30,              # Padding width in seconds for the batched short-segment path
     device="auto",                # "auto" | "cpu" | "cuda" | "mps"
-    decoder="segmental",          # "segmental" (default) or "ctc" (BFA <= 1.1.5); see "Decoders" below
-    segmental_max_seconds=120,    # segmental: decode whole up to this length, chunk beyond
-    silence_anchors=0,            # >0 enables silence-anchored splitting (ctc decoder only)
-    chunk_audio=True,             # Walk long segments in overlapping windows (see "Long audio" below)
-    chunk_seconds=10.0,           # Window length; only segments longer than this are chunked
-    chunk_max_phonemes=190,       # Cap per window; = stride4_max_phonemes(chunk_seconds)
+    boundary_bonus_weight=None,   # Onset bonus; None = the checkpoint's own trained value
+    sub_frame_onsets=True,        # Interpolate onsets at the posterior crossing
+    min_phone_frames=None,        # Duration floor in 5 ms frames; None = the checkpoint's value
+    soft_phone_frames=None,       # Frames above the floor a phone may give up; None = ditto
+    bad_confidence_threshold=0.6, # Flag segments where >60% of phonemes are low-confidence
+    low_confidence_level=0.25,    # What counts as "low confidence" for that share
+    segment_max_seconds=120,      # Decode whole up to this length, chunk beyond it
+    chunk_audio=True,             # Walk longer segments in overlapping windows
+    chunk_seconds=10.0,           # Window length for that walk
+    chunk_max_phonemes=200,       # Cap on one window's phoneme budget
     chunk_phonemes_per_second=15, # Budget rate, measured over SPEECH seconds
     chunk_vad=True,               # Energy VAD for speech-seconds and cut placement
-    boost_targets=True,           # Boost acoustic probability of target phonemes before alignment
-    enforce_minimum=True,         # Prevent phonemes from being completely zeroed out
-    enforce_all_targets=True,     # Guarantee every phoneme in the transcript gets a timestamp
-    ignore_noise=True,            # Skip predicted noise frames in output
-    extend_soft_boundaries=True,  # Extend phoneme boundaries into adjacent low-confidence frames
-    boundary_softness=3,          # How far to extend (0=tight cores only, 7=generous)
-    bad_confidence_threshold=0.6  # Flag segments where >60% of phonemes are low-confidence
+    warn_level=1,                 # 0 silent, 1 warnings, 2 warnings + geometry/decoder info
 )
 ```
 
-**For most users, only `preset` and `duration_max` need to be changed.** The alignment defaults are tuned for clean read speech.
+**For most users, only `preset` and `cupe_ckpt_path` need to be set.** Everything about the
+decoder defaults to the value the checkpoint was *trained* with, which is what its posteriors
+were shaped by.
 
 <details>
 <summary>Parameter details</summary>
 
 | Parameter | Default | What it does |
 |-----------|---------|-------------|
-| `preset` | `"en-us"` | Language code. Automatically picks the right model and espeak-ng language. |
-| `model_name` | `None` | Name of a specific CUPE model. Overrides `preset`. Downloaded from HuggingFace if not cached. |
-| `cupe_ckpt_path` | `None` | Path to a local model `.ckpt` file. Highest priority. |
-| `lang` | `"en-us"` | espeak-ng language code for phonemisation. See [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
-| `duration_max` | `10` | Maximum segment duration in seconds. Longer audio is truncated. Keep ≤30 s for best results. |
-| `device` | `"auto"` | `"auto"` detects CUDA/MPS/CPU automatically. |
-| `decoder` | `"segmental"` | Which Viterbi places the phonemes. `"segmental"` assigns every frame to a phone or a pause and places onsets with the posteriors and the acoustic change together; `"ctc"` is the original CTC lattice plus onset snapping. See [Decoders](#decoders). |
-| `segmental_max_seconds` | `120` | Segmental decoder: segments up to this long are decoded in one pass and never chunked; longer ones are chunked to bound memory. Whole decoding is more accurate (225 s segment: 67.3 vs 54.7), so raise it if memory allows (225 s whole: 766 MB GPU, ~470 MB RAM). |
-| `silence_anchors` | `0` | CTC decoder only. When >0, uses detected silences as anchor points to improve long-segment alignment. Try `3`. Only helps when the transcript's punctuation matches the speaker's actual pauses — for long audio prefer `chunk_audio`. |
-| `chunk_audio` | `True` | Align segments longer than `chunk_seconds` by walking overlapping windows instead of decoding them in one shot. See [Long audio](#long-audio). Shorter segments are unaffected. |
-| `chunk_seconds` | `10.0` | Window length in seconds. Segments shorter than this (plus 10% slack) take the single-shot path. |
-| `chunk_max_phonemes` | `190` | Cap on the phoneme budget per window — the largest budget that keeps the CTC lattice at stride 4, i.e. `chunking.stride4_max_phonemes(chunk_seconds)`. Derive it again if you change `chunk_seconds` (8 s → 152, 12 s → 228); the aligner warns if you don't. |
+| `preset` | `"en-us"` | Language code. Picks the checkpoint and the espeak-ng language. |
+| `model_name` | `None` | Checkpoint filename, overriding the preset's choice. Looked for on disk first, then on HuggingFace. |
+| `cupe_ckpt_path` | `None` | Path to a local p3cupe checkpoint. Highest priority. |
+| `lang` | `"en-us"` | espeak-ng language code. See [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
+| `duration_max` | `30` | Padding width for the batched path. Segments longer than this are decoded on their own, unpadded — so this trades memory against how many segments share one forward pass, and never truncates. |
+| `device` | `"auto"` | `"auto"` detects CUDA/MPS/CPU. The Viterbi itself always runs on CPU, where it measures ~3x faster than on CUDA (tiny per-frame tensors make it launch-bound). |
+| `boundary_bonus_weight` | `None` | Weight on the log-mel acoustic-change bonus added to every phone-onset transition inside the Viterbi. `None` uses the checkpoint's trained value (30 for the shipped one); `0` turns it off. See [The onset bonus](#the-onset-bonus). |
+| `sub_frame_onsets` | `True` | Place each onset at the interpolated crossing of the two neighbouring posteriors instead of on the 5 ms grid. This is the readout the loss was shaped for. |
+| `min_phone_frames` | `None` | Shortest phone the aligner may emit, in 5 ms frames (6 = 30 ms for the shipped checkpoint). A clip whose text will not fit at this floor automatically gets a shorter one rather than losing its alignment. |
+| `soft_phone_frames` | `None` | Frames above the floor that a phone may give up, at a cost each — the soft half of the duration prior. |
+| `bad_confidence_threshold` | `0.6` | Share of low-confidence phonemes that flags a segment as `bad_alignment`. |
+| `low_confidence_level` | `0.25` | Confidence below which a phoneme counts towards that share. Calibrated against these checkpoints' posteriors — see [Reading confidence](#reading-confidence). |
+| `segment_max_seconds` | `120` | Segments up to this long are decoded in one pass and never chunked. Whole decoding is more accurate than chunking, so raise it if the hardware allows; the cost is roughly 1.8 s of Viterbi per 32 s of audio. |
+| `chunk_audio` | `True` | Walk segments longer than `segment_max_seconds` in overlapping windows. See [Long audio](#long-audio). |
+| `chunk_seconds` | `10.0` | Window length for that walk. |
+| `chunk_max_phonemes` | `200` | Blunt cap on one window's phoneme budget. |
 | `chunk_phonemes_per_second` | `15.0` | Budget rate over **speech** seconds (a safe upper bound for English). |
-| `chunk_vad` | `True` | Energy VAD used to measure speech seconds per window and to land cuts in pauses. Independent of `silence_anchors`. |
-| `boost_targets` | `True` | Increases the acoustic probability of expected phonemes before Viterbi decoding. |
-| `enforce_minimum` | `True` | Prevents any target phoneme from being completely zeroed out by the model. |
-| `enforce_all_targets` | `True` | Forced alignment: every phoneme of the transcript gets a timestamp. `False` follows the acoustic evidence instead: whole words the audio does not contain (clipped segment edges, transcript errors) can be skipped. See [Unreliable transcripts](#unreliable-transcripts). |
-| `ensure_completeness` | `False` | After decoding, inserts any missing phonemes at their best estimated position. Set `True` for extra completeness gaurantee. |
-| `ignore_noise` | `True` | Drops predicted noise/silence frames from output. Set `False` to include them as `"noise"` entries. |
-| `extend_soft_boundaries` | `True` | Extends phoneme boundaries into adjacent frames that still carry some acoustic evidence. |
-| `boundary_softness` | `3` | Controls how far boundaries extend. `0`–`1` = tight phoneme cores; `7` = generous boundaries. `3` gives the best result on TIMIT|
-| `bad_confidence_threshold` | `0.6` | Ratio of low-confidence phonemes that triggers a `bad_alignment` warning on a segment. |
+| `chunk_vad` | `True` | Energy VAD used to measure speech seconds per window and to land cuts in pauses. |
+| `warn_level` | `1` | `0` silent, `1` warnings only, `2` adds the resolved frame geometry and decoder settings. |
 
 **Model priority (highest → lowest):** `cupe_ckpt_path` → `model_name` → `preset` → defaults.
 
@@ -671,16 +695,31 @@ PhonemeTimestampAligner(
 
 ---
 
-**Available models** (downloaded automatically on first use):
+<a id="available-checkpoints"></a>
+**Available checkpoints.** None are published yet.
 
-| Model name | Best for |
-|------------|----------|
-| `en_libri1000_ua01c_e4_val_GER=0.2186.ckpt` | English (recommended) |
-| `multi_MLS8_uh02_e36_val_GER=0.2334.ckpt` | German, French, Spanish, Italian, Portuguese, Polish, Dutch |
-| `large_multi_mswc38_ua02g_e03_val_GER=0.5133.ckpt` | All other supported languages (large) |
-| `multi_mswc38_ug20_e59_val_GER=0.5611.ckpt` | All other supported languages (faster/smaller) |
+| Family | Checkpoint | Trained on |
+|---|---|---|
+| English | `m_pa07b_final_e5_libri360h.pt` | LibriSpeech, 360 h |
+| Multilingual | `m_pa07a_final_e4_MLS_7h.pt` | MLS, 7 European languages, English excluded |
+| Universal | *TODO — not trained yet* | *the wider preset table* |
 
-All models are hosted on [HuggingFace → Tabahi/CUPE-2i](https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt).
+<!-- TODO: publish these to HuggingFace and put the repo link here, e.g.
+     https://huggingface.co/<org>/<repo>/tree/main/ckpt -->
+
+Until they are on HuggingFace, `preset=` and `model_name=` resolve by looking for the file on
+disk first. BFA searches, in order:
+
+1. `$BFA_MODEL_DIR`
+2. `./models/p3cupe/` (relative to the working directory)
+3. `~/.cache/bournemouth_aligner/`
+
+So with a checkpoint at `models/p3cupe/m_pa07b_final_e5_libri360h.pt`, a plain
+`PhonemeTimestampAligner(preset="en-us")` works. Otherwise pass it explicitly:
+
+```python
+aligner = PhonemeTimestampAligner(cupe_ckpt_path="path/to/m_pa07b_final_e5_libri360h.pt")
+```
 
 
 ### `process_srt_file` — align a whole recording from a transcript file
@@ -870,154 +909,131 @@ aligner.convert_to_textgrid(result, output_file="recording.TextGrid", include_co
 
 ## 🔧 Advanced Usage
 
-<a id="long-audio"></a>
-### Decoders
+### How boundaries are placed
 
-`decoder="segmental"` (the default) and `decoder="ctc"` read the same CUPE posteriors and
-differ in how they turn them into timestamps.
+BFA has one decoder: a **segmental Viterbi** over p3cupe's per-frame posteriors. Every frame
+belongs to exactly one phone of the transcript, each phone is a chain of sub-states with a soft
+minimum duration, and an optional `SIL` may be skipped wherever the phonemizer wrote one for a
+comma the speaker did not pause at.
 
-- **`ctc`** — the original decoder. CTC posteriors are *peaky*: a phoneme shows up as a
-  one- or two-frame spike surrounded by blank, and the lattice places the spike, not the
-  onset. Onsets are then moved greedily to the nearest spectral-flux peak
-  (`boundary_snap_*`). On long segments it collapses without `chunk_audio`.
-- **`segmental`** — every frame belongs to a phoneme or a pause, each phoneme lasts at
-  least 2 frames, and every transition into a phoneme is rewarded by the acoustic change
-  at that frame (the same boundary tap the snapper reads). Posteriors and acoustic change
-  are weighed **in the same Viterbi pass**, so a bad early decision cannot push the rest of
-  the sentence off course. It does not collapse on long segments, so `chunk_audio` only
-  only kicks in above `segmental_max_seconds` (120 s), as a memory guard. On a single 225 s
-  Buckeye segment, whole-segment decoding scores 67.3, the chunked `segmental` decoder 54.7
-  and the chunked `ctc` decoder 45.3 — so raise the limit if memory allows. Memory stays
-  modest: CUPE runs in fixed-size window batches, and decoding a 225 s segment whole peaks at
-  766 MB of GPU memory and ~470 MB of extra RAM.
+The important property is that this is the **same decoder that built the model's training
+targets**. p3cupe is trained by hard-EM: its own Viterbi alignment of the known phoneme
+sequence becomes the target its posteriors are shaped towards. So the posteriors you decode
+were shaped by this exact topology — decoding with a different one decodes a model that was
+never trained.
 
-Onset F1 at 25 ms on Buckeye conversational speech (`en-us` model3a checkpoint; scorer
-identical to the MFA comparison, see `tests/test_buckeye.py`):
+That shape is what makes a boundary readable. Each phone's posterior is held at 1.0 across the
+interior of its segment and brought down to exactly 0.5 at each of its two boundaries, where
+the neighbour rises through 0.5 — so two phones **cross** at their shared boundary and nowhere
+else. `sub_frame_onsets=True` (the default) reads that crossing off by linear interpolation,
+which is why the 5 ms frame grid is not the resolution limit. Every onset is placed inside the
+search itself — nothing is moved afterwards.
 
-| sample | `ctc` | `segmental` |
-|---|---|---|
-| 200 random segments | 59.0 | **68.2** |
-| 40 random segments (full pipeline) | 58.1 | **69.2** |
-| `s0103a`, all 30 segments | 54.9 | **65.5** |
-| TIMIT test, 150 random utterances | 59.6 | **67.5** |
+<a id="the-onset-bonus"></a>
+#### The onset bonus
 
-Onset timing bias goes from +5 ms (late) to 0, recall no longer drops towards the end of
-long segments, and the segmental path is 2-3x faster (groups reuse the phoneme
-segmentation instead of running a second Viterbi). On the 32 s clean `30s.wav`, decoded in
-one shot, mean confidence is 0.728 (0.721 first half / 0.735 second half) where the
-one-shot CTC decoder stops placing phonemes at 19 s.
+`boundary_bonus_weight` adds `weight × (local log-mel spectral change)` nats to every
+transition that *starts* a phone at a given frame, so posterior evidence and acoustic change
+are traded off inside one global search. It defaults to whatever the loaded checkpoint was
+trained with (30 for the shipped one); `0` turns it off.
 
-The segmental decoder needs a boundary tap, so it falls back to `ctc` for
-`boundary_snap_source="none"` and for sub-state checkpoints. `boost_targets`,
-`enforce_minimum` and `silence_anchors` only apply to the `ctc` decoder.
+The evidence points both ways, so it is worth knowing which way your data leans:
+
+- **Against.** Scored per phone *onset* on TIMIT, the bonus costs about 7 f1@25 — it drags stop
+  onsets onto the burst and pulls vowel onsets early. (Measured on the English `pa01d`
+  checkpoint: per-phone f1@25 68.0 at weight 30 against 74.6 at weight 0.)
+- **For.** Measured on Buckeye conversational speech with the shipped MLS checkpoint, 40
+  segments × 3 seeds, it is the better setting on every one:
+
+  | | seed 0 | seed 1 | seed 2 |
+  |---|---|---|---|
+  | f1@25, weight 0 → 30 | 60.2 → **64.6** | 59.8 → **61.5** | 60.8 → **63.2** |
+  | f1@10, weight 0 → 30 | 36.2 → **43.8** | 34.5 → **40.1** | 39.1 → **45.1** |
+
+  and the median absolute onset error falls from 12–14 ms to 9–11 ms.
+
+The difference is most likely the checkpoint. The shipped one was trained on MLS *without*
+English, so its English posteriors are weak and the aligner leans on acoustic change for
+placement more than a strong English model would. Re-measure with
+`tests/test_buckeye.py --cfg '{"boundary_bonus_weight": 0}'` when an English checkpoint exists.
+
+<a id="reading-confidence"></a>
+#### Reading confidence
+
+A phoneme's `confidence` is **the highest posterior the model puts on that phone anywhere
+inside its own segment** — the peak, not the mean, because the hat-shaped target makes the
+frames at both ends of every segment uncertain *by design*, and averaging over the segment
+would read a short phone (nearly all ramp) as far less confident than a long one of identical
+quality.
+
+**Read it as a relative number, not an absolute one.** The training target has entropy by
+design, so the posteriors never saturate and a perfectly well-placed phone routinely reads
+below 0.5 — a threshold that would be alarming for a model trained to emit one-hot spikes
+means nothing here. Compare segments against other segments *from the same checkpoint*; that
+is what `low_confidence_level` is for, and its default is calibrated against the checkpoints
+listed above.
 
 ### Unreliable transcripts
 
-Forced alignment (`enforce_all_targets=True`, the default) must place every phoneme of the
-text. When the text holds words that are not in the audio — a segment clipped a word too
-early, or a transcription error — those phonemes are squeezed into the neighbouring audio.
+**BFA always performs forced alignment: every phoneme of the transcript gets a timestamp**
+(bar an optional `SIL` the speaker did not pause at). There is no mode that lets the decoder
+decline words the audio does not contain.
 
-With `enforce_all_targets=False` the segmental decoder can skip up to 3 consecutive words
-at any position, including the start and end of the segment, and speech with no transcript
-can fall into the gap between words instead of dragging its neighbours. Skipped phonemes
-have no timestamp and are reported in `coverage_analysis`.
+So when the text holds words that are not in the audio, those phonemes are squeezed into the
+neighbouring audio. What BFA does instead is *report* it: `coverage_analysis["bad_alignment"]`
+is set when too many phonemes come out below `low_confidence_level`, or when a segment's
+confidence is healthy at the start and collapsed at the end — the signature of an alignment
+that starts on the right audio and then runs away from it.
 
-```python
-aligner = PhonemeTimestampAligner(preset="en-us", enforce_all_targets=False)
-```
+If a segment's text genuinely cannot fit its audio at one frame per phone, that segment is
+skipped with a warning naming it, and the rest of the batch is aligned normally.
 
-Onset F1 at 25 ms on `s0103a`, same ground truth, with the transcript damaged:
-
-| transcript | `ctc` forced | `segmental` forced | `segmental`, `enforce_all_targets=False` |
-|---|---|---|---|
-| clean | 54.9 | **65.5** | 65.4 |
-| 2 extra words glued onto each end | 54.5 | 62.7 | **63.8** |
-| 2 interior words missing | 53.7 | **63.2** | 62.9 |
-
-Keep the default on clean data: it costs nothing there, and the skip is a trade-off that
-only pays when the text really does run past the audio.
-
+<a id="long-audio"></a>
 ### 🕙 Long audio
 
-> The rest of this section describes the **`ctc` decoder**. The default `segmental`
-> decoder aligns segments up to `segmental_max_seconds` (120 s) in one pass without collapsing (see
-> [Decoders](#decoders)), and longer segments than `duration_max` are decoded on their own
-> audio rather than truncated.
+Segments up to `segment_max_seconds` (120 s) are decoded **in one pass**, and that is the
+accurate path. The segmental decoder does not collapse on long audio: it has no band
+constraint, and every phone is placed in one global search. On
+`30s.wav` (32 s, 356 phonemes) the last phoneme lands at 31.88 s of a 31.88 s clip.
 
-Forced alignment over a long clip in one pass does not degrade gracefully — it collapses,
-packing every phoneme into the first part of the clip and emitting the rest at one frame
-(13 ms) apiece with zero confidence.
+Segments longer than that are walked in overlapping windows, purely to bound the Viterbi's
+time and memory (it is a python loop over frames, ~1.8 s per 32 s of audio). Each window gets
+a phoneme budget sized from its **speech** seconds — that is what `chunk_vad` is for, since a
+window holding 4 s of speech and 6 s of pause contains ~60 phonemes, not ~150 — and is capped
+at what its frames can physically hold at the duration floor.
 
-`silence_anchors` was the previous mitigation, and it works *when the transcript's
-punctuation sits where the speaker actually paused*. When it doesn't, there is nothing to
-anchor to. Strip the commas from a transcript and one-shot alignment drops to ~0.02 mean
-confidence over ~23 % of the audio at **every** `silence_anchors` value.
+A window is then trusted only as far into its own **audio** as `TRUST_WINDOW_FRACTION` (75 %),
+and everything past that is handed back to the next window, which sees it with real audio on
+both sides instead of at its edge. That cap matters more than it sounds: this decoder cannot
+cram (it enforces a minimum phone duration and reports infeasibility instead), so an
+over-budgeted window places its surplus phonemes early rather than announcing itself. Trimming
+by phoneme *count* keeps almost all of them and the walk runs ahead of the audio:
 
-`chunk_audio=True` (the default) handles this by walking the segment in overlapping
-windows. Each window gets a deliberately **over-provisioned** phoneme budget — more
-phonemes than its audio can hold. The ones that really are there get aligned; the surplus
-crams into the final frames at one frame apiece, and that cram marks exactly where the
-window's alignment stopped being trustworthy. BFA keeps everything before it and restarts
-the next window at the end of the last kept phoneme, so windows overlap by however much was
-discarded and no audio between two kept phonemes is ever skipped. Confidence collapse is
-used as a corroborating signal — the cut is walked back over the near-zero-confidence drift
-that precedes the cram.
-
-The budget is sized from **speech** seconds, not wall-clock seconds, at
-`chunk_phonemes_per_second` (15 /s, a safe upper bound for English). That is what
-`chunk_vad` is for: a window holding 4 s of speech and 6 s of pause contains ~60 phonemes,
-not ~150, and over-budgeting it would push the cut point past the end of the real content.
+| `30s.wav` forced through the chunker at 10 s windows | last phoneme ends | mean confidence | flagged |
+|---|---|---|---|
+| count trim only | 30.31 s | 0.217 | yes |
+| time cap *(current)* | 31.87 s | 0.317 | no |
+| whole-segment decode | 31.88 s | 0.319 | no |
 
 ```python
 aligner = PhonemeTimestampAligner(preset="en-us", duration_max=60)
 
-# Nothing to do — segments over 10 s are chunked automatically.
+# Nothing to do — segments over segment_max_seconds are chunked automatically.
 result = aligner.process_sentence(long_text, wav, debug=True)
-#   window   0.00- 10.00s  speech  9.20s  budget 138  kept 105 (derailed at duration)  next cut 9.46s
-#   window   9.46- 19.46s  speech  8.68s  budget 131  kept  99 (derailed at duration)  next cut 18.23s
-#   window  18.23- 28.23s  speech  8.91s  budget 134  kept  95 (derailed at duration)  next cut 27.42s
-#   window  27.42- 31.95s  speech  4.28s  budget  57  kept  57 (kept whole window)     next cut 31.88s
+#   window   0.00- 10.00s  speech  9.20s  budget 138  kept  89 (derailed at confidence)  next cut 7.47s
+#   window   7.47- 17.47s  speech  8.42s  budget 127  kept  79 (derailed at trim)        next cut 14.93s
+#   window  14.93- 24.93s  speech  8.34s  budget 126  kept  75 (derailed at trim)        next cut 22.39s
+#   window  22.39- 31.95s  speech  8.70s  budget 113  kept 113 (kept whole window)       next cut 31.87s
 
 # Retune on a live aligner without rebuilding it:
-aligner.set_chunking(seconds=8.0, phonemes_per_second=13.0)
+aligner.set_chunking(seconds=8.0, phonemes_per_second=13.0, segment_max_seconds=60.0)
 
 # The VAD is a public utility too:
 speech_spans = aligner.detect_speech_segments(wav)   # [(start_sec, end_sec), ...]
 ```
 
-Mean confidence (audio coverage in parentheses) on a 32 s clip and a 36.5 s LJSpeech
-concatenation, `en_libri1000_ua01c` model2i:
-
-| clip | `silence_anchors` | one-shot | chunked |
-|---|---|---|---|
-| 32 s, punctuated | 0 | 0.021 (22 %) | **0.399** (100 %) |
-| | 10 *(default)* | 0.402 (100 %) | **0.399** (100 %) |
-| 32 s, punctuation stripped | any | 0.011 (24 %) | **0.408** (100 %) |
-| 36.5 s, punctuated | 0 | 0.016 (21 %) | **0.417** (99 %) |
-| | 10 *(default)* | 0.380 (99 %) | **0.417** (99 %) |
-| 36.5 s, punctuation stripped | any | 0.019 (23 %) | **0.385** (100 %) |
-
-**The gain is robustness, not a higher ceiling.** On a well-punctuated clip whose commas
-land on the speaker's actual pauses, one-shot alignment at the default `silence_anchors=10`
-is already fine (0.402, against chunked's 0.399) — and it falls off a cliff the moment that
-stops being true. Chunked alignment sits at 0.385–0.417 across every row, and gives the same
-answer whatever `silence_anchors` is set to.
-
-Segments shorter than `chunk_seconds` take the single-shot path unchanged, so short-clip
-results are unaffected. If a segment still comes out badly, `coverage_analysis["bad_alignment"]`
-is set and a warning names the knob to reach for.
-
-> **`chunk_audio` vs `silence_anchors`.** Different mechanisms for the same problem.
-> `silence_anchors` matches `SIL` tokens from the transcript's *punctuation* to
-> silence-looking regions in the posteriors and splits the target sequence there — so it
-> depends on punctuation and pauses corresponding one-to-one. `chunk_audio` never looks at
-> punctuation and never splits the target sequence; it cuts where the alignment itself
-> demonstrably fails.
->
-> They do **not** stack: `silence_anchors` is switched off inside a chunk window, because a
-> 10 s window does not need splitting and doing it anyway only cost accuracy (0.330 and a
-> `bad_alignment` flag at `silence_anchors=3`, vs 0.403 with it off). It still applies when
-> `chunk_audio=False`, and to segments below the chunking threshold.
+Segments longer than `duration_max` but shorter than `segment_max_seconds` are decoded on
+their own, unpadded audio rather than being truncated to the batch's padding width.
 
 ### 🎙️ Mel-Spectrogram Alignment
 
@@ -1114,7 +1130,7 @@ import torch
 from bournemouth_aligner import PhonemeTimestampAligner
 
 # Initialize aligner
-extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt", 
+extractor = PhonemeTimestampAligner(preset="en-us", 
                                   lang='en-us', duration_max=10, device='auto')
 
 # Process audio and get timestamps
@@ -1161,7 +1177,7 @@ with open("whisper_output.srt.json", "w") as f:
     json.dump(result, f)
 
 # Process with BFA
-extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt")
+extractor = PhonemeTimestampAligner(preset="en-us")
 timestamps = extractor.process_srt_file("whisper_output.srt.json", "audio.wav", "timestamps.json")
 ```
 
@@ -1175,7 +1191,7 @@ import torch
 from bournemouth_aligner import PhonemeTimestampAligner
 
 # Initialize and process
-extractor = PhonemeTimestampAligner(model_name="en_libri1000_ua01c_e4_val_GER=0.2186.ckpt")
+extractor = PhonemeTimestampAligner(preset="en-us")
 audio_wav = extractor.load_audio("audio.wav")  # Handles resampling and normalization
 timestamps = extractor.process_sentence("your text here", audio_wav)
 
@@ -1250,14 +1266,14 @@ for f in *.wav; do balign "$f" "${f%.wav}.srt.json" "${f%.wav}.vs.json" --preset
 | `--device auto\|cpu\|cuda` | `auto` | Inference device. |
 | `--lang CODE` | *(from preset)* | Override the espeak-ng language code only. |
 | `--model NAME` | *(from preset)* | Override the CUPE model name (advanced). |
-| `--duration-max FLOAT` | `10.0` | Max segment length in seconds for windowed processing. |
-| `--decoder segmental\|ctc` | `segmental` | Phoneme decoder. See [Decoders](#decoders). |
-| `--segmental-max-seconds FLOAT` | `120` | Segmental decoder: decode whole up to this length, chunk beyond. |
-| `--enforce-all-targets / --no-enforce-all-targets` | on | Off: skip words the audio does not contain. See [Unreliable transcripts](#unreliable-transcripts). |
-| `--boost-targets / --no-boost-targets` | on | Boost expected phoneme probabilities before Viterbi (ctc decoder). |
-| `--chunk-audio / --no-chunk-audio` | on | Walk long segments in overlapping windows instead of decoding them in one shot. See [Long audio](#long-audio). |
-| `--chunk-seconds FLOAT` | `10.0` | Window length. Only segments longer than this are chunked. |
-| `--chunk-max-phonemes INT` | `190` | Cap on the phoneme budget per window (the stride-4 lattice bound for a 10 s window). |
+| `--duration-max FLOAT` | `60.0` | Padding width in seconds for the batched short-segment path. Longer segments are decoded on their own, unpadded. |
+| `--boundary-bonus-weight FLOAT` | *(checkpoint's)* | Weight on the acoustic-change onset bonus. `0` turns it off. See [The onset bonus](#the-onset-bonus). |
+| `--sub-frame-onsets / --frame-grid-onsets` | on | Interpolate onsets at the posterior crossing rather than snapping to the 5 ms grid. |
+| `--min-phone-frames INT` | *(checkpoint's)* | Duration floor in 5 ms frames. |
+| `--segment-max-seconds FLOAT` | `120` | Decode whole up to this length, chunk beyond it. |
+| `--chunk-audio / --no-chunk-audio` | on | Walk longer segments in overlapping windows. See [Long audio](#long-audio). |
+| `--chunk-seconds FLOAT` | `10.0` | Window length for that walk. |
+| `--chunk-max-phonemes INT` | `200` | Cap on one window's phoneme budget. |
 | `--chunk-pps FLOAT` | `15.0` | Budget rate, in phonemes per second of **speech**. |
 | `--chunk-vad / --no-chunk-vad` | on | Energy VAD for per-window speech seconds and cut placement. |
 | `--debug` | off | Print segment-by-segment progress (and per-window chunk decisions). |
@@ -1295,92 +1311,82 @@ BFA is built on the **CUPE (Contextless Universal Phoneme Encoder)** model. Unli
 graph TD
     A[Audio Input] --> B[RMS Normalization]
     B --> C[Audio Windowing]
-    C --> D[CUPE Model Inference]
-    D --> E[Phoneme/Group Probabilities]
+    C --> D[p3cupe Model Inference]
+    D --> E[Phoneme/Group Posteriors]
     E --> F[Text Phonemization]
-    F --> G[Target Boosting]
-    G --> H[Viterbi Forced Alignment]
-    H --> I[Missing Phoneme Recovery]
-    I --> J[Confidence Calculation]
-    J --> K[Frame-to-Time Conversion]
-    K --> L[Output Generation]
+    F --> G[Segmental Viterbi]
+    G --> H[Sub-frame Onset Refinement]
+    H --> I[Confidence Calculation]
+    I --> J[Frame-to-Time Conversion]
+    J --> K[Output Generation]
 ```
 
 **Step by step:**
 
-1. **Audio preprocessing** — RMS normalisation + sliding window (120 ms windows, 80 ms stride)
-2. **CUPE inference** — neural network assigns a probability to each of 66 phoneme classes for every 10 ms frame
-3. **Text phonemisation** — espeak-ng converts the transcript to a sequence of ph66 indices
-4. **Target boosting** — optionally increases the probability of phonemes that are expected to appear
-5. **Viterbi forced alignment** — CTC-style decoding finds the globally optimal path through the phoneme sequence
-6. **Recovery** — any phoneme missing from the Viterbi output is inserted at its most probable position
-7. **Confidence scoring** — each phoneme receives a score based on the average frame probability over its duration
-8. **Timestamp conversion** — frame indices are converted to milliseconds, accounting for any segment offset
-
-**CTC transition rules (for reference):**
-- *Stay* — repeat the current phoneme (or blank frame)
-- *Advance* — move to the next phoneme in the sequence
-- *Skip* — jump over a blank to the next phoneme (when adjacent phonemes differ)
+1. **Audio preprocessing** — RMS normalisation, then a sliding window (120 ms windows, 80 ms
+   stride). The model never sees more than one window at a time, which is what stops it
+   learning any single language's phonotactics.
+2. **p3cupe inference** — a CNN assigns a probability to each of 66 phoneme classes for every
+   **5 ms** frame. The per-window outputs are stitched back onto one clip-long grid; the
+   window stride advances a whole number of frames, so `time_ms(frame f) = f × 5.0` exactly,
+   with no correction term anywhere.
+3. **Text phonemisation** — espeak-ng converts the transcript to a sequence of ph66 indices.
+4. **Segmental Viterbi** — every frame is assigned to one phone of that sequence. Each phone
+   is a chain of sub-states with a soft minimum duration, optional `SIL` states may be
+   skipped, frames are scored on `log p(c|x) − log p̄(c)` (the hybrid-HMM scaled likelihood),
+   and acoustic change contributes an onset bonus. One global search, no greedy post-pass.
+5. **Sub-frame refinement** — each onset is moved to the interpolated point where the two
+   neighbouring phones' posteriors cross.
+6. **Confidence scoring** — each phone gets the peak posterior it achieves inside its own
+   segment.
+7. **Timestamp conversion** — frame positions become milliseconds, plus any segment offset.
 
 ### Key alignment parameters
 
-BFA exposes several parameters not available in traditional aligners like MFA:
+Everything about the decoder defaults to the value the loaded checkpoint was **trained** with,
+because its posteriors were shaped by targets that this same decoder built. The knobs below are
+worth turning in roughly this order.
 
-#### `boost_targets` (Default: `True`)
-Increases log-probabilities of expected phonemes by a fixed boost factor (typically +5.0) before Viterbi decoding. If the sentence is very long or contains every possible phoneme, then boosting them all equally doesn't have much effect—because no phoneme stands out more than the others.
+#### `boundary_bonus_weight` (default: the checkpoint's value, 30 for the shipped one)
 
-**When it helps:**
-- **Cross-lingual scenarios**: Using English models on other languages where some phonemes are underrepresented
-- **Noisy audio**: When target phonemes have very low confidence but should be present
-- **Domain mismatch**: When model training data differs significantly from your audio
+How much acoustic change is allowed to move an onset. This is the one knob with measurements
+pointing both ways — see [The onset bonus](#the-onset-bonus). Decode with `0` when comparing
+one checkpoint against another, so the comparison is about the model rather than about the flux.
 
-**Important caveat:** For monolingual sentences, boosting affects ALL phonemes in the target sequence equally, making it equivalent to no boosting. The real benefit comes when using multilingual models or when certain phonemes are systematically underrepresented.
+#### `min_phone_frames` / `soft_phone_frames` (default: the checkpoint's, 6 + 4)
 
-#### `enforce_minimum` (Default: `True`) 
-Ensures every target phoneme has at least a minimum probability (default: 1e-8) at each frame, preventing complete elimination during alignment.
+The duration prior, in 5 ms frames: the first `min_phone_frames` (30 ms) are mandatory, and the
+`soft_phone_frames` after them may each be given up at a cost. A phone shorter than the sum
+pays per missing frame, which is what makes the prior *soft* — a constant per-phone cost would
+be a no-op, since every path enters the same number of phones.
 
-**Why this matters:**
-- Prevents target phonemes from being "zeroed out" by the model
-- Guarantees that even very quiet or unclear phonemes can be aligned
-- Helps for highly noisy audio in which all phonemes, not just targets, have extremely low probabilities.
+A clip whose text will not fit at this floor gets a shorter floor automatically rather than
+losing its alignment, so you do not need to lower it for fast speech.
 
+#### `sub_frame_onsets` (default: `True`)
 
-#### `enforce_all_targets` (Default: `True`)
-Force the (viterbi) algorithm to take the path via target phonemes regardless of their probabilities, this is what "forced" alignment means in the context of Viterbi decoding. If `False`, it can miss some phonemes if their probabilities are too low, but if true, it WILL have 100% coverage of the target phonemes.
+Read each onset at the interpolated crossing of the two neighbouring posteriors rather than on
+the 5 ms frame grid. This is the readout the loss was shaped for, and it is what removes the
+2.5 ms quantisation floor the frame grid would otherwise impose. Turn it off if you need onsets
+that land exactly on frame boundaries.
 
-#### `ensure_completeness` (Default: `False`)
-This enables a post-processing step for extra completeness checks. It tries to insert missing phonemes in their most likely positions based on the surrounding aligned phonemes and the original target sequence. Can be used in conjunction with enforce_all_targets for extra safety, or can be used on its own to try to recover missed phonemes without forcing the alignment path.. However, **downstream tasks can filter out these "forced" phonemes using their confidence scores**. For practical use, consider setting a confidence threshold  e.g., `timestamps["phoneme_ts"][p]["confidence"] <0.05`) to exclude phonemes that were aligned with little to no acoustic evidence.  
+#### `low_confidence_level` / `bad_confidence_threshold`
 
-**Recovery mechanism:**
-1. Identifies any missing target phonemes after initial alignment
-2. Finds frames with highest probability for each missing phoneme
-3. Strategically inserts missing phonemes by:
-   - Replacing blank frames when possible
-   - Searching nearby frames within a small radius
-   - Force-replacing frames as last resort
+What counts as a doubtful phoneme, and how many of them make a doubtful segment. See
+[Reading confidence](#reading-confidence) — confidences here are not on a one-hot scale.
 
-**Use cases:**
-- **Guaranteed coverage**: When you need every phoneme to be timestamped
-- **Noisy environments**: Where some phonemes might be completely missed by standard Viterbi
-- **Research applications**: When completeness is more important than probabilistic accuracy
+**Technical details:**
 
-#### ⚖️ Parameter Interaction Effects
+- **Audio processing**: 16 kHz, 120 ms windows at 80 ms stride, 5 ms output frames
+- **Model**: p3cupe, a 13.5M-parameter CNN with a 38.9 ms receptive field and no transformer
+- **Alignment**: segmental Viterbi with a soft duration prior, class-prior-normalised emissions
+  and an optional acoustic-change onset bonus
+- **Quality assurance**: every transcript phoneme is aligned (bar skippable silences), and
+  doubtful segments are flagged rather than silently repaired
 
-| Scenario | Recommended Settings | Outcome |
-|----------|---------------------|---------|
-| **Clean monolingual audio** | All defaults | Standard high-quality alignment |
-| **Cross-lingual/noisy** | `boost_targets=True` | Better phoneme recovery |
-| **Research/completeness** | `enforce_all_targets=True` | 100% phoneme coverage |
-| **Probabilistically strict** | `enforce_all_targets=False` | Only high-confidence alignments |
-
-**Technical Details:**
-
-- **Audio Processing**: 16kHz sampling, sliding window approach for long audio
-- **Model Architecture**: Pre-trained CUPE-2i models from [HuggingFace](https://huggingface.co/Tabahi/CUPE-2i)  
-- **Alignment Strategy**: CTC path construction with blank tokens between phonemes
-- **Quality Assurance**: Post-processing ensures 100% target phoneme coverage (when enabled)
-
-> **Performance Note**: CPU-optimized implementation. The iterative Viterbi algorithm and windowing operations are designed for single-threaded efficiency. Most operations are vectorized where possible, so batch processing should be faster on GPUs.
+> **Performance note**: the Viterbi is a python loop over frames on small tensors, so it runs
+> on CPU even when the model is on a GPU — measured ~3x faster there (1.8 s vs 5.0 s for a 32 s
+> clip), bit-identical either way.
 
 --- 
 
@@ -1389,36 +1395,44 @@ This enables a post-processing step for extra completeness checks. It tries to i
 
 ### Accuracy benchmark
 
-**Alignment error on [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1):**
+<!-- TODO: re-measure and repopulate for v2. Every number and figure that used to sit here was
+     produced by the v1 model and decoder, neither of which exists any more, so they have been
+     removed rather than left to be read as current. The harness is in `evaluation/`:
+     `process_alignments.py` sweeps, `compute_metrics.py` scores into
+     `evaluation/results/*.csv`. -->
 
-<div align="center">
-    <img src="examples/samples/images/BFA_vs_MFA_errors_on_TIMIT.png" alt="Alignment error histogram comparing BFA and MFA on the TIMIT dataset" width="600"/>
-</div>
+Benchmarks for v2 are being re-measured. The evaluation harness lives in [`evaluation/`](evaluation/):
 
-- Most phoneme boundaries are within **±30 ms** of the hand-annotated ground truth.
-- Errors above **100 ms** are rare and typically caused by noisy or ambiguous segments.
+```bash
+python evaluation/process_alignments.py     # align a corpus, once per configuration
+python evaluation/compute_metrics.py        # score them into evaluation/results/*.csv
+```
 
-> ⚠️ **Recommended maximum segment length: 30 seconds.** For longer recordings, segment the audio first using Whisper or a VAD tool. Segments above 60 seconds can degrade Viterbi accuracy.
+> ⚠️ **Recommended maximum segment length: 30 seconds.** For longer recordings, segment the
+> audio first using Whisper or a VAD tool. Longer segments are still aligned — up to
+> `segment_max_seconds` in one pass, beyond that in overlapping windows — but a segmented
+> transcript gives the aligner more to anchor to.
 
 ---
 
 ## 🔬 Comparison with MFA (Montreal Forced Aligner)
 
-BFA and [MFA](https://montreal-forced-aligner.readthedocs.io/) are both forced aligners, but they work very differently and have complementary strengths.
+BFA and [MFA](https://montreal-forced-aligner.readthedocs.io/) are both forced aligners with
+complementary strengths.
 
 <div align="center">
 
-| Metric | BFA | MFA |
+| | BFA | MFA |
 |--------|-----|-----|
-| **Speed** | ~0.2 s per 10 s of audio | ~10 s per 2 s of audio |
 | **No dictionary needed** | ✅ espeak-ng generates phonemes on the fly | ❌ Requires a pronunciation dictionary |
-| **Stop consonants (t, d, p, k)** | ✅ More precise boundaries | ⚠️ Tends to extend too far |
-| **Tail endings** | ⚠️ Occasionally misses | ❌ Often missed |
-| **Breathy sounds (h)** | ⚠️ Sometimes misses | ✅ Usually captures |
-| **Pause/silence handling** | ✅ Silence-aware (punctuation) | ❌ No punctuation awareness |
 | **Language coverage** | 80+ languages via espeak-ng | Limited to available dictionaries |
+| **Output resolution** | 5 ms frames, sub-frame onsets | 10 ms frames |
+| **Boundary accuracy** | *being re-measured for v2* | — |
 
 </div>
+
+<!-- TODO: restore the per-phoneme-class comparison (stops, breathy sounds, tail endings) once
+     it has been re-measured against a v2 checkpoint. -->
 
 ### Praat TextGrid visualisation
 
@@ -1430,25 +1444,30 @@ BFA and [MFA](https://montreal-forced-aligner.readthedocs.io/) are both forced a
 
 ## Contribute
 
-- **ONNX port** is in progress — see [`bournemouth_aligner/cpp_onnx/main.cpp`](bournemouth_aligner/cpp_onnx/main.cpp) if you want to help.
-- **Mandarin and other tonal languages** — a new phoneme dictionary would be needed. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you’d like to help.
+- **ONNX port** — the exporter in [`bournemouth_aligner/cpp_onnx/`](bournemouth_aligner/cpp_onnx/) targets the v1 model and has not been ported to v2 yet. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you want to help.
+- **Mandarin and other tonal languages** — a new phoneme inventory would be needed; ph66 does not cover tone. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you'd like to help.
 
 ## Frequently Asked Questions
 
 **Q: Do I need a pronunciation dictionary?**  
 No. BFA uses [espeak-ng](https://github.com/espeak-ng/espeak-ng) to generate IPA phonemisations automatically for all supported languages.
 
+**Q: Where do I get the model?**  
+The p3cupe checkpoints are not published yet. Put `m_pa07b_final_e5_libri360h.pt` under
+`models/p3cupe/` (or set `$BFA_MODEL_DIR`), or pass `cupe_ckpt_path=` directly. See
+[Available checkpoints](#available-checkpoints).
+
 **Q: Does it work on noisy or spontaneous speech?**  
-Yes, but accuracy is lower than on clean read speech. Use `silence_anchors=3` and check `coverage_analysis["bad_confidence"]` to filter out unreliable segments.
+Yes, but accuracy is lower than on clean read speech. Check `coverage_analysis["bad_alignment"]` to filter out unreliable segments.
 
 **Q: What is the difference between `phoneme_label` and `ipa_label`?**  
 `phoneme_label` is BFA’s internal ph66 symbol (e.g. `"a:"`); `ipa_label` is the original espeak-ng IPA (e.g. `"ˈɑːɹ"`). Use `ipa_label` for phonetic analysis and `phoneme_label` for model-internal comparisons.
 
 **Q: Why is confidence low for some phonemes?**  
-The CUPE model assigns low probability when the acoustic evidence is weak — common for short stops, reduced vowels, and phonemes at segment boundaries. Low confidence does not necessarily mean the timestamp is wrong; check visually in Praat if needed.
+Two reasons, and they are worth telling apart. The model assigns low probability where the acoustic evidence is weak — short stops, reduced vowels, phonemes at segment boundaries. But the loss also deliberately does not saturate, so confidences sit lower *throughout* than you may expect: see [Reading confidence](#reading-confidence). Low confidence does not necessarily mean the timestamp is wrong; check visually in Praat if needed.
 
 **Q: Can I align a language that is not in the preset list?**  
-You can try using `model_name` with the Universal model and a custom `lang` code. Results will vary. See [espeak-ng language codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
+You can pass any espeak-ng `lang` code and BFA will phonemise it, but the ph66 mapper does not cover tonal languages or distant families, so results will vary. See [espeak-ng language codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
 
 **Q: What audio format does it accept?**  
 Any format supported by `torchaudio` / ffmpeg — WAV, MP3, FLAC, OGG, M4A, and others.

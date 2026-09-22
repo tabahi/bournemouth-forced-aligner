@@ -1,12 +1,12 @@
 import click
 import json
 import os
-from .core import PhonemeTimestampAligner
-from .presets import get_preset
+from .core import PhonemeTimestampAligner, DEFAULT_SEGMENT_MAX_SECONDS
+from .presets import get_preset, DEFAULT_MODEL
 from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
                        DEFAULT_PHONEMES_PER_SECOND)
 
-__version__ = "1.1.4"
+__version__ = "2.0.0"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -17,8 +17,7 @@ def _resolve_model_lang(preset, model, lang):
     if preset:
         preset_model, preset_lang = get_preset(preset, lang=lang or 'en-us')
     else:
-        preset_model = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"
-        preset_lang = 'en-us'
+        preset_model, preset_lang = DEFAULT_MODEL, 'en-us'
 
     resolved_model = model or preset_model
     resolved_lang = lang or preset_lang
@@ -58,38 +57,31 @@ def _resolve_model_lang(preset, model, lang):
               help='Inference device: cpu, cuda, or auto.')
 @click.option('--duration-max', default=60.0, type=float, show_default=True,
               help='Maximum segment duration in seconds (for windowed processing).')
-@click.option('--boost-targets/--no-boost-targets', default=True,
-              help='Boost expected phoneme probabilities before Viterbi alignment.')
-@click.option('--silence-anchors', default=10, type=int, show_default=True,
-              help='Number of silent frames to anchor at silences (punctuations) to help break the long segments. ')
-@click.option('--decoder', type=click.Choice(['segmental', 'ctc']), default='segmental',
+@click.option('--boundary-bonus-weight', default=None, type=float,
+              help='Weight on the log-mel acoustic-change bonus added to every phone-onset '
+                   "transition. Default: the checkpoint's own trained value (30 for the "
+                   'shipped one). 0 turns it off; see the constructor docstring for what it '
+                   'is measured to cost and buy.')
+@click.option('--sub-frame-onsets/--frame-grid-onsets', default=True,
+              help='Place onsets at the interpolated crossing of two posteriors (default) '
+                   'rather than on the 5 ms frame grid.')
+@click.option('--min-phone-frames', default=None, type=int,
+              help='Shortest phone the aligner may produce, in 5 ms frames. Default: the '
+                   "checkpoint's own training value.")
+@click.option('--segment-max-seconds', default=DEFAULT_SEGMENT_MAX_SECONDS, type=float,
               show_default=True,
-              help='Phoneme decoder. segmental: every frame is a phone or a pause, onsets placed '
-                   'with the posteriors and acoustic change together (default). ctc: the '
-                   'original blank/spike lattice plus onset snapping.')
-@click.option('--segmental-max-seconds', default=120.0, type=float, show_default=True,
-              help='Segmental decoder: segments up to this long are decoded whole; longer ones '
-                   'are chunked to bound memory. Whole decoding is more accurate, so raise it '
-                   'if memory allows.')
-@click.option('--enforce-all-targets/--no-enforce-all-targets', default=True,
-              help='Align every phoneme of the text (forced alignment, default). With '
-                   '--no-enforce-all-targets the decoder may skip words the audio does not '
-                   'contain, for unreliable transcripts or clipped audio.')
+              help='Segments up to this long are decoded whole; longer ones are chunked to '
+                   'bound time and memory. Whole decoding is more accurate, so raise it if '
+                   'the hardware allows.')
 @click.option('--chunk-audio/--no-chunk-audio', default=True,
-              help='Align long segments by walking overlapping audio windows instead of '
-                   'decoding them in one shot. Only engages past --chunk-seconds of audio '
-                   'or --chunk-max-phonemes targets; shorter clips are unaffected.')
+              help='Align segments longer than --segment-max-seconds by walking overlapping '
+                   'audio windows. Shorter segments are decoded whole and are unaffected.')
 @click.option('--chunk-seconds', default=DEFAULT_CHUNK_SECONDS, type=float, show_default=True,
-              help='Audio window length for chunked alignment of long segments. Lowering it '
-                   'also lowers the safe --chunk-max-phonemes (8s holds 152, 10s holds 190).')
+              help='Audio window length for chunked alignment of very long segments.')
 @click.option('--chunk-max-phonemes', default=DEFAULT_MAX_PHONEMES, type=int, show_default=True,
-              help='Cap on the phoneme budget for one chunk window: the largest budget that '
-                   'keeps the CTC lattice at stride 4. Derive it with '
-                   'chunking.stride4_max_phonemes() if you change --chunk-seconds.')
+              help='Cap on the phoneme budget for one chunk window.')
 @click.option('--chunk-pps', default=DEFAULT_PHONEMES_PER_SECOND, type=float, show_default=True,
-              help='Phonemes per second of SPEECH used to size each window budget. This is '
-                   'what over-provisions a window so the surplus marks the cut point; '
-                   'raising it degrades alignment (measured), lowering it is safe.')
+              help='Phonemes per second of SPEECH used to size each window budget.')
 @click.option('--chunk-vad/--no-chunk-vad', default=True,
               help='Use an energy VAD to measure speech seconds per window (so pause-heavy '
                    'windows are not over-budgeted) and to land cuts in pauses.')
@@ -102,9 +94,9 @@ def _resolve_model_lang(preset, model, lang):
 def main(audio_path, text_or_srt, output_path,
          preset, model, lang,
          embeddings, mel_path, textgrid,
-         device, duration_max, boost_targets, silence_anchors,
-         decoder, segmental_max_seconds, enforce_all_targets, chunk_audio, chunk_seconds, chunk_max_phonemes, chunk_pps, chunk_vad,
-         debug, list_presets):
+         device, duration_max, boundary_bonus_weight, sub_frame_onsets, min_phone_frames,
+         segment_max_seconds, chunk_audio, chunk_seconds, chunk_max_phonemes, chunk_pps,
+         chunk_vad, debug, list_presets):
     """Bournemouth Forced Aligner — extract phoneme timestamps from audio.
 
     \b
@@ -203,18 +195,17 @@ def main(audio_path, text_or_srt, output_path,
             lang=resolved_lang,
             duration_max=duration_max,
             device=device,
-            boost_targets=boost_targets,
-            silence_anchors=silence_anchors,
-            decoder=decoder,
-            segmental_max_seconds=segmental_max_seconds,
-            enforce_all_targets=enforce_all_targets,
+            boundary_bonus_weight=boundary_bonus_weight,
+            sub_frame_onsets=sub_frame_onsets,
+            min_phone_frames=min_phone_frames,
+            segment_max_seconds=segment_max_seconds,
             chunk_audio=chunk_audio,
             chunk_seconds=chunk_seconds,
             chunk_max_phonemes=chunk_max_phonemes,
             chunk_phonemes_per_second=chunk_pps,
             chunk_vad=chunk_vad,
-            # --debug turns on the informational output (resolved architecture, frame
-            # geometry, snap source); without it only real warnings are printed.
+            # --debug turns on the informational output (frame geometry, decoder settings);
+            # without it only real warnings are printed.
             warn_level=2 if debug else 1,
         )
 

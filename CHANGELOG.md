@@ -1,6 +1,202 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.0] - Work in progress
+
+A new major version: v2 does not load v1 checkpoints, and BFA's model, decoder and boundary
+readout are all different. v1.x is the model2i/model3a line and ends at 1.1.5.
+
+### Changed — BFA now runs on p3cupe, and only on p3cupe
+
+The acoustic model, the decoder and the boundary readout have all been replaced. p3cupe is a
+CNN-only phoneme model whose output **is** the boundary detector: each phone's posterior is
+trained to hold 1.0 across the interior of its own segment and fall to exactly 0.5 at each of
+its two boundaries, where the neighbour rises through 0.5, so a boundary is the *crossing* of
+two posteriors rather than something to be recovered afterwards. The training package it was
+ported from lives at `bournemouth_aligner/model3p/`, whose `README.md` and `memory.md` are the
+design record.
+
+**New package `bournemouth_aligner/p3cupe/`** — inference only:
+
+- `model.py` — the trunk. 13.5M params, 38.9 ms receptive field, **5 ms frames** (down from
+  13.125 ms), no transformer, no boundary head, no blank class.
+- `extractor.py` — checkpoint loading and the windowed forward pass over a whole clip. The
+  checkpoint is the source of truth for both the tensor shapes and the frame geometry.
+- `aligner.py` — the segmental Viterbi, ported from the training package so that what is
+  decoded at inference is the same decoder that built the training targets.
+- `windowing.py` — 120 ms windows at an 80 ms stride, which is a whole 16 output frames, so
+  the stitched grid is the model's own conv grid and `time_ms(frame f) = f * 5.0` exactly.
+
+**Removed.** `bournemouth_aligner/cupe2i/` (model2i, model2j, model3a), `forced_alignment.py`
+(the CTC lattice) and `segmental.py` (the blank-based segmental decoder). The model2i and
+model3a checkpoints no longer load — `CupeExtractor` raises with a message saying so.
+
+**Removed constructor parameters**, all of which only had meaning for the CTC lattice or the
+onset snapper: `boost_targets`, `enforce_minimum`, `silence_anchors`, `ignore_noise`,
+`extend_soft_boundaries`, `boundary_softness`, `ensure_completeness`, `enforce_all_targets`,
+`decoder`, `boundary_snap_source`, `boundary_snap_radius`, `boundary_snap_radius_ms`,
+`boundary_snap_offset`. `segmental_max_seconds` is renamed `segment_max_seconds`.
+`set_boundary_snap()` and `extract_timestamps_from_segment_simplified()` are gone.
+
+**Note on `enforce_all_targets=False`.** The old non-forced mode — skipping up to 3 whole
+words the audio did not contain — belonged to the blank-based decoder and has no counterpart
+in the p3cupe aligner. BFA >= 2.0 always performs forced alignment. Unreliable transcripts are
+now *reported* (`coverage_analysis["bad_alignment"]`) rather than absorbed.
+
+**New constructor parameters:** `boundary_bonus_weight`, `sub_frame_onsets`,
+`min_phone_frames`, `soft_phone_frames`, `low_confidence_level`. Each decoder setting defaults
+to `None`, meaning "whatever the checkpoint was trained with", because its posteriors were
+shaped by targets this same decoder built.
+
+### Measured
+
+**Buckeye, 40 random segments per seed, onset f1 at 25 ms** (same scorer and seeds as before,
+`tests/test_buckeye.py`). Measured against `pa07a`, which was trained on MLS across 7 European
+languages with English EXCLUDED - so it scores below the English model2i/model3a checkpoint it
+replaces, exactly as `model3p/memory.md` records on TIMIT (per-phone f1@25 75.4 -> 63.8 over
+the 4 MLS epochs). **This is a model-availability result, not an architecture result.**
+
+An English checkpoint (`m_pa07b_final_e5_libri360h.pt`, LibriSpeech 360 h) now exists and has
+not been scored here - that is the one to compare English numbers against.
+
+| seed 2 | model3a `ue03c` | p3cupe `pa07a` (bonus 0) | p3cupe `pa07a` (bonus 30) |
+|---|---|---|---|
+| f1@10 | **44.1** | 39.1 | 45.1 |
+| f1@25 | **69.8** | 60.8 | 63.2 |
+| f1@50 | **82.8** | 74.6 | 76.5 |
+| median abs onset error | 11 ms | 12 ms | 9 ms |
+
+**The onset bonus.** `boundary_bonus_weight` now defaults to the checkpoint's own trained
+value (30), not to 0. Measured on Buckeye, 40 segments x 3 seeds, weight 0 -> 30:
+
+| | seed 0 | seed 1 | seed 2 |
+|---|---|---|---|
+| f1@25 | 60.2 -> **64.6** | 59.8 -> **61.5** | 60.8 -> **63.2** |
+| f1@10 | 36.2 -> **43.8** | 34.5 -> **40.1** | 39.1 -> **45.1** |
+
+It also holds on TIMIT's boundary scorer (100 files: f1@25 66.3 -> 72.2, median abs error
+18.9 -> 15.7 ms) - though that scorer counts TIMIT's separate closure and burst labels, which
+`model3p/memory.md` says the bonus wins on for the wrong reason, so it is corroboration of the
+existing record rather than independent evidence.
+
+It runs AGAINST that record's TIMIT finding that the bonus costs ~7 points per phone onset,
+measured on the English `pa01d` checkpoint. The likely difference is the checkpoint: a model
+with weak English posteriors leans on acoustic change for placement more than a strong one
+does. **Re-measure on `pa07b`.**
+
+### Changed — confidence
+
+A phoneme's `confidence` is now **the peak posterior the model puts on it inside its own
+segment**, not an average seeded from the segment's first frame. The hat-shaped target makes
+the frames at both ends of a segment uncertain by design, so the old measure systematically
+under-read short phones, which are nearly all ramp.
+
+**Confidence values are not comparable with BFA <= 1.2's.** Two separate changes, measured
+independently on `30s.wav`:
+
+| | mean confidence | below 0.5 |
+|---|---|---|
+| model3a, old measure | 0.728 | 24% |
+| model3a, new measure | 0.794 | 18% |
+| p3cupe, new measure | 0.319 | ~68% |
+
+So the measure accounts for +0.07 and the model for the rest: this loss deliberately does not
+saturate (its target distribution has entropy), so a well-aligned phone reads far below 1.0.
+`low_confidence_level` (new, default 0.25) replaces the hard-coded 0.5 cutoff in the
+bad-segment check, and is calibrated against this one checkpoint.
+
+### Fixed
+
+- **Word timestamps were paired positionally with the phonemizer's `word_num`.** They are now
+  matched by `target_seq_idx`. Any phoneme the aligner declined — a `SIL` written for a comma
+  the speaker did not pause at is the normal case — used to shift every later word onto the
+  wrong phonemes.
+- **A batch died as a whole when one segment's text outran its audio.** The batch is now
+  retried one segment at a time, so only the segment that genuinely cannot fit is dropped, with
+  a warning naming it.
+- **The chunker ran ahead of its audio.** A window is now trusted only as far into its own
+  audio as `TRUST_WINDOW_FRACTION` (75%), as a cap on top of the derailment detector rather
+  than a fallback when it finds nothing. This decoder cannot cram — it enforces a minimum phone
+  duration and reports infeasibility instead — so an over-budgeted window places its surplus
+  phonemes early rather than announcing itself, and a count-based trim kept almost all of them.
+  Measured on `30s.wav` forced through the chunker at 10 s windows:
+
+  | | last phoneme ends | mean confidence | flagged |
+  |---|---|---|---|
+  | count trim only | 30.31 s | 0.217 | yes |
+  | time cap | 31.87 s | 0.317 | no |
+  | whole-segment decode | 31.88 s | 0.319 | no |
+
+- **`total_phonemes_aligned` double-counted**, adding the group timestamps to the phoneme
+  total. `total_phonemes_extra` and `total_phonemes_aligned_easily` are removed: with forced
+  alignment each target is placed at most once and nothing is estimated after the fact.
+- **The Viterbi's first call took 30-120 s on a loaded multi-core box.** It now pins torch's
+  intra-op pool to one thread for the duration of the DP: the per-frame tensors are far below
+  the size that pays for a thread fan-out, so the threads only contended. Measured on a 32 s
+  clip with 358 phones: 1.70 s at one thread against 34-117 s on the first call at 32.
+- The DP runs on CPU even when the model is on a GPU — 1.8 s against 5.0 s for the same clip,
+  bit-identical, because a python loop over frames on small tensors is launch-bound.
+
+### Changed — chunking
+
+Chunking is now a **resource guard only**. The segmental decoder does not collapse on long
+audio, so `_needs_chunking` triggers on length alone (`segment_max_seconds`, 120 s) and no
+longer on phoneme count. `chunking.stride4_max_phonemes()` and `DEFAULT_MAX_PHONEMES`'s
+derivation from the CTC lattice are gone; the bound that actually keeps a window feasible is
+now applied in `core.align_segment_chunked` and depends on the loaded checkpoint's duration
+floor.
+
+### Changed — presets and checkpoint discovery
+
+`presets.py` now holds the p3cupe checkpoints. English presets get
+`m_pa07b_final_e5_libri360h.pt` (LibriSpeech 360 h); everything else falls back to
+`m_pa07a_final_e4_MLS_7h.pt` (MLS, 7 European languages). `P3CUPE_UNIVERSAL` is a declared
+placeholder: that checkpoint does not exist yet, so a preset for a language outside those 7
+currently loads a model that has never heard it, and the preset table says so.
+
+Because nothing is published yet, `download_model` looks on disk first — `$BFA_MODEL_DIR`,
+then `./models/p3cupe/`, then `~/.cache/bournemouth_aligner/` — and only then asks
+HuggingFace, with an error that names the search path when both fail.
+
+### Added — the evaluation harness (`evaluation/`, was `scoring/`)
+
+Sweep a corpus once per configuration, then score every run into a labelled CSV row.
+
+```bash
+python evaluation/process_alignments.py     # align, once per grid point
+python evaluation/compute_metrics.py        # score into evaluation/results/*.csv
+```
+
+`evaluation/layout.py` defines where everything goes, and BOTH scripts import it - the writer
+and the reader agreeing by coincidence is how a sweep ends up scoring an empty set and
+reporting every run as "never aligned":
+
+    tmp/alignments/<dataset>/<bfN>/<clip>.json   alignments, and nothing else
+    tmp/manifests/                               what produced each run, plus logs
+    tmp/plots/                                   error histograms
+    evaluation/results/*.csv                     the scores - committed, unlike the rest
+    tmp/data/<dataset>_data/                     the corpus: SRTs and MFA's .mfa.json only
+
+Alignments moved out of the corpus tree so a sweep is disposable: `rm -rf tmp/alignments`
+drops every run without touching the corpus, and `rm -rf tmp/alignments/timit/bf3` drops one.
+Clip files are keyed by `layout.clip_stem` (the SRT path relative to the corpus root:
+`all_MABC0_SX61`, `s01_s0103a`), because TIMIT basenames are not unique across speakers and
+Buckeye's `clip_id` is a positional index that would rename every clip when the paths list is
+regenerated. `assert_unique_stems` checks the whole list on load rather than trusting the rule.
+
+The sweep grid is now the p3cupe decoder axes - `boundary_bonus_weight`, `min_phone_frames`,
+`soft_phone_frames`, `sub_frame_onsets` - each accepting `None` for "the checkpoint's trained
+value". `_check_for_duplicates` resolves those against the checkpoint's own hyperparameters and
+REFUSES a grid whose rows collapse to one run, which `[None, 30.0]` on a checkpoint trained at
+30 does. Manifests record `decoder_effective` so a row says what ran, not what was requested.
+
+
+
+## [1.2.0] — never released, superseded by 2.0.0
+
+> The work below targeted the model2i/model3a checkpoints and the blank-based
+> `segmental.py` decoder, both removed in 2.0.0. Kept as the record of why the segmental
+> topology (minimum phone duration, skippable silences, an onset bonus from acoustic change)
+> was adopted — p3cupe's aligner inherits all three.
 
 ### Added — segmental decoder (`decoder="segmental"`, now the default)
 
@@ -79,221 +275,6 @@ forced default is unchanged in meaning: every target is aligned.
   chunked (`chunk_audio=False`, or under the chunking thresholds): the batched path pads or
   cuts every segment to `duration_max`. They are now decoded on their own audio.
 
-### Changed — onset snapping defaults, from `tmp/results/conclusions.md`
-
-`conclusions.md` §10 added the missing `none` controls on **both** corpora, which is the
-first time the snap sources could be read as gains over not snapping rather than as a
-head-to-head ordering. Two defaults move as a result.
-
-**1. The snap radius is now expressed in FRAMES.**
-
-`DEFAULT_SNAP_RADIUS_FRAMES` / `DEFAULT_SNAP_RADIUS_FRAMES_FALLBACK` replace the `_MS`
-pair (kept as derived aliases). The snapper searches `sig[f-r : f+r+1]` — a whole number of
-frames — so milliseconds were only ever a way of naming a frame count, and two different ms
-settings routinely meant the same search: `52.5` and `55.0` are both 4 frames at a
-210-sample stride. The eval CSVs show the cost of leaving the unit implicit — `cfg_snap_radius`
-holds `52.5` on some rows and `2`/`4`/`6` on others, ms and frames in one column.
-
-- `boundary_snap_radius` (frames) is now the primary parameter; `boundary_snap_radius_ms`
-  still works, still wins when `boundary_snap_radius` is None, and is still the right tool
-  for comparing models with *different* strides, where one frame count is two durations.
-- `boundary_snap_radius_ms` is now also an **output**: it reports the duration the resolved
-  frame count actually spans, not whatever was requested.
-- `set_boundary_snap(radius_frames=...)` takes precedence over a previously-set ms value
-  instead of being silently outranked by it. Its signature now leads with `radius_frames`.
-- Default is unchanged in effect: **4 frames** (52.5 ms) for the flux taps, 2 for
-  `boundary_head`. 4 is the only radius sweep on a full corpus (`results_TIMIT_lev.csv`,
-  `en` model2i, spectral_stream: r=2 → 0.6522, **r=4 → 0.6897**, r=6 → 0.6788).
-  *Not settled:* every model3a full-corpus row was taken at r=2, and the 20-file Buckeye
-  sweeps prefer r=1. There is no full-Buckeye radius sweep for any checkpoint.
-
-**2. `boundary_snap_source='auto'` now branches on the checkpoint ARCHITECTURE**, not on
-whether a boundary head exists — which is what §10 recommends in as many words.
-
-| | before | now | basis |
-|---|---|---|---|
-| model3a | `boundary_head` if trained, else `pre_transformer` | **`spectral_stream`** | best real source on both corpora, above control on both (+0.055 TIMIT, +0.026 Buckeye) |
-| model2i / model2j | `pre_transformer` | `pre_transformer` *(unchanged)* | `spectral_stream` is best on TIMIT for model2i too (+0.106) but **below** control on Buckeye (0.5174 vs 0.5437); `pre_transformer` is above on both |
-| trained `boundary_head` | selected automatically | **never selected automatically** | the only real source that loses to its own control: −0.0168 on 6300 TIMIT files, −0.028 on the 400-clip probe |
-
-The trained head is not broken — it detects boundaries about as well as spectral flux (frame
-AUC 0.886 vs 0.893 against ground truth). But its training targets come from the model's own
-Viterbi output, so what it learned best is the *decoder's* placement (AUC 0.864 against its
-own decoder, vs 0.70–0.75 for the flux taps), and snapping to it reproduces the decoder's
-lateness instead of correcting it — signed-error median +6, the same as no snapping, where
-the flux taps pull it to +3/+4. Requesting `'boundary_head'` explicitly still works and now
-warns with the relevant caveat for trained and untrained heads separately.
-
-`AUTO_SNAP_FALLBACK` is kept as an alias of `AUTO_SNAP_MODEL2I`.
-
-**Not changed, and still open:** on Buckeye the single best-scoring setting in the CSVs is a
-plain −1-frame shift (what an *untrained*, constant head degenerates into): +0.047, ahead of
-`spectral_stream`'s +0.026. The decoder runs about a frame late and Buckeye punishes that
-more than TIMIT does. A global shift is not reachable through the current API — `offset` only
-applies after a search and `radius=0` disables snapping — and is worth adding as a
-first-class option.
-
-### Added — adaptive chunking for long audio (`chunk_audio`, on by default)
-
-Long segments are no longer decoded in one shot. Past `chunk_seconds` (10 s) of audio or
-`chunk_max_phonemes` (190) targets, BFA now walks the segment in overlapping windows and
-finds where each window's alignment stops being trustworthy.
-
-**Why.** One-shot Viterbi does not degrade gracefully on long clips, it collapses — it
-packs every phoneme into the first part of the clip and emits the rest at one frame
-(13.125 ms) apiece with confidence 0.000. `silence_anchors` was the previous mitigation,
-and it works *when the transcript's punctuation happens to sit where the speaker actually
-paused*. When it doesn't, there is nothing to anchor to and the collapse is total. Strip
-the commas and full stops from a transcript and one-shot alignment drops to ~0.02 mean
-confidence over ~23 % of the audio at **every** `silence_anchors` value.
-
-Chunking cuts where the alignment demonstrably fails instead, so it does not depend on
-punctuation at all.
-
-**How.** Each window is handed a deliberately *over-provisioned* phoneme budget, sized
-from its speech seconds at `chunk_phonemes_per_second` (15 /s). The surplus phonemes cram
-into the window's final frames at one frame apiece, and that cram marks exactly where the
-window's usable alignment ends. Everything before it is kept, and the next window restarts
-at the end of the last kept phoneme — so the windows overlap by however much was
-discarded, and no audio between two kept phonemes is skipped. Confidence collapse is used
-as a second, corroborating signal: the cut is walked back over the near-zero-confidence
-drift that precedes the cram, and a long run of weak confidence can trigger a cut on its
-own when durations still look plausible.
-
-**Measured** on `30s.wav` (32 s, 356 phonemes) and a 36.5 s LJSpeech concatenation (402
-phonemes), `en_libri1000_ua01c` model2i. Mean confidence, with audio coverage in
-parentheses:
-
-| clip | `silence_anchors` | one-shot | chunked |
-|---|---|---|---|
-| 30s.wav, punctuated | 0 | 0.021 (22 %) | **0.399** (100 %) |
-| | 3 | 0.049 (57 %) | **0.399** (100 %) |
-| | 10 *(default)* | 0.402 (100 %) | **0.399** (100 %) |
-| 30s.wav, punctuation stripped | 0 / 3 / 10 | 0.011 (24 %) | **0.408** (100 %) |
-| LJSpeech ×3, punctuated | 0 | 0.016 (21 %) | **0.417** (99 %) |
-| | 3 | 0.072 (99 %) | **0.417** (99 %) |
-| | 10 *(default)* | 0.380 (99 %) | **0.417** (99 %) |
-| LJSpeech ×3, punctuation stripped | 0 / 3 / 10 | 0.019 (23 %) | **0.385** (100 %) |
-
-The read: at its default `silence_anchors=10`, one-shot alignment is *fine* on a
-well-punctuated clip whose commas match the speaker's pauses (0.402, 0.380) and falls off a
-cliff otherwise — a 20× swing in confidence driven by whether the transcript happens to
-have the right punctuation. Chunked alignment sits at 0.385–0.417 across every row, and is
-identical across `silence_anchors` values. The gain is **robustness**, not a higher ceiling
-on the easy case: on the one row where one-shot does well it is 0.402 against chunked's
-0.399.
-
-Every chunked row aligns 100 % of the target phonemes, covers ~100 % of the audio, and none
-sets `bad_alignment` — including the hardest case here, the same sentence three times over
-with no punctuation to distinguish the repetitions.
-
-Also on `30s.wav`: phonemes emitted at ≤1 frame drop from 84 % to 14 %, and SIL tokens
-landing inside a real (VAD-detected) pause go from 0/6 to 7/9.
-
-- `chunk_audio`, `chunk_seconds`, `chunk_max_phonemes`, `chunk_phonemes_per_second` and
-  `chunk_vad` constructor parameters, with matching `--chunk-audio/--no-chunk-audio`,
-  `--chunk-seconds`, `--chunk-max-phonemes`, `--chunk-pps` and `--chunk-vad/--no-chunk-vad`
-  CLI flags.
-- `set_chunking()` to retune a live aligner (mirrors `set_boundary_snap()`), including the
-  cut-detection thresholds `derail_frames`, `derail_run`, `backoff`, `conf_floor` and
-  `weak_run`.
-- `detect_speech_segments()` — a plain energy VAD, exposed as a public utility. Inside BFA
-  it does two narrow jobs: measure speech seconds per window so a pause-heavy window is not
-  over-budgeted at 15 phonemes/s, and let a cut land in a pause rather than mid-word. It is
-  **not** `silence_anchors`: it never splits the target sequence and never touches the
-  posteriors.
-- `align_segment_chunked()` — the walk itself, callable directly.
-- New module `bournemouth_aligner/chunking.py` and `tests/test_chunking.py`.
-
-### Changed
-- Segments shorter than the chunking thresholds take the existing single-shot path
-  unchanged, so short-clip results are unaffected (verified bit-identical).
-- **`silence_anchors` no longer applies inside a chunk window.** It exists to split a long
-  segment at transcript punctuation — the job the chunker now does on evidence — and a 10 s
-  window does not need splitting. Leaving it on only cost accuracy: on `30s.wav` chunked,
-  `silence_anchors=3` scored 0.330 and tripped `bad_alignment` where 0 and 10 both scored
-  0.403. Chunked results are now independent of the setting. It still does its original job
-  when `chunk_audio=False`, and is unchanged for segments below the chunking threshold.
-- The bad-alignment warnings are kept, and now name the relevant knob: whether the segment
-  was chunked decides whether the advice is to retune the chunker or to enable it. The hard
-  `raise` on a head-vs-tail confidence collapse now fires only when both mitigations are
-  off (`chunk_audio=False` and `silence_anchors=0`), and the head-vs-tail warning is
-  reported at `warn_level>=1` instead of `>=2`.
-
-### Measured against ground truth (Buckeye `s0103a`, 2267 reference phone boundaries)
-
-The first evaluation of chunking against real boundaries rather than confidence proxies.
-Median absolute onset error, by position within the segment:
-
-| decile (0 = start) | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| single-shot | 18 | 19 | 19 | 18 | **1582** | **7918** | 7277 | 6117 | 14840 | **29245** |
-| chunked | 17 | 20 | 14 | 19 | 18 | 14 | 13 | 18 | 19 | 21 |
-
-| | single-shot | chunked |
-|---|---|---|
-| median boundary error | 190.4 ms | **16.8 ms** |
-| within 25 ms | 31.9 % | **63.2 %** |
-| within 50 ms | 41.9 % | **81.4 %** |
-
-Two things this settles. The single-shot decoder is **accurate for the first ~40 % of a
-long segment and then detonates** — it does not degrade, and the failure is not a bad start
-propagating (no segment in this file had a bad first decile). And chunking removes the
-position dependence entirely: 13–21 ms flat across all ten deciles.
-
-`chunk_phonemes_per_second` was swept against the same ground truth:
-
-| phonemes/s | 12 | 15 | 18 | 20 |
-|---|---|---|---|---|
-| median error | 16.4 ms | 16.8 ms | 17.8 ms | 17.8 ms |
-| within 25 ms | 64.6 % | 63.2 % | 60.3 % | 59.9 % |
-
-Monotonic — **less over-provisioning aligns better**. `enforce_all_targets` means the forced
-path must emit every target inside the window, so surplus targets take frames from the
-phonemes that are genuinely there and distort the whole window, not just its tail. The
-default stays at 15: 12 was marginally better on this one conversational file, which is not
-enough to move a default that must also serve read speech. The cram still has to be large
-enough to *see*, since it is the cut signal.
-
-### Changed
-- **`chunk_max_phonemes` is now derived, not chosen**: `(frames_in_window − 1) // 4` = **190**
-  for a 10 s window, the largest budget that keeps the CTC lattice at stride 4. New helper
-  `chunking.stride4_max_phonemes(chunk_seconds)`, and `PhonemeTimestampAligner` warns on
-  construction and on `set_chunking()` when the effective budget overruns it — an 8 s window
-  holds only 152, and nothing previously flagged a shortened window crossing the line.
-  Scope stated honestly in the code: this is a guard against a stride drop that no tested
-  configuration actually hit (cap 190 and 210 gave identical results at 20 /s), not the
-  explanation for the rate measurements above.
-
-### Fixed
-- **`chunk_seconds` now means what it says.** The routing test carried 10% slack on each
-  side, so a nominal `chunk_seconds=10` really meant 11 s: a 10.2 s segment took the
-  single-shot path and collapsed while the setting that governs it appeared satisfied. Same
-  for `chunk_max_phonemes`. A segment of exactly `chunk_seconds` still takes the cheaper
-  single-shot path.
-- **Segments between `chunk_seconds` and 1.25 × `chunk_seconds` were silently un-chunked.**
-  The rule that extends a window to the end of the segment fired whenever less than a
-  quarter of a window remained — but that measures the wrong quantity, because the next
-  window starts at the derailment CUT, not at the window's end. A 12 s segment therefore saw
-  "2 s left, under 2.5 s, extend" and became one 12 s window: exactly the single-shot decode
-  chunking exists to avoid. It now extends only when the remainder could not be aligned at
-  all, and an 11.8 s segment splits into two real windows (0–10 s, 8.85–11.8 s) as intended.
-- The bad-alignment warning told users to "enable `chunk_audio=True`" when it was already
-  enabled and the segment had simply fallen under the threshold. It now distinguishes
-  chunked / under-threshold / disabled, names the actual thresholds, and reports the
-  segment's phoneme rate when it exceeds `chunk_phonemes_per_second` — which usually means
-  the transcript carries text that is not spoken in that segment.
-- The chunker applied its derailment cut to the **final** window too, which deleted the
-  discarded tail instead of deferring it — there is no next window to re-align it. On
-  `30s.wav` this dropped the last three phonemes ("find", at 31.4–31.9 s); on a harder case
-  it dropped 54 of 402. The last window now keeps everything and reports the derailment
-  without acting on it.
-- `process_segments()` emitted `batch_size` placeholder results when a batch slice raised
-  `ValueError`, rather than one per segment actually in that slice. A short final slice
-  therefore shifted every later segment's timestamps onto the wrong segment.
-- Chunked segments report coverage counters once per segment. Per-window counting would
-  otherwise tally each over-provisioned tail as "missed" and count re-aligned phonemes
-  twice (356 targets were reported as 920).
 
 
 ## [1.1.5] - 2026-06-05

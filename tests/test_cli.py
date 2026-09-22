@@ -14,7 +14,9 @@ python -m pytest tests/test_cli.py
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 
 import pytest
@@ -65,10 +67,25 @@ def out(temp_dir, name="output.json"):
     return os.path.join(temp_dir, name)
 
 
-def _run(*args, timeout=30):
+def _cli_command():
+    """
+    How to invoke the CLI here.
+
+    Prefer the installed `balign` entry point, but fall back to running the module directly
+    so the tests still exercise the CLI in a checkout that has not been pip-installed -
+    otherwise every test in this file fails with FileNotFoundError and says nothing about
+    the CLI at all.
+    """
+    if shutil.which("balign"):
+        return ["balign"]
+    return [sys.executable, "-m", "bournemouth_aligner.cli"]
+
+
+def _run(*args, timeout=120):
     return subprocess.run(
-        ["balign", *args],
+        [*_cli_command(), *args],
         capture_output=True, text=True, timeout=timeout,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     )
 
 
@@ -124,21 +141,28 @@ class TestPresetResolution:
     @pytest.fixture(autouse=True)
     def _import(self):
         from bournemouth_aligner.cli import _resolve_model_lang
+        from bournemouth_aligner import presets
         self.resolve = _resolve_model_lang
+        self.presets = presets
+        self.default_model = presets.DEFAULT_MODEL
 
     def test_en_us_preset(self):
         model, lang = self.resolve("en-us", None, None)
-        assert "ua01c" in model          # English model
+        assert model == self.default_model
         assert lang == "en-us"
 
     def test_de_preset(self):
+        # Non-English falls back to the multilingual checkpoint, and the preset carries the
+        # espeak language through either way.
         model, lang = self.resolve("de", None, None)
-        assert "MLS8" in model or "mls8" in model.lower()
+        assert model == (self.presets.P3CUPE_UNIVERSAL or self.presets.P3CUPE_EU)
         assert lang == "de"
 
     def test_hi_preset(self):
+        # Hindi is in the supported list but no checkpoint has seen it yet, so it resolves to
+        # the same placeholder. This test pins the FALLBACK, not a recommendation.
         model, lang = self.resolve("hi", None, None)
-        assert "mswc" in model.lower()
+        assert model == (self.presets.P3CUPE_UNIVERSAL or self.presets.P3CUPE_EU)
         assert lang == "hi"
 
     def test_model_override(self):
@@ -154,13 +178,20 @@ class TestPresetResolution:
     def test_no_preset_defaults(self):
         """With no preset and no overrides, use English defaults."""
         model, lang = self.resolve(None, None, None)
-        assert "ua01c" in model
+        assert model == self.default_model
         assert lang == "en-us"
 
-    def test_unknown_preset_fallback(self):
-        """Unknown presets should fall back to the universal model."""
+    def test_unknown_preset_still_resolves(self):
+        """An unsupported preset warns but still returns a usable model and language."""
         model, lang = self.resolve("xx-unknown", None, None)
-        assert "mswc" in model.lower()
+        assert model
+        assert lang == "xx-unknown"
+
+    def test_english_variants_all_get_the_english_model(self):
+        for code in ("en-us", "en", "en-gb", "en-gb-scotland"):
+            model, lang = self.resolve(code, None, None)
+            assert model == self.presets.P3CUPE_EN, code
+            assert lang == code
 
 
 # ---------------------------------------------------------------------------

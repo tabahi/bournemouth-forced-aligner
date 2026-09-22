@@ -15,9 +15,9 @@ duration_max = 10 # it's only for padding and clipping. Set it more than your ex
 extractor = PhonemeTimestampAligner(duration_max=duration_max, device=device) # initialize without loading a model
 
 # Alternative: explicit model selection
-# model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt" # Find more models at: https://huggingface.co/Tabahi/CUPE-2i/tree/main/ckpt
+# cupe_ckpt_path = "models/p3cupe/m_pa07b_final_e5_libri360h.pt"  # p3cupe checkpoints are not on HuggingFace yet
 # lang = 'en-us' # Each CUPE model is trained on a specific language(s)
-# extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
+# extractor = PhonemeTimestampAligner(cupe_ckpt_path=cupe_ckpt_path, lang=lang, duration_max=duration_max, device=device)
 
 # Step 2a: Load and preprocess audio - manually
 

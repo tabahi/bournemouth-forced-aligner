@@ -3,6 +3,8 @@ Convert ts output dict to textgrid that can be imported into Praat
 '''
 
 
+import math
+
 import torch
 
 def weighted_pool_embeddings(embeddings, log_probs, framestamps):
@@ -69,46 +71,44 @@ def weighted_pool_embeddings(embeddings, log_probs, framestamps):
 
 def _calculate_confidences(log_probs, framestamps):
     """
-    Calculate confidence scores for each timestamped phoneme/group.
+    Per-phone confidence: the highest posterior the model puts on that phone anywhere inside
+    its own segment.
+
+    The PEAK, not the mean, because of the shape the model is trained to produce. p3cupe holds
+    a phone's posterior at 1.0 across the interior of its segment and brings it down to exactly
+    0.5 at each of its two boundaries, where the neighbouring phone rises through 0.5 - that
+    crossing is how the boundary is represented at all. So the frames at both ends of every
+    segment are uncertain BY DESIGN, and an average over the segment measures those ramps as
+    much as it measures the phone: it reads a short phone, which is nearly all ramp, as far
+    less confident than a long one of identical quality. The peak is the quantity the training
+    target actually pins at 1.0.
+
+    Note that these numbers are NOT comparable with a CTC model's. CTC produces a near-one-hot
+    spike per phone, so its confidences sit close to 1.0; this loss deliberately does not
+    saturate (its target distribution has entropy), so a well-aligned phone can read well below
+    0.5. Compare against other segments from the same checkpoint, not against an absolute.
 
     Args:
         log_probs: Log probabilities [T, C]
-        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx) tuples
+        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated)
+            tuples. Frames may be fractional.
 
     Returns:
-        List of (phoneme_id, start_frame, end_frame, target_seq_idx, avg_confidence) tuples
+        The same tuples with the confidence appended.
     """
     probs = torch.exp(log_probs)
+    n_frames, n_classes = probs.shape
     updated_tuples = []
 
     for phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated in framestamps:
-        # Clamp to valid range
-        start_frame = max(0, int(start_frame))
-        end_frame = min(log_probs.shape[0], int(end_frame))
-        if not is_estimated or (start_frame < probs.shape[0] and end_frame <= log_probs.shape[0]):
-            avg_confidence = probs[start_frame, phoneme_id]
+        start = max(0, min(int(start_frame), n_frames - 1))
+        end = max(start + 1, min(int(math.ceil(float(end_frame))), n_frames))
+        if phoneme_id < n_classes:
+            confidence = float(probs[start:end, phoneme_id].max())
         else:
-            raise ValueError(f"Invalid frame range for estimated timestamp: start_frame={start_frame}, end_frame={end_frame}, log_probs shape={log_probs.shape}, is_estimated={is_estimated}, phoneme_id={phoneme_id}")
-
-        if start_frame < end_frame and phoneme_id < log_probs.shape[1]:
-
-            half_confidence = avg_confidence/2
-            total_good_frames = 1
-
-            # since there can be blanks after the first one, we only take probablities if at least prob > 0.5 compared to the first frame to avoid for-sure blanks
-            for f in range(start_frame+1, end_frame):
-                frame_prob = probs[f, phoneme_id]
-                if (frame_prob > half_confidence) or (frame_prob > 0.1):
-                    avg_confidence += frame_prob
-                    total_good_frames += 1
-            if total_good_frames > 1:
-                avg_confidence /= total_good_frames
-
-                max_confidence = probs[start_frame:end_frame, phoneme_id].max()
-                if avg_confidence < max_confidence/2:
-                    avg_confidence = max_confidence
-            
-        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence.item()))
+            confidence = 0.0
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx,
+                               is_estimated, confidence))
 
     return updated_tuples
 
@@ -124,11 +124,10 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
     Returns:
         updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
     '''
-    # Frames advance at a FIXED rate: the feature extractor's total conv stride
-    # (210 samples = 13.125 ms here). Dividing the clip duration by the frame count is
-    # not the same thing - the windows cover slightly less than the whole clip, so that
-    # form drifts (+25 ms over a 10 s clip even with a correct stride, and +182 ms with
-    # the old mismatched one). Pass `frame_stride_samples` to get the exact mapping.
+    # Frames advance at a FIXED rate: the feature extractor's total conv stride (80 samples
+    # = 5 ms for p3cupe). Dividing the clip duration by the frame count is not the same
+    # thing - the windows cover slightly less than the whole clip, so that form drifts by
+    # tens of ms over a 10 s clip. Pass `frame_stride_samples` to get the exact mapping.
     if frame_stride_samples:
         duration_per_frame = frame_stride_samples / sample_rate
     else:
