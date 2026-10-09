@@ -1,5 +1,9 @@
 r'''
-The p3cupe forced aligner: the same segmental Viterbi the model was trained against.
+The forced aligner: the same segmental Viterbi the models were trained against.
+
+Shared by both model families. p4mbfa's training decoder is this one with the label spaces
+changed (its SIL is id 1, not 0 - which is why `sil_class` is an argument everywhere below and
+never assumed), so everything said about p3cupe here holds for p4mbfa's `ph_head` too.
 
 ## Why the decoder lives with the model
 

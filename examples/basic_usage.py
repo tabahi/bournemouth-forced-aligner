@@ -9,12 +9,21 @@ def example_audio_timestamps():
     text_sentence = "butterfly"
     audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 
-    # Using language preset (recommended) - automatically selects best English model
+    # Using language preset (recommended) - picks the model for the language. This is the
+    # default "std" phoneme set (standard_g2p phonemes, the mbfa-latin model); the first run
+    # downloads the model (~55 MB) and the G2P model (~1.2 GB) from Hugging Face, once.
     extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
 
-    # Alternative: explicit model selection
-    # cupe_ckpt_path = "models/p3cupe/m_pa07b_final_e5_libri360h.pt"
-    # extractor = PhonemeTimestampAligner(cupe_ckpt_path=cupe_ckpt_path, lang='en-us', duration_max=10, device='cpu')
+    # Alternative: the espeak-ng + ph66 phoneme set (needs espeak-ng installed; uses the
+    # English CUPE-3-en model, no G2P download)
+    # extractor = PhonemeTimestampAligner(preset="en-us", phoneme_set="ph66", duration_max=10, device='cpu')
+
+    # Alternative: a published model by name - the model decides the phoneme set
+    # extractor = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark", duration_max=10, device='cpu')
+    # extractor = PhonemeTimestampAligner(model_name="CUPE-3-en", duration_max=10, device='cpu')
+
+    # Alternative: a model on disk - a release directory or a training checkpoint file
+    # extractor = PhonemeTimestampAligner(ckpt_path="path/to/model", lang='en-us', duration_max=10, device='cpu')
 
     audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 

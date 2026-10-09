@@ -5,7 +5,150 @@
 A new major version: v2 does not load v1 checkpoints, and BFA's model, decoder and boundary
 readout are all different. v1.x is the model2i/model3a line and ends at 1.1.5.
 
-### Changed — BFA now runs on p3cupe, and only on p3cupe
+### Added — a second phoneme set and model family, now the default
+
+BFA has two stacks behind one aligner, chosen by `phoneme_set`:
+
+| `phoneme_set` | phonemizer | model family | label space |
+|---|---|---|---|
+| `"std"` (**new default**) | standard_g2p (ByT5 G2P, vendored) | **p4mbfa** | one token list per language group |
+| `"ph66"` | espeak-ng + ph66 mapper | p3cupe | 66 phonemes, every language |
+
+p4mbfa is p3cupe's trunk with three heads: `ph_head` (one LANGUAGE GROUP's tokens — 208 for
+`latin`, 127 `cyrillic`, 48 `cjk`, 28 `japanese`), `phg_head` (15 phoneme groups, shared) and
+`tone_head` (22 tones, shared). Its training decoder is the one BFA already had, with silence
+at index 1 instead of 0, so the aligner itself did not change.
+
+**New packages**
+
+- `bournemouth_aligner/standard_g2p/` — the runtime of
+  [tabahi/CharsiuG2P](https://github.com/tabahi/CharsiuG2P)'s `standard_g2p`, vendored
+  verbatim (MIT). `tools/sync_standard_g2p.py` is its only writer and `VENDORED.md` records
+  the commit. Only the Mandarin dictionary *keys* are shipped (600 KB instead of 196 MB).
+- `bournemouth_aligner/p4mbfa/` — `model.py` (inference port of `MbfaCNN`) and `extractor.py`.
+- `bournemouth_aligner/segmental/` — `aligner.py` and `windowing.py` moved here from `p3cupe/`
+  (which still re-exports them), plus the clip-level forward pass both families share.
+  `encode_clip` now returns a dict (`ph`, `group`, `tone`, `emb`, `flux`), not a tuple.
+- `bournemouth_aligner/phonemizers/` — `std.py`, `ph66.py`, and the `Inventory` that `core.py`
+  reads label ids from instead of the ph66 phonemizer's attributes.
+- `bournemouth_aligner/hub.py` — every download. Models and the G2P come from the Hugging
+  Face Hub through `huggingface_hub`'s own cache; nothing is written inside the installed
+  package.
+
+**New constructor parameters:** `phoneme_set`, `ckpt_path`, `g2p_model_dir`, `g2p_device`,
+`g2p_cache_size`, `punctuation_sil`. `mapper` and `cupe_ckpt_path` remain as the older names
+of `phoneme_set` and `ckpt_path`. CLI: `--phoneme-set`, `--ckpt-path`, `--g2p-device`,
+`--punctuation-sil`; `--list-presets` prints both tables.
+
+**Published models.** Every model is a Hugging Face repository of two files, `config.json` +
+`model.safetensors`, exported from the training repository
+([bfa_models](https://github.com/tabahi/bfa_models), `p4mbfa/export_hf.py`; its
+`hf_release.yaml` records which run each one is and why it was chosen). BFA downloads those
+two files on first use and reads the architecture, frame geometry, decoder settings and label
+space from `config.json`.
+
+| model | set | what it is |
+|---|---|---|
+| [`mbfa-latin`](https://huggingface.co/Tabahi/mbfa-latin) | std / latin | **the default.** FLEURS, 36 languages, 273 h, the most training noise (run `ma04a`, epoch 6) |
+| [`mbfa-latin-benchmark`](https://huggingface.co/Tabahi/mbfa-latin-benchmark) | std / latin | best latin model on TIMIT, less training noise (`ma02a`, epoch 8). By name only |
+| [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | std / cyrillic | FLEURS, 8 languages (`mr01a`, epoch 10) |
+| [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std / cjk | FLEURS Mandarin + Cantonese (`mc01a`, epoch 13) |
+| [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | std / japanese | FLEURS Japanese (`mj01a`, epoch 8) |
+| [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | ph66 | LibriSpeech 500 h, English (`pa07f`, epoch 0). The only p3cupe model published |
+
+`model_name=` / `--model` takes one of these names, or any repository id in the same layout.
+`ckpt_path=` / `--ckpt-path` takes a model on disk: a release directory, or a training
+checkpoint file. `$BFA_MODEL_DIR/<name>/` and `./models/<name>/` are looked in before the Hub.
+
+**How a model is chosen.** A model decides the phoneme set by itself (p3cupe is ph66, p4mbfa
+is std); naming one set and passing a model of the other raises. In the std set the language
+picks its language group and the group picks the model. A language whose group has no model,
+or that standard_g2p does not cover, **raises with a message naming `phoneme_set="ph66"`** —
+there is no silent fallback, because the two sets' ids and output keys differ.
+
+**Label check.** `ph_head` emits indices into a token list that lives in standard_g2p, not in
+the weights; a regenerated list of the same size would silently relabel every phoneme. A
+released model therefore carries its token list and gold fingerprint in `config.json`, and
+`MbfaExtractor.check_inventory` refuses a mismatch with this installation's tables. A released
+p3cupe model's phoneme list is checked against the ph66 mapper the same way.
+
+**The G2P model** is
+[`charsiu/g2p_multilingual_byT5_small_100`](https://huggingface.co/charsiu/g2p_multilingual_byT5_small_100)
+(~1.2 GB) with the tokenizer of `google/byt5-small`, downloaded by `huggingface_hub` on the
+first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an existing copy.
+
+### Changed — defaults, output and dependencies (breaking)
+
+- **`PhonemeTimestampAligner(preset="en-us")` is now the std set.** Pass `phoneme_set="ph66"`
+  for the previous behaviour. Alignments from an explicit p3cupe `cupe_ckpt_path` are
+  unchanged: verified identical (timestamps, confidences, pooled embeddings, TextGrid) on the
+  LJSpeech samples before and after the refactor.
+- **Language codes.** The std set takes BCP 47 codes and accepts every spelling BFA took
+  before (`en-us`, `en-gb`, `pt-br`, `cmn`, `fr-be`), resolving them to canonical ones
+  (`en`, `en-GB`, `pt-BR`, `zh`, `fr`). `aligner.lang` holds the canonical code.
+- **Results carry a header:** `{"phoneme_set": "std/latin", "lang": "en", "segments": [...]}`.
+  A `phoneme_id` means nothing without its inventory. An empty result is no longer exactly
+  `{"segments": []}`.
+- **std segments** use `local_ph` / `gold_phg` where ph66 has `ph66` / `pg16`, and add `tone`,
+  `stress`, `length` per segment and per `phoneme_ts` entry. `words_ts[].ph66` is keyed by
+  the set's phoneme key (`local_ph` in std; still `ph66` in ph66). Groups are the 15 gold
+  groups, not pg16.
+- **No silence at punctuation in the std set** unless `punctuation_sil=True`, and **no
+  number/abbreviation expansion** — the G2P reads dictionary words. Spell numbers out.
+- **Padding id.** Ragged batches are padded with the inventory's `pad_id` (`<blank>` in std,
+  the unused `noise` slot in ph66). `aligner.noise_class` / `noise_group` are replaced by
+  `pad_class` / `pad_group`; in std `noise` is a real label.
+- **Dependencies.** `transformers` and `safetensors` are now required. `phonemizer` moved to the `[ph66]` extra
+  and is imported lazily, so the default install needs no espeak-ng. Word segmenters are
+  extras: `[th]`, `[ja]`, `[yue]`. `bournemouth_aligner.Phonemizer_ph66` is imported on first
+  access.
+- **`load_model(preset=...)`** now changes the language too when none was given explicitly;
+  before, `PhonemeTimestampAligner(preset="de").load_model(preset="fr")` loaded the French
+  preset's model and kept phonemizing German.
+
+### Changed — evaluation
+
+- Scoring was already inventory-free (SRT `boundaries` against predicted onsets). What tied it
+  to ph66 is fixed: silence was `phoneme_id == 0`, which is `<blank>` in std; the scorer now
+  reads each alignment file's `phoneme_set`.
+- Per-group errors are reported in each set's own groups (`err_*` for ph66's 16, `std_*` for
+  std's 15) and in **manner classes both can fill** (`mn_*`), which is what a ph66 row and a
+  std row are compared on. The CSV gains a `phoneme_set` column.
+- `process_alignments.py`: a `MODELS` entry takes a published `model_name`, or a `ckpt_path`
+  (or the older `cupe_ckpt_path`); the manifest records family, phoneme set, language group,
+  gold fingerprint and, for a published model, the training run it is, read from the model.
+- Paths lists are named `<dataset>_paths_all.json`; the old `*_ph66.json` names are still read.
+- **New `evaluation/dataset/probe_cache.py`** builds the boundary-probe cache the p4mbfa
+  training repository reads, for TIMIT and now Buckeye, from this repository's SRT trees.
+  Its TIMIT output is identical, clip for clip, to `bfa_models/tmp/data/timit_probe_400_latin.json`.
+  Buckeye entries are segments of long files (`start` / `end`), which the training probe now
+  cuts out before aligning.
+
+### Measured — std / p4mbfa
+
+**Parity with training.** BFA with the `ma04a` epoch-6 weights (now `mbfa-latin`) on the
+training repository's 400 TIMIT probe clips, in the probe's own batches of 16, frame-grid
+onsets: f1@10/25/50 = 52.79 / 71.22 / 82.91 on the tune half and 54.00 / 71.70 / 83.41 on the
+held-out half — identical to the training probe run in fp32 on the same checkpoint. The
+vendored phonemizer reproduces the cache's target sequence for all 400 clips.
+
+**The score depends on batch composition.** `class_prior_normalise` takes the class prior over
+the batch's frames, so the same clips aligned one at a time score 71.76 / 72.55 at f1@25
+instead of 71.22 / 71.70. This is the decoder as trained and applies to both families; it
+means two runs are only comparable at the same batch size.
+
+**The three English-capable models side by side**, same files and scorer
+(`evaluation/process_alignments.py` + `compute_metrics.py`), each with its published decoder
+settings, frame-grid onsets, batch size 16. Small samples, to show the pipeline end to end —
+the model cards carry the 400-clip TIMIT probe numbers:
+
+| | TIMIT, 100 files f1@10 / 25 / 50 | Buckeye, 3 interviews f1@10 / 25 / 50 |
+|---|---|---|
+| ph66, `CUPE-3-en` (English only) | 57.3 / **75.8** / 85.7 | 43.2 / **68.9** / 82.6 |
+| std, `mbfa-latin` (36 languages) | 54.1 / **73.1** / 84.1 | 39.3 / **63.6** / 77.5 |
+| std, `mbfa-latin-benchmark` (36 languages) | 56.2 / **74.1** / 85.1 | 38.8 / **63.2** / 76.9 |
+
+### Changed — the ph66 stack runs on p3cupe, and only on p3cupe
 
 The acoustic model, the decoder and the boundary readout have all been replaced. p3cupe is a
 CNN-only phoneme model whose output **is** the boundary detector: each phone's posterior is
@@ -145,17 +288,18 @@ derivation from the CTC lattice are gone; the bound that actually keeps a window
 now applied in `core.align_segment_chunked` and depends on the loaded checkpoint's duration
 floor.
 
-### Changed — presets and checkpoint discovery
+### Changed — presets and model discovery
 
-`presets.py` now holds the p3cupe checkpoints. English presets get
-`m_pa07b_final_e5_libri360h.pt` (LibriSpeech 360 h); everything else falls back to
-`m_pa07a_final_e4_MLS_7h.pt` (MLS, 7 European languages). `P3CUPE_UNIVERSAL` is a declared
-placeholder: that checkpoint does not exist yet, so a preset for a language outside those 7
-currently loads a model that has never heard it, and the preset table says so.
+`presets.py` holds the model names, and is the only place one appears. Every ph66 preset
+resolves to `CUPE-3-en`, the one p3cupe model published; it is English-only, so a non-English
+ph66 preset prints a warning that the model was not trained on that language (the std set is
+the multilingual one). The earlier local-file presets (`m_pa07b…` for English, `m_pa07a…` MLS
+for everything else) and the `P3CUPE_UNIVERSAL` placeholder are gone; a p3cupe checkpoint on
+disk still loads with `ckpt_path=`.
 
-Because nothing is published yet, `download_model` looks on disk first — `$BFA_MODEL_DIR`,
-then `./models/p3cupe/`, then `~/.cache/bournemouth_aligner/` — and only then asks
-HuggingFace, with an error that names the search path when both fail.
+`download_model` and every preset go through `hub.resolve_model`: `$BFA_MODEL_DIR/<name>/`,
+then `./models/<name>/`, then the model's Hugging Face repository, with an error that names
+all three when they fail.
 
 ### Added — the evaluation harness (`evaluation/`, was `scoring/`)
 

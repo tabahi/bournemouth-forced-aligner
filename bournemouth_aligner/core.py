@@ -1,23 +1,38 @@
 '''
 Bournemouth Forced Aligner - phoneme-level timestamps from audio and text.
 
-Text is phonemized to the ph66 inventory, audio goes through the p3cupe model (120 ms
-context-free windows, one posterior per 5 ms frame), and the two are matched by the segmental
-Viterbi the model was trained against. Inputs are a sentence or an SRT-style segment list;
-outputs are per-phoneme, per-group and per-word timestamps with confidences, optionally as a
-Praat TextGrid or with pooled embeddings.
+Text is phonemized, audio goes through a CNN phoneme model (120 ms context-free windows, one
+posterior per 5 ms frame), and the two are matched by the segmental Viterbi the model was
+trained against. Inputs are a sentence or an SRT-style segment list; outputs are per-phoneme,
+per-group and per-word timestamps with confidences, optionally as a Praat TextGrid or with
+pooled embeddings.
+
+## Two phoneme sets, one aligner
+
+    phoneme_set="std"   (default)  standard_g2p phonemes, decoded by a p4mbfa checkpoint
+    phoneme_set="ph66"             espeak-ng + ph66,      decoded by a p3cupe checkpoint
+
+A phoneme set is a phonemizer and the label space its ids live in (`phonemizers/`); a model
+family is a checkpoint format whose head emits exactly that label space (`p3cupe/`,
+`p4mbfa/`). The pairing is fixed, so naming either one settles the other, and a checkpoint
+path settles both. Everything below this line - windowing, decoding, chunking, the output
+format - is the same code for the two.
+
+The one structural difference: p3cupe has a single label space for every language, while a
+p4mbfa checkpoint belongs to one LANGUAGE GROUP (latin, cyrillic, cjk, ...). The language picks
+the group and the group picks the checkpoint (`presets.py`).
 
 ## What places a boundary
 
-p3cupe's posteriors ARE the boundary detector. Each phone is trained to peak at 1.0 across its
+The model's posteriors ARE the boundary detector. Each phone is trained to peak at 1.0 across its
 own segment and fall to exactly 0.5 at each of its two boundaries, where the neighbour rises
 through 0.5, so a boundary is the CROSSING of two posteriors - a continuous quantity, read off
 by interpolation rather than snapped to a frame. There is no blank class, no CTC lattice and no
-post-hoc onset snapping; `p3cupe/aligner.py` places every onset inside one global search.
+post-hoc onset snapping; `segmental/aligner.py` places every onset inside one global search.
 
 Every timestamp comes from `time_ms(frame f) = f * 5.0`, exactly: the window stride advances a
 whole number of output frames, so the stitched grid is the model's own conv grid with no
-correction term. See `p3cupe/windowing.py`.
+correction term. See `segmental/windowing.py`.
 '''
 
 import contextlib
@@ -37,9 +52,11 @@ from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
                        DEFAULT_WEAK_RUN, DEFAULT_SNAP_TO_SILENCE_SEC,
                        MIN_KEEP_FRACTION, NO_DERAIL_TRIM_FRACTION,
                        TRUST_WINDOW_FRACTION)
-from .ipamappers import ph66_phonemeizer
-from .p3cupe import CupeExtractor, align_batch
-from .presets import get_preset
+from . import hub
+from . import presets as _presets
+from .extractors import load_extractor
+from .phonemizers import make_phonemizer
+from .segmental import align_batch
 from .utils import (dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences,
                     convert_to_ms, detect_device_automatically,
                     plot_mel_alignment as _plot_mel_alignment)
@@ -50,46 +67,61 @@ from .utils import (dict_to_textgrid, weighted_pool_embeddings, _calculate_confi
 # 200 frames per second of audio, which measures ~1.8 s for a 32 s clip of 356 phonemes.
 DEFAULT_SEGMENT_MAX_SECONDS = 120.0
 
-# Where `download_model` looks for a checkpoint before asking HuggingFace. The p3cupe
-# checkpoints are not published yet, so a local file is currently the only way `preset=` and
-# `model_name=` can resolve. $BFA_MODEL_DIR wins, then the working directory, then the cache.
-MODEL_SEARCH_DIRS = (
-    os.environ.get('BFA_MODEL_DIR'),
-    os.path.join(os.getcwd(), 'models', 'p3cupe'),
-    os.path.expanduser(os.path.join('~', '.cache', 'bournemouth_aligner')),
-)
-HF_REPO_ID = "Tabahi/CUPE-2i"
-HF_SUBFOLDER = "ckpt"
-
 
 class PhonemeTimestampAligner:
     """
-    Align phoneme-level timestamps from audio using a p3cupe checkpoint.
+    Align phoneme-level timestamps from audio and text.
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
     def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us',
-                 mapper="ph66", duration_max=30, device="auto", boundary_bonus_weight=None,
+                 mapper=None, duration_max=30, device="auto", boundary_bonus_weight=None,
                  sub_frame_onsets=True, min_phone_frames=None, soft_phone_frames=None,
                  bad_confidence_threshold=0.6, low_confidence_level=0.25, chunk_audio=True,
                  chunk_seconds=DEFAULT_CHUNK_SECONDS, chunk_max_phonemes=DEFAULT_MAX_PHONEMES,
                  chunk_phonemes_per_second=DEFAULT_PHONEMES_PER_SECOND, chunk_vad=True,
-                 segment_max_seconds=DEFAULT_SEGMENT_MAX_SECONDS, warn_level=1):
+                 segment_max_seconds=DEFAULT_SEGMENT_MAX_SECONDS, warn_level=1,
+                 phoneme_set=None, ckpt_path=None, g2p_model_dir=None, g2p_device=None,
+                 g2p_cache_size=None, punctuation_sil=False):
         """
         Initialize the BFA phoneme timestamp extractor.
 
         Args:
-            preset (str or None): Language preset. Selects the checkpoint and the espeak
-                language. `None` loads no model, and `load_model()` must be called before
-                aligning anything.
-            model_name (str, optional): Checkpoint filename, overriding the preset's choice.
-                Resolved by `download_model`, which looks on disk before asking HuggingFace.
-            cupe_ckpt_path (str, optional): Direct path to a p3cupe checkpoint. Highest
-                priority - overrides both `preset` and `model_name`.
-            lang (str): espeak-ng language code for phonemization, e.g. "en-us", "de", "hi".
-                Only overridden by `preset` while it is still the default.
-                See https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
-            mapper (str): Phoneme mapper. Only "ph66" exists.
+            preset (str or None): Language preset, e.g. "en-us", "de", "ru", "zh". Selects the
+                language and, through it, the checkpoint. `None` loads no model, and
+                `load_model()` must be called before aligning anything.
+            model_name (str, optional): A published model, overriding the preset's choice:
+                "mbfa-latin", "mbfa-latin-benchmark", "mbfa-cyrillic", "mbfa-cjk",
+                "mbfa-japanese" (std) or "CUPE-3-en" (ph66), or any Hugging Face repository
+                id in the same layout. Downloaded on first use (`hub.resolve_model`).
+            cupe_ckpt_path (str, optional): Older name of `ckpt_path`.
+            lang (str): Language code for phonemization. Only overridden by `preset` while it
+                is still the default. For the std phoneme set any BCP 47 code standard_g2p
+                covers, in any case ("en", "en-GB", "pt-br", "zh-Hant", "ja"); for ph66 an
+                espeak-ng code, see
+                https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
+            mapper (str, optional): Deprecated name of `phoneme_set`.
+            phoneme_set (str, optional): "std" (default) or "ph66". "std" phonemizes with
+                standard_g2p and decodes with the p4mbfa checkpoint of the language's group;
+                "ph66" phonemizes with espeak-ng and decodes with a p3cupe checkpoint. Left
+                unset with a `ckpt_path` or `model_name`, it is whatever that checkpoint is.
+                A language the std set cannot serve raises rather than falling back, because
+                the two sets' ids and output keys differ.
+            ckpt_path (str, optional): Direct path to a model of either family on disk: a
+                release directory (config.json + model.safetensors) or a training checkpoint
+                file. Highest priority - overrides both `preset` and `model_name` - and
+                decides the phoneme set by itself. A p4mbfa model also fixes the language
+                group, so `lang` must be a language of that group.
+            g2p_model_dir (str, optional): Directory already holding the std set's G2P model.
+                Default: $BFA_G2P_DIR, else charsiu/g2p_multilingual_byT5_small_100 is
+                downloaded from the Hugging Face Hub on first use (~1.2 GB, once).
+            g2p_device (str, optional): Device for the G2P model. Default: `device`.
+            g2p_cache_size (int, optional): Word -> IPA entries the G2P remembers. Default
+                500k (~55 MB); 0 for no limit.
+            punctuation_sil (bool): std only. Write a silence where the text has pause
+                punctuation, as ph66 always does. Off by default because the p4mbfa models
+                were trained without one; the aligner may skip any silence at no cost, so
+                turning it on only offers the path somewhere to put a pause.
             duration_max (float): Padding width, in seconds, for the batched short-segment
                 path. Segments longer than this are decoded on their own, unpadded, so this
                 trades memory against how many segments share one forward pass.
@@ -104,8 +136,8 @@ class PhonemeTimestampAligner:
                 because it drags stop onsets onto the burst and pulls vowel onsets early
                 (`model3p/memory.md`, decoder sweep on the English pa01d checkpoint: 68.0 at
                 weight 30 against 74.6 at weight 0). For: measured here on Buckeye with the
-                shipped MLS checkpoint, 40 segments x 3 seeds, it is the better setting on
-                every one -
+                unpublished MLS checkpoint (pa07a), 40 segments x 3 seeds, it is the better
+                setting on every one -
 
                     f1@25   seed 0  60.2 -> 64.6   seed 1  59.8 -> 61.5   seed 2  60.8 -> 63.2
                     f1@10   seed 0  36.2 -> 43.8   seed 1  34.5 -> 40.1   seed 2  39.1 -> 45.1
@@ -130,8 +162,8 @@ class PhonemeTimestampAligner:
             low_confidence_level (float): Confidence below which a phoneme counts towards that
                 share. **Not comparable with BFA <= 1.2's 0.5**, which was set against CTC
                 posteriors that sit near 1.0 inside a phone. p3cupe's loss deliberately does
-                not saturate, so its confidences are lower throughout: measured on the shipped
-                MLS checkpoint, the mean peak posterior of a correctly placed phone is 0.33 on
+                not saturate, so its confidences are lower throughout: measured on the MLS
+                checkpoint (pa07a), the mean peak posterior of a correctly placed phone is 0.33 on
                 English read speech. This default is calibrated against that one checkpoint and
                 should be re-checked when an English-trained p3cupe checkpoint exists.
             chunk_audio (bool): Align segments longer than `segment_max_seconds` by walking
@@ -152,11 +184,13 @@ class PhonemeTimestampAligner:
                 informational output (resolved geometry, decoder settings, coverage details).
                 Errors are raised as exceptions regardless.
 
-        Parameter priority (highest to lowest): `cupe_ckpt_path`, `model_name`, `preset`.
+        Parameter priority (highest to lowest): `ckpt_path`, `model_name`, `preset`.
 
         Examples:
             aligner = PhonemeTimestampAligner(preset="de")
-            aligner = PhonemeTimestampAligner(cupe_ckpt_path="models/p3cupe/m_pa07a.pt")
+            aligner = PhonemeTimestampAligner(preset="de", phoneme_set="ph66")
+            aligner = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark")
+            aligner = PhonemeTimestampAligner(ckpt_path="path/to/mbfa-cjk", lang="zh")
         """
         # Set first, so load_model and the geometry resolution can report through _info/_warn.
         self.warn_level = int(warn_level)
@@ -165,8 +199,10 @@ class PhonemeTimestampAligner:
         self.device = device
         self.extractor = None                   # set by load_model()
         self.lang = lang
+        # True until an explicit language is given: only then may a preset choose it.
+        self._lang_is_default = (not lang) or lang == _presets.DEFAULT_LANG
         self.resampler_sample_rate = 16000
-        self.sample_rate = 16000                # p3cupe is trained at 16 kHz
+        self.sample_rate = 16000                # both model families are trained at 16 kHz
         self.ph_seq_min = 1
 
         self.seg_duration_min = 0.05            # seconds
@@ -174,12 +210,16 @@ class PhonemeTimestampAligner:
         self.seg_duration_max = duration_max
         self.wav_len_max = int(self.seg_duration_max * self.resampler_sample_rate)
 
-        self.selected_mapper = mapper
-        if self.selected_mapper != "ph66":
-            raise ValueError("Currently only 'ph66' mapper is supported.")
-        self.phonemizer = ph66_phonemeizer.Phonemizer(language=self.lang,
-                                                      remove_noise_phonemes=True)
-        self._setup_labels()
+        # --- phoneme set ------------------------------------------------------------------
+        # What the caller ASKED for, or None. The set actually in use (`self.phoneme_set`) is
+        # settled by `load_model`, because a checkpoint path decides it on its own.
+        self._requested_set = (None if phoneme_set is None and mapper is None
+                               else _presets.resolve_phoneme_set(phoneme_set, mapper))
+        self._g2p_options = dict(device=g2p_device or device, model_dir=g2p_model_dir,
+                                 cache_size=g2p_cache_size, punctuation_sil=punctuation_sil)
+        self.phoneme_set = None
+        self.phonemizer = None
+        self.inventory = None
 
         # --- decoder settings -------------------------------------------------------------
         # `min_phone_frames` / `soft_phone_frames` default to the checkpoint's own training
@@ -207,9 +247,13 @@ class PhonemeTimestampAligner:
         self.chunk_weak_run = DEFAULT_WEAK_RUN
         self.chunk_snap_to_silence = DEFAULT_SNAP_TO_SILENCE_SEC
 
-        if preset is not None or model_name is not None or cupe_ckpt_path is not None:
-            self.load_model(preset=preset, model_name=model_name,
-                            cupe_ckpt_path=cupe_ckpt_path)
+        ckpt_path = ckpt_path or cupe_ckpt_path
+        if preset is not None or model_name is not None or ckpt_path is not None:
+            self.load_model(preset=preset, model_name=model_name, ckpt_path=ckpt_path)
+        else:
+            # No model yet: phonemization still works, in the set that was asked for.
+            phoneme_set = self._requested_set or _presets.DEFAULT_PHONEME_SET
+            self._set_phonemizer(phoneme_set, self._resolve_lang(phoneme_set, self.lang))
 
         self.default_resampler = torchaudio.transforms.Resample(
             orig_freq=self.resampler_sample_rate,
@@ -235,26 +279,51 @@ class PhonemeTimestampAligner:
         if getattr(self, 'warn_level', 1) >= 1:
             print(f"WARN: {msg}")
 
+    def _resolve_lang(self, phoneme_set, lang):
+        """
+        A language code as the phoneme set's own phonemizer spells it: canonical BCP 47 for
+        std ("en-us" -> "en", "cmn" -> "zh"), untouched for ph66, whose codes are espeak-ng's.
+        """
+        if phoneme_set != "std":
+            return lang
+        code, note = _presets.normalize_std_lang(lang)
+        if note:
+            self._warn(note)
+        return code
+
+    def _set_phonemizer(self, phoneme_set, lang):
+        """Build (or retarget) the phonemizer and adopt its label space."""
+        if self.phonemizer is None or phoneme_set != self.phoneme_set:
+            self.phonemizer = make_phonemizer(phoneme_set, lang, verbose=self.warn_level,
+                                              **self._g2p_options)
+        elif lang != self.lang:
+            self.phonemizer.set_backend(language=lang)
+        self.phoneme_set = phoneme_set
+        self.selected_mapper = phoneme_set          # the name older code reads
+        self.lang = lang
+        self._setup_labels()
+
     def _setup_labels(self):
-        """Label inventory and the special class ids, from the ph66 mapper."""
-        self.phonemes_key = self.phonemizer.phonemes_key
-        self.phoneme_groups_key = self.phonemizer.phoneme_groups_key
+        """Label inventory and the special class ids, from the phonemizer's inventory."""
+        inv = self.inventory = self.phonemizer.inventory
+        self.phonemes_key = inv.phonemes_key
+        self.phoneme_groups_key = inv.groups_key
 
-        self.phoneme_id_to_label = self.phonemizer.index_to_plabel
-        self.phoneme_label_to_id = {label: idx for idx, label in self.phoneme_id_to_label.items()}
-        self.group_id_to_label = self.phonemizer.index_to_glabel
-        self.group_label_to_id = {label: idx for idx, label in self.group_id_to_label.items()}
-        self.phoneme_id_to_group_id = self.phonemizer.phoneme_id_to_group_id
+        self.phoneme_id_to_label = inv.id_to_label
+        self.phoneme_label_to_id = inv.label_to_id
+        self.group_id_to_label = inv.group_id_to_label
+        self.group_label_to_id = inv.group_label_to_id
+        self.phoneme_id_to_group_id = inv.phoneme_id_to_group_id
 
-        # 'noise' is the last id in both spaces. p3cupe has no blank class and never makes it
-        # a target, so it exists only as the padding filler for ragged batches and as the slot
-        # the classifier keeps for downstream tooling that indexes by it.
-        self.phoneme_classes = len(self.phoneme_id_to_label) - 1
-        self.phoneme_groups = len(self.group_id_to_label) - 1
-        self.noise_class = self.phoneme_label_to_id['noise']
-        self.noise_group = self.group_label_to_id['noise']
-        self.silence_class = self.phoneme_label_to_id['SIL']
-        self.silence_group = self.group_label_to_id['SIL']
+        # Silence is the one class the decoder treats specially (it pads an optional one onto
+        # both ends and may skip any it meets), so it has to be the id the model was trained
+        # with: 0 in ph66, 1 in every std language group.
+        self.silence_class = inv.sil_id
+        self.silence_group = inv.sil_group
+        # Filler for ragged batches, never a target: ph66's unused 'noise' slot, std's
+        # '<blank>'. NOT 'noise' in std, where that is a real label the G2P can produce.
+        self.pad_class = inv.pad_id
+        self.pad_group = inv.pad_group
 
     def reset_counters(self):
         """Reset the alignment statistics counters. For debugging and reporting only."""
@@ -266,31 +335,66 @@ class PhonemeTimestampAligner:
         self.total_phonemes_missed = 0
         self.perfect_matches = 0
 
-    def load_model(self, preset="en-us", model_name=None, cupe_ckpt_path=None):
+    def load_model(self, preset="en-us", model_name=None, ckpt_path=None, cupe_ckpt_path=None):
         """
-        Load a p3cupe checkpoint and adopt its geometry and decoder settings.
+        Load a model and adopt its phoneme set, geometry and decoder settings.
 
-        Priority: `cupe_ckpt_path`, then `model_name`, then `preset`.
+        Priority: `ckpt_path` (or its older name `cupe_ckpt_path`), then `model_name`, then
+        `preset`. Whichever names the model, the preset still supplies the LANGUAGE as long as
+        none was given explicitly.
+
+        `model_name` is a published model ('mbfa-latin', 'CUPE-3-en', or a full Hub repository
+        id), downloaded on first use; `ckpt_path` is a release directory or a training
+        checkpoint file on disk.
+
+        The model has the last word on the phoneme set: a p3cupe one is ph66 and a p4mbfa one
+        is std, whatever the default is. Asking for one set by name and handing over a model
+        of the other raises.
         """
-        if cupe_ckpt_path is None and model_name is None:
-            model_name, lang = get_preset(preset=preset, lang=self.lang)
-            if self.lang != lang:
-                self.phonemizer.set_backend(language=lang)
-                self.lang = lang
-        if cupe_ckpt_path is None:
-            if model_name is None:
-                raise ValueError("Either cupe_ckpt_path or model_name must be provided.")
-            cupe_ckpt_path = self.download_model(model_name=model_name)
-        if not os.path.exists(cupe_ckpt_path):
-            raise ValueError("CUPE model checkpoint not found.", cupe_ckpt_path)
+        ckpt_path = ckpt_path or cupe_ckpt_path
+        want_set = self._requested_set
+        lang = self.lang
 
-        self.extractor = CupeExtractor(cupe_ckpt_path, device=self.device,
-                                       sample_rate=self.resampler_sample_rate,
-                                       verbose=self.warn_level)
-        if self.extractor.classes_dim != self.phoneme_classes + 1:
+        if ckpt_path is None and model_name is None:
+            phoneme_set = want_set or _presets.DEFAULT_PHONEME_SET
+            if phoneme_set == "std":
+                asked = preset if (preset and self._lang_is_default) else lang
+                model_name, lang, _group, note = _presets.get_std_preset(asked)
+                if note:
+                    self._warn(note)
+            else:
+                model_name, lang = _presets.get_preset(
+                    preset=preset, lang=_presets.DEFAULT_LANG if self._lang_is_default else lang)
+        elif preset and self._lang_is_default:
+            lang = preset
+
+        if ckpt_path is None:
+            # On disk first ($BFA_MODEL_DIR, ./models), then the model's Hub repository.
+            ckpt_path = hub.resolve_model(model_name)
+        elif not os.path.exists(ckpt_path):
+            raise FileNotFoundError(
+                f"ckpt_path {ckpt_path!r} does not exist. It takes a release directory "
+                f"(config.json + model.safetensors) or a training checkpoint file; a "
+                f"published model is named with model_name=, e.g. 'mbfa-latin'.")
+        shown = model_name if model_name and not os.path.exists(model_name) \
+            else os.path.basename(os.path.normpath(ckpt_path))
+
+        extractor = load_extractor(ckpt_path, device=self.device,
+                                   sample_rate=self.resampler_sample_rate,
+                                   verbose=self.warn_level)
+        phoneme_set = _presets.SET_OF_FAMILY[extractor.family]
+        if want_set is not None and want_set != phoneme_set:
             raise ValueError(
-                f"checkpoint emits {self.extractor.classes_dim} phoneme classes but the "
-                f"{self.selected_mapper} mapper has {self.phoneme_classes + 1}")
+                f"phoneme_set='{want_set}' was asked for, but {shown} is a "
+                f"{extractor.family} model, which decodes the '{phoneme_set}' set. Drop "
+                f"`phoneme_set` to use it as it is, or pass a "
+                f"{_presets.FAMILY_OF_SET[want_set]} model.")
+
+        self._set_phonemizer(phoneme_set, self._resolve_lang(phoneme_set, lang))
+        # Before the extractor is adopted: a checkpoint whose head does not emit this
+        # inventory would align without error and return nonsense.
+        extractor.check_inventory(self.inventory)
+        self.extractor = extractor
 
         # Geometry comes from the checkpoint, never from a constant here.
         self.sample_rate = self.extractor.sample_rate
@@ -301,6 +405,8 @@ class PhonemeTimestampAligner:
         self.frames_per_window = self.extractor.frames_per_window
         self._resolve_decoder()
 
+        self._info(f"BFA: {self.extractor.family} model {shown}, "
+                   f"phoneme set {self.inventory.name}, language {self.lang}")
         self._info(f"BFA geometry: window {self.window_size_ms:g} ms, stride "
                    f"{self.stride_ms:g} ms = {self.extractor.stride_frames} frames, frame "
                    f"stride {self.frame_stride_wav} samples ({self.ms_per_frame:g} ms/frame), "
@@ -333,43 +439,25 @@ class PhonemeTimestampAligner:
 
     def download_model(self, model_name=None, local_dir=None):
         """
-        Resolve a checkpoint filename to a path on disk.
+        Resolve a model name to a path on disk, downloading it if needed.
 
-        Looks through `MODEL_SEARCH_DIRS` first and only then asks HuggingFace, because the
-        p3cupe checkpoints are not published yet - a local `models/p3cupe/<name>` is currently
-        how `preset=` and `model_name=` resolve at all.
+        Looks on disk first (`hub.model_search_dirs`: $BFA_MODEL_DIR, then `./models`), then
+        fetches `config.json` + `model.safetensors` from the model's Hugging Face repository.
 
         Args:
-            model_name (str): checkpoint filename. Defaults to `presets.DEFAULT_MODEL`.
-            local_dir (str, optional): directory the HuggingFace download is placed in.
+            model_name (str): a published model ('mbfa-latin', 'CUPE-3-en', ...) or a full
+                repository id. Defaults to the current phoneme set's model for the current
+                language.
+            local_dir (str, optional): download into this directory instead of the
+                huggingface_hub cache.
         """
-        from .presets import DEFAULT_MODEL
-
+        phoneme_set = self.phoneme_set or self._requested_set or _presets.DEFAULT_PHONEME_SET
         if model_name is None:
-            model_name = DEFAULT_MODEL
-
-        for directory in MODEL_SEARCH_DIRS:
-            if not directory:
-                continue
-            candidate = os.path.join(directory, model_name)
-            if os.path.exists(candidate):
-                self._info(f"Using local checkpoint: {candidate}")
-                return candidate
-
-        try:
-            from huggingface_hub import hf_hub_download
-            model_path = hf_hub_download(repo_id=HF_REPO_ID,
-                                         filename=f"{HF_SUBFOLDER}/{model_name}",
-                                         local_dir=local_dir, local_files_only=False)
-            self._info(f"Model available at: {model_path}")
-            return model_path
-        except Exception as e:
-            searched = ", ".join(d for d in MODEL_SEARCH_DIRS if d)
-            raise FileNotFoundError(
-                f"could not obtain '{model_name}'. The p3cupe checkpoints are not published "
-                f"yet, so it has to be on disk: searched {searched} (set $BFA_MODEL_DIR to "
-                f"add one), and the HuggingFace fallback failed with: {e}. Pass "
-                f"cupe_ckpt_path=... to point at the file directly.") from e
+            model_name = (_presets.get_std_preset(self.lang)[0] if phoneme_set == "std"
+                          else _presets.DEFAULT_MODEL)
+        path = hub.resolve_model(model_name, local_dir=local_dir)
+        self._info(f"Model available at: {path}")
+        return path
 
     # ======================================================================================
     # Audio
@@ -437,9 +525,9 @@ class PhonemeTimestampAligner:
     # Model + decoder
     # ======================================================================================
 
-    def _cupe_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
+    def _model_prediction_batch(self, audio_batch, wav_lens, extract_embeddings=False):
         """
-        Run a batch of waveforms through p3cupe.
+        Run a batch of waveforms through the loaded model.
 
         Returns:
             (logits_class, logits_group, embeddings|None, spectral_lens, flux|None)
@@ -447,17 +535,17 @@ class PhonemeTimestampAligner:
         if audio_batch.dim() == 1:
             audio_batch = audio_batch.unsqueeze(0)
 
-        logits_class, logits_group, embeddings, flux = self.extractor.encode_clip(
+        out = self.extractor.encode_clip(
             audio_batch, return_embeddings=extract_embeddings,
             return_flux=bool(self.boundary_bonus_weight))
 
         spectral_lens = self.extractor.spectral_lengths(wav_lens)
-        spectral_lens = spectral_lens.clamp(max=logits_class.shape[1])
-        return logits_class, logits_group, embeddings, spectral_lens, flux
+        spectral_lens = spectral_lens.clamp(max=out['ph'].shape[1])
+        return out['ph'], out['group'], out['emb'], spectral_lens, out['flux']
 
     def _framestamps_from_alignment(self, aligned, n_targets):
         """
-        One clip's `p3cupe.align_batch` result -> `(phoneme_id, start_frame, end_frame,
+        One clip's `segmental.align_batch` result -> `(phoneme_id, start_frame, end_frame,
         target_idx)` tuples, one per target the path actually visited.
 
         Frames are FLOATS when `sub_frame_onsets` is on: the onset is the interpolated crossing
@@ -549,9 +637,11 @@ class PhonemeTimestampAligner:
         Args:
             wavs: audio tensor [B, samples].
             wav_lens: valid sample count per segment.
-            phoneme_sequences: list of ph66 id sequences (or a padded [B, S] tensor).
+            phoneme_sequences: list of phoneme id sequences in the loaded model's own label
+                space - ph66 ids, or a language group's local tokens (or a [B, S] tensor
+                padded with `self.pad_class`).
             start_offset_times: segment start time(s) in seconds, added to every timestamp.
-            group_sequences: matching pg16 sequences, or None to derive them.
+            group_sequences: matching phoneme-group sequences, or None to derive them.
             extract_embeddings: also return confidence-pooled embeddings per phoneme.
             do_groups: also emit group timestamps.
             debug: print per-segment detail.
@@ -566,12 +656,12 @@ class PhonemeTimestampAligner:
             "No model loaded. Use load_model() before aligning."
 
         if isinstance(phoneme_sequences, torch.Tensor):
-            ph_seq_lens = [(seq != self.noise_class).sum().item() for seq in phoneme_sequences]
+            ph_seq_lens = [(seq != self.pad_class).sum().item() for seq in phoneme_sequences]
         else:
             ph_seq_lens = [len(seq) for seq in phoneme_sequences]
             max_len = max(ph_seq_lens)
             phoneme_sequences = torch.tensor(
-                [list(seq) + [self.noise_class] * (max_len - len(seq))
+                [list(seq) + [self.pad_class] * (max_len - len(seq))
                  for seq in phoneme_sequences], dtype=torch.long)
 
         if group_sequences is None:
@@ -580,16 +670,16 @@ class PhonemeTimestampAligner:
             mapped = [self._map_phonemes_to_groups(seq) for seq in seq_iter]
             max_len = max((m.size(0) for m in mapped), default=0)
             group_sequences = torch.stack([
-                F.pad(m, (0, max_len - m.size(0)), value=self.noise_group) for m in mapped
+                F.pad(m, (0, max_len - m.size(0)), value=self.pad_group) for m in mapped
             ], dim=0) if mapped else torch.empty(0, dtype=torch.long)
         elif not isinstance(group_sequences, torch.Tensor):
             max_len = max(len(seq) for seq in group_sequences)
             group_sequences = torch.tensor(
-                [list(seq) + [self.noise_group] * (max_len - len(seq))
+                [list(seq) + [self.pad_group] * (max_len - len(seq))
                  for seq in group_sequences], dtype=torch.long)
 
         logits_class, logits_group, embeddings, spectral_lens, flux = \
-            self._cupe_prediction_batch(wavs, wav_lens, extract_embeddings)
+            self._model_prediction_batch(wavs, wav_lens, extract_embeddings)
 
         # The DP is a python loop over frames on tiny tensors, so it is launch-bound on a GPU:
         # measured 1.8 s on CPU against 5.0 s on CUDA for a 32 s clip, bit-identical. The
@@ -1103,11 +1193,11 @@ class PhonemeTimestampAligner:
     # ======================================================================================
 
     def _map_phonemes_to_groups(self, phoneme_sequence):
-        """Map ph66 phoneme indices to pg16 group indices."""
+        """Map phoneme ids to their phoneme-group ids, in the loaded inventory."""
         group_sequence = []
         for ph_idx in phoneme_sequence:
             ph_idx_val = ph_idx.item() if isinstance(ph_idx, torch.Tensor) else int(ph_idx)
-            group_sequence.append(self.phoneme_id_to_group_id.get(ph_idx_val, self.noise_group))
+            group_sequence.append(self.phoneme_id_to_group_id.get(ph_idx_val, self.pad_group))
         return torch.tensor(group_sequence, dtype=torch.long)
 
     def _align_words(self, phoneme_ts, word_num, words_list):
@@ -1143,7 +1233,7 @@ class PhonemeTimestampAligner:
                 "start_ms": phones[0]["start_ms"],
                 "end_ms": phones[-1]["end_ms"],
                 "confidence": sum(p["confidence"] for p in phones) / len(phones),
-                "ph66": [p["phoneme_id"] for p in phones],
+                self.phonemes_key: [p["phoneme_id"] for p in phones],
                 "ipa": [p["ipa_label"] for p in phones],
             })
         return words_ts
@@ -1156,14 +1246,30 @@ class PhonemeTimestampAligner:
         Returns:
             dict with keys:
                 - text: original sentence
-                - eipa: espeak phonemes in IPA (one-to-one with the mapped phonemes)
-                - mipa: mapped phonemes in IPA (after ph66 reduction)
-                - ph66: phoneme class indices
-                - pg16: phoneme group indices
+                - eipa: the G2P's phonemes in IPA (one-to-one with the mapped phonemes)
+                - mipa: the inventory label each one was mapped to
+                - `self.phonemes_key` ("local_ph" for std, "ph66" for ph66): phoneme ids
+                - `self.phoneme_groups_key` ("gold_phg" / "pg16"): phoneme group ids
                 - words: the words
                 - word_num: word index per phoneme
+            and, for the std set, `tone`, `stress` and `length` per phoneme.
         """
         return self.phonemizer.phonemize_sentence(text)
+
+    def _phonemize_segment(self, seg):
+        """
+        One input segment -> its phonemized dict.
+
+        Normally that is the segment's text through the phonemizer. A segment that already
+        carries `gold_ph` - a standard_g2p `.gs.json` segment - is used as it is in the std
+        set, so a corpus phonemized once is not phonemized again (and the G2P model is never
+        loaded for it). `gold_ph` is language-group independent, which is why it is the one
+        pre-phonemized form accepted here; a caller holding ids in the model's own label
+        space can hand them to `extract_timestamps_from_segment_batch` directly.
+        """
+        if self.phoneme_set == "std" and seg.get("gold_ph"):
+            return self.phonemizer.phonemize_gold(seg)
+        return self.phonemize_sentence(seg["text"])
 
     def post_process_segment(self, segment, ts, phoneme_sequence, phoneme_timestamps,
                              group_timestamps=None, debug=False):
@@ -1204,6 +1310,16 @@ class PhonemeTimestampAligner:
             for idx, (ph_idx, start_frame, end_frame, target_seq_idx, is_estimated,
                       avg_confidence, start_ms, end_ms) in enumerate(phoneme_timestamps)
         ]
+        # The std set's suprasegmental layers, one value per target phoneme. They come from
+        # the G2P, not from the audio: what the dictionary says, placed on the aligned phone.
+        for layer in ("tone", "stress", "length"):
+            values = ts.get(layer)
+            if values is None:
+                continue
+            ts_out_segment[layer] = values
+            for item in ts_out_segment["phoneme_ts"]:
+                ti = item["target_seq_idx"]
+                item[layer] = int(values[ti]) if 0 <= ti < len(values) else 0
 
         if debug:
             print(f"\nSegment: '{segment['text']}'")
@@ -1211,7 +1327,7 @@ class PhonemeTimestampAligner:
             for tsi, item in enumerate(ts_out_segment["phoneme_ts"]):
                 if tsi < 20 or tsi >= n - 20:
                     print(f"{tsi}  Phoneme ID: {item['phoneme_id']}, "
-                          f"ph66: {item['phoneme_label']}, IPA: {item['ipa_label']}, "
+                          f"label: {item['phoneme_label']}, IPA: {item['ipa_label']}, "
                           f"Start: {int(item['start_ms'])} ms, End: {int(item['end_ms'])} ms, "
                           f"Confidence: {item['confidence']:.3f}")
                 elif tsi == 20:
@@ -1237,6 +1353,14 @@ class PhonemeTimestampAligner:
             ts_out_segment["phoneme_ts"], ts.get("word_num", []), ts.get("words", []))
         return ts_out_segment
 
+    def _result_header(self):
+        """
+        An empty result: the segment list, plus what the ids in it mean. A `phoneme_id` is
+        only meaningful next to its inventory - 5 is one phoneme in ph66 and another in every
+        std language group - so every result says which one it was written in.
+        """
+        return {"phoneme_set": self.inventory.name, "lang": self.lang, "segments": []}
+
     def process_segments(self, srt_data, audio_wavs, extract_embeddings=False, do_groups=False,
                          batch_size=16, debug=False):
         """
@@ -1244,7 +1368,9 @@ class PhonemeTimestampAligner:
 
         Args:
             srt_data: list of dicts (one per clip), each with a "segments" key holding
-                `{"start", "end", "text"}` dicts. A single such dict is also accepted.
+                `{"start", "end", "text"}` dicts. A single such dict is also accepted. In the
+                std set a segment that also carries `gold_ph` (a standard_g2p `.gs.json`
+                segment) is aligned from those phonemes and its text is not re-phonemized.
             audio_wavs: list of waveform tensors, one per clip. A single (C, T) or batched
                 (B, C, T) tensor is also accepted.
             extract_embeddings: also return confidence-pooled embeddings.
@@ -1289,12 +1415,12 @@ class PhonemeTimestampAligner:
                 flat_items.append((bi, seg, clip_wav))
 
         if not flat_items:
-            empty = [{"segments": []} for _ in range(num_batch)]
+            empty = [self._result_header() for _ in range(num_batch)]
             if extract_embeddings:
                 return empty, [[] for _ in range(num_batch)], [[] for _ in range(num_batch)]
             return empty
 
-        ts_outs = [self.phonemize_sentence(seg["text"]) for _, seg, _ in flat_items]
+        ts_outs = [self._phonemize_segment(seg) for _, seg, _ in flat_items]
         phoneme_sequences = [ts[self.phonemes_key] for ts in ts_outs]
         group_sequences = ([ts[self.phoneme_groups_key] for ts in ts_outs] if do_groups
                            else [None] * len(flat_items))
@@ -1311,7 +1437,7 @@ class PhonemeTimestampAligner:
                 continue
             valid_indices.append(i)
 
-        batch_results = [{"segments": []} for _ in range(num_batch)]
+        batch_results = [self._result_header() for _ in range(num_batch)]
         batch_p_embds = [[] for _ in range(num_batch)]
         batch_g_embds = [[] for _ in range(num_batch)]
 

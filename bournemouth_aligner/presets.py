@@ -1,35 +1,78 @@
 """
-Language preset -> checkpoint mapping.
+Phoneme set + language -> model.
 
-The names below are the ONE place a checkpoint filename appears. `core.py` never special-cases
-a name, so renaming a checkpoint is an edit here and nowhere else.
+BFA runs one of two stacks, chosen by `phoneme_set`:
 
-## Status
+    "std"   (default)  standard_g2p phonemes  ->  a p4mbfa model, ONE PER LANGUAGE GROUP
+    "ph66"             espeak-ng + ph66       ->  the p3cupe model
 
-The p3cupe checkpoints are **not published yet**. Until they are,
-`core.PhonemeTimestampAligner.download_model` looks for the file on disk first (see
-`MODEL_SEARCH_DIRS` there) and only then asks HuggingFace, so a local
-`models/p3cupe/<name>` makes `preset=` work with no other setup.
+The pairing is fixed: a p4mbfa head emits one language group's token list and a p3cupe head
+emits ph66, so neither can decode the other's phoneme sequences. The names below are the ONE
+place a model name appears. `core.py` never special-cases a name, so renaming a model is an
+edit here and nowhere else.
 
-    P3CUPE_EN   English, LibriSpeech 360 h
-    P3CUPE_EU   MLS, 7 European languages, English EXCLUDED
-    P3CUPE_UNIVERSAL   not trained yet - see below
+Every name is a Hugging Face repository of the `Tabahi` account (`hub.resolve_model`
+downloads its config.json + model.safetensors on first use), published from the models
+repository by `p4mbfa/export_hf.py`; `p4mbfa/hf_release.yaml` there records which training
+run each one is and why it was chosen.
 
-`P3CUPE_EU` is the fallback for every non-English preset because it is the only multilingual
-p3cupe checkpoint that exists. That is a placeholder, not a recommendation: it covers 7
-European languages and nothing else, so a Hindi or Turkish preset currently resolves to a
-model that never saw the language. Expect a universal checkpoint to take that role.
+### std / p4mbfa
+
+A language belongs to exactly one language group (by script; `standard_g2p.lang_codes`), and a
+group with no entry in `P4MBFA_MODELS` cannot be aligned with the std set yet -
+`get_std_preset` raises and names `phoneme_set="ph66"` as the way through.
+
+    latin     mbfa-latin      FLEURS, 36 languages, trained at the most noise (0.05)
+    cyrillic  mbfa-cyrillic   FLEURS: be bg hr kk mk ru sr uk
+    cjk       mbfa-cjk        FLEURS: cmn yue
+    japanese  mbfa-japanese   FLEURS: ja
+
+`mbfa-latin-benchmark` is a second latin model, selectable by name only: the best TIMIT score
+of every latin run, trained at less noise (0.02). TIMIT is clean studio speech and favours it;
+`mbfa-latin` is the one meant for real recordings and so the one the presets use.
+
+### ph66 / p3cupe
+
+    CUPE-3-en   English, LibriSpeech 500 h - the best model on TIMIT of either family
+
+It is the only p3cupe model published, so EVERY ph66 preset resolves to it. espeak-ng will
+phonemize any language it knows into ph66, but the acoustic model has heard English only: a
+non-English ph66 preset is an English model reading another language's phonemes, and
+`get_preset` says so. A multilingual p3cupe checkpoint on disk still loads with `ckpt_path=`.
 """
 
-# --- p3cupe checkpoints ---------------------------------------------------------------------
-P3CUPE_EN = "m_pa07b_final_e5_libri360h.pt"
-P3CUPE_EU = "m_pa07a_final_e4_MLS_7h.pt"
+from .standard_g2p import lang_codes as _lc
 
-# TODO: a universal checkpoint (the MSWC-style coverage the preset table below promises) is not
-# trained yet. Point this at it and update `get_preset`'s fallback when it exists.
-P3CUPE_UNIVERSAL = None
+PHONEME_SETS = ("std", "ph66")
+DEFAULT_PHONEME_SET = "std"
+# The model family each phoneme set is decoded by, and back.
+FAMILY_OF_SET = {"std": "p4mbfa", "ph66": "p3cupe"}
+SET_OF_FAMILY = {family: name for name, family in FAMILY_OF_SET.items()}
 
+DEFAULT_LANG = "en-us"
+
+# --- p4mbfa models, by language group -------------------------------------------------------
+P4MBFA_MODELS = {
+    "latin": "mbfa-latin",
+    "cyrillic": "mbfa-cyrillic",
+    "cjk": "mbfa-cjk",
+    "japanese": "mbfa-japanese",
+    # TODO: vietnamese, other_alphabetic, abjad, brahmic and thai_khmer have training configs
+    # in bfa_models/p4mbfa but no model yet. `burmese` cannot be trained until standard_g2p
+    # gives it an inventory (it holds only the four special tokens).
+}
+# The latin model that scores best on TIMIT. Not a preset - pass it as `model_name`.
+MBFA_LATIN_BENCHMARK = "mbfa-latin-benchmark"
+
+# --- the p3cupe model -----------------------------------------------------------------------
+P3CUPE_EN = "CUPE-3-en"
+
+# The ph66 default. Kept under this name because it is what `--model` falls back to.
 DEFAULT_MODEL = P3CUPE_EN
+
+# Every published model, with the phoneme set it decodes.
+MODELS = {**{name: "std" for name in (*P4MBFA_MODELS.values(), MBFA_LATIN_BENCHMARK)},
+          P3CUPE_EN: "ph66"}
 
 # espeak-ng language codes the ph66 mapper covers. Tonal languages (cmn, yue, vi, th) and
 # distant families (ja, ko, Bantu) are out of scope for this mapper, not merely untrained.
@@ -54,26 +97,139 @@ SUPPORTED_LANGS = ENGLISH_LANGS | {
     "id", "ms", "eo", "ia", "io", "lfn",
 }
 
+# espeak-ng spellings BFA has always accepted that are not BCP 47 codes standard_g2p knows.
+# Everything else is resolved by `lang_codes.bcp47_to_tag`, which is case-insensitive, so
+# 'en-us', 'pt-br' and 'en-gb' need no entry here.
+_STD_LANG_ALIASES = {
+    "en-029": "en", "en-gb-x-rp": "en-GB", "en-gb-scotland": "en-GB",
+    "en-gb-x-gbclan": "en-GB", "en-gb-x-gbcwmd": "en-GB",
+    "fr-fr": "fr", "fr-be": "fr", "fr-ch": "fr", "ru-lv": "ru",
+    "hyw": "hy-west", "an": "arg", "zh-cn": "zh", "zh-tw": "zh-Hant", "sv-se": "sv",
+    "ga-ie": "ga",
+}
+
+
+class UnsupportedLanguageError(ValueError):
+    """The requested language cannot be aligned with the requested phoneme set."""
+
+
+def resolve_phoneme_set(phoneme_set=None, mapper=None):
+    """
+    The phoneme set to use, from `phoneme_set=` and its deprecated spelling `mapper=`.
+
+    `None` for both gives the default. Naming both is fine as long as they agree.
+    """
+    if mapper is not None:
+        if phoneme_set is not None and phoneme_set != mapper:
+            raise ValueError(f"phoneme_set={phoneme_set!r} and mapper={mapper!r} disagree; "
+                             f"`mapper` is the deprecated name of `phoneme_set`, pass one")
+        phoneme_set = mapper
+    if phoneme_set is None:
+        phoneme_set = DEFAULT_PHONEME_SET
+    if phoneme_set not in PHONEME_SETS:
+        raise ValueError(f"unknown phoneme_set {phoneme_set!r}; expected one of {PHONEME_SETS}")
+    return phoneme_set
+
+
+def effective_lang(preset, lang):
+    """
+    The language a `(preset, lang)` pair means.
+
+    `lang` is only overridden while it is still the default, so an explicit `lang=` always wins
+    over the preset's language.
+    """
+    if preset and (not lang or lang == DEFAULT_LANG):
+        return preset
+    return lang or DEFAULT_LANG
+
+
+def normalize_std_lang(lang):
+    """
+    Any language code BFA accepts -> `(canonical BCP 47 code, note)` for the std phoneme set.
+
+    Accepts BCP 47 in any case ('en-us', 'pt-br', 'zh-Hant'), ISO 639-3 ('cmn', 'deu'), and
+    the espeak-ng spellings older BFA code passes ('fr-be', 'hyw'). `note` is None, or a
+    sentence saying a regional variant was replaced by the nearest one the G2P has.
+
+    Raises:
+        UnsupportedLanguageError: the G2P was not trained on this language.
+    """
+    asked = (lang or "").strip()
+    code, note = _STD_LANG_ALIASES.get(asked.lower(), asked), None
+    try:
+        tag = _lc.bcp47_to_tag(code)
+    except _lc.UnsupportedLanguageError:
+        base = code.split("-", 1)[0]
+        try:
+            tag = _lc.bcp47_to_tag(base) if base != code else None
+        except _lc.UnsupportedLanguageError:
+            tag = None
+        if tag is None:
+            raise UnsupportedLanguageError(
+                f"'{asked}' is not covered by the 'std' phoneme set: the G2P model was not "
+                f"trained on it. Use phoneme_set='ph66' (espeak-ng + p3cupe) for this "
+                f"language.") from None
+        note = (f"'{asked}' has no variant of its own in the std phoneme set; using "
+                f"'{_lc.tag_to_bcp47(tag)}'")
+    return _lc.tag_to_bcp47(tag), note
+
+
+def std_lang_group(lang):
+    """Canonical std language code -> its language group ('latin', 'cjk', ...)."""
+    return _lc.lang_group(lang)
+
+
+def get_std_preset(lang):
+    """
+    Resolve a language to `(model_name, canonical_lang, lang_group, note)` for the std set.
+
+    Raises:
+        UnsupportedLanguageError: the language is outside standard_g2p, is on its exclusion
+            list, or its language group has no p4mbfa model yet.
+    """
+    code, note = normalize_std_lang(lang)
+    group = std_lang_group(code)
+    if _lc.is_excluded(code):
+        raise UnsupportedLanguageError(
+            f"'{lang}' is excluded from the 'std' phoneme set for now "
+            f"({_lc.EXCLUDED_ISO[_lc.normalize_iso(code)]}). Use phoneme_set='ph66' if "
+            f"espeak-ng covers it.")
+    model_name = P4MBFA_MODELS.get(group)
+    if model_name is None:
+        raise UnsupportedLanguageError(
+            f"'{lang}' belongs to the '{group}' language group, which has no p4mbfa "
+            f"model yet (available: {', '.join(sorted(P4MBFA_MODELS))}). Pass "
+            f"ckpt_path=... if you have one, or use phoneme_set='ph66' (espeak-ng + p3cupe).")
+    return model_name, code, group, note
+
+
+def std_languages():
+    """`{lang_group: [BCP 47 codes]}` for the groups that have a model."""
+    out = {}
+    for group in P4MBFA_MODELS:
+        tags = [t for t, iso in _lc.TAG_TO_ISO.items()
+                if _lc.ISO_TO_LANG_GROUP.get(iso) == group and iso not in _lc.EXCLUDED_ISO]
+        out[group] = sorted({_lc.tag_to_bcp47(t) for t in tags})
+    return out
+
 
 def get_preset(preset="en-us", lang='en-us'):
     """
-    Resolve a language preset to `(model_name, lang)`.
+    Resolve a ph66 language preset to `(model_name, lang)`.
 
     `lang` is only overridden when it is still the default, so an explicit `lang=` always wins
-    over the preset's language.
+    over the preset's language. The model is always `P3CUPE_EN`, the one p3cupe model
+    published; for any other language than English this warns that it was not trained on it.
     """
     if preset and lang == 'en-us':
         lang = preset
 
-    if preset in ENGLISH_LANGS or not preset:
-        return P3CUPE_EN, lang
-
-    if preset not in SUPPORTED_LANGS:
-        print(f"Warning: '{preset}' is not in the ph66 mapper's supported language list. "
-              f"Phonemization will still run through espeak-ng, but expect degraded "
-              f"alignment - tonal languages and distant families are not covered.")
-
-    # Everything non-English falls back to the only multilingual checkpoint there is. It was
-    # trained on 7 European languages, so for anything further afield this is a placeholder
-    # until a universal checkpoint exists.
-    return P3CUPE_UNIVERSAL or P3CUPE_EU, lang
+    if preset and preset not in ENGLISH_LANGS:
+        if preset not in SUPPORTED_LANGS:
+            print(f"Warning: '{preset}' is not in the ph66 mapper's supported language list. "
+                  f"Phonemization will still run through espeak-ng, but expect degraded "
+                  f"alignment - tonal languages and distant families are not covered.")
+        print(f"Warning: the ph66 model ({P3CUPE_EN}) was trained on English only; '{preset}' "
+              f"is aligned by its phonemes' nearest English sounds. The default phoneme set "
+              f"(phoneme_set='std') has models trained on other languages.")
+    return P3CUPE_EN, lang

@@ -66,26 +66,45 @@ DATASET_AUDIO_ROOTS = {
 }
 
 # ---- the acoustic model -------------------------------------------------------------
-# ONE entry per selectable model. Each is either a SHIPPED name (downloaded by BFA) or a LOCAL
-# checkpoint path - never both, because `PhonemeTimestampAligner.load_model` gives
-# `cupe_ckpt_path` priority over `model_name` and silently ignores the other.
+# ONE entry per selectable model. Each is either a PUBLISHED name (`model_name`, downloaded by
+# BFA from its Hugging Face repository on first use) or a LOCAL path (`ckpt_path`: a release
+# directory or a training checkpoint file) - never both, because
+# `PhonemeTimestampAligner.load_model` gives `ckpt_path` priority over `model_name` and
+# silently ignores the other. `cupe_ckpt_path` is the older spelling of `ckpt_path` and is
+# still read.
+#
+# The PHONEME SET is not declared here: the model decides it (p3cupe is ph66, p4mbfa is std),
+# and `checkpoint_identity` reads it back for the manifest so every scored row says which set
+# it was aligned in. Both families are scored against the same ground-truth boundaries, so
+# their rows are directly comparable.
 #
 models_dir = os.path.join(REPO_ROOT, "models", "p3cupe")
 bfa_tmp_models = "/mnt/intelpa-2/rehman/codes/bfa_models"
-# BFA >= 2.0 only loads p3cupe checkpoints. None are published yet, so every entry is local.
 MODELS = {
+    # ---- the published models (bfa_models/p4mbfa/hf_release.yaml says which run each is).
+    # TIMIT and Buckeye are English, so of the p4mbfa models only the 'latin' ones can be
+    # scored on them.
+    "mbfa-latin":           {"model_name": "mbfa-latin"},            # std default: ma04a e6
+    "mbfa-latin-benchmark": {"model_name": "mbfa-latin-benchmark"},  # best latin on TIMIT: ma02a e8
+    "CUPE-3-en":            {"model_name": "CUPE-3-en"},             # ph66: pa07f e0, English
+
+    # ---- local p4mbfa training checkpoints (std phoneme set)
+    "ma02a_e30":   {"ckpt_path": f"{bfa_tmp_models}/tmp/training/p4mbfa/ma02a/m_ma02a_final_e30.pt"},
+
+    # ---- local p3cupe training checkpoints (ph66 phoneme set)
     # MLS, 7 European languages, English EXCLUDED. Its English scores say something about the
     # training data, not about the architecture - do not read them as a p3cupe result.
     "pa07a_e4": {"cupe_ckpt_path": f"{models_dir}/m_pa07a_final_e4_MLS_7h.pt"},
-    # English, LibriSpeech 360 h. The one to compare English numbers against.
+    # English, LibriSpeech 360 h.
     "pa07b_e5": {"cupe_ckpt_path": f"{models_dir}/m_pa07b_final_e5_libri360h.pt"},
 
     "pa07c_e10": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07c/m_pa07c_final_e10.pt"},
-    "pa07d_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07d/m_pa07d_final_e1.pt"},
     "pa07e_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07e/m_pa07e_final_e1.pt"},
-    "pa08b_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa08b/m_pa08b_final_e1.pt"},
+    "pa07f_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07f/m_pa07f_final_e1.pt"},
+    "pa08b_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07f/m_pa07f_final_e1.pt"},
     "pa08c_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa08c/m_pa08c_final_e1.pt"},
     "pa09a_e3": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa09a/m_pa09a_final_e3.pt"},
+    "pa09b_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa09b/m_pa09b_final_e1.pt"},
 
 }
 
@@ -110,21 +129,23 @@ BFA_FIXED = dict(
 # trained at bonus 30, the grid [None, 30.0] is two runs of the same configuration under two
 # different labels.
 EXPERIMENT_GRID = dict(
-    dataset=["buckeye"],                  # "timit" | "buckeye"
+    dataset=["timit", "buckeye"],         # "timit" | "buckeye"
     # -1 = every clip. Buckeye clips are WHOLE INTERVIEWS - ~7 minutes each, 40 segments - so
     # a handful of them is already a few thousand boundaries; TIMIT clips are ~2.5 s, so it
     # takes ~100 of those to say anything.
-    subset=[10],
-    model=["pa09a_e3"],                    # keys of MODELS
-    boundary_bonus_weight=[0.00],    # None = the checkpoint's trained value
-    min_phone_frames=[6,4,2],              # in 5 ms frames; None = the checkpoint's value
-    soft_phone_frames=[10],             # None = the checkpoint's value
+    subset=[-1],
+    model=["mbfa-latin", "mbfa-latin-benchmark", "CUPE-3-en"],     # keys of MODELS
+    boundary_bonus_weight=[0.00, None],    # None = the checkpoint's trained value
+    min_phone_frames=[None],              # in 5 ms frames; None = the checkpoint's value
+    soft_phone_frames=[None],             # None = the checkpoint's value
     sub_frame_onsets=[False,],              # False = onsets on the 5 ms frame grid
 )
 
 # First `.bfN.json` suffix to allocate. Each experiment takes the next N. A manifest already
 # existing for that N with a DIFFERENT config is a hard error rather than a silent overwrite.
-VS_COUNTER_START = 4
+# bf1 - bf36 hold the September p3cupe decoder sweeps (Buckeye, 10 clips); the published-model
+# suite starts after them so those stay on disk.
+VS_COUNTER_START = 37
 
 DURATION_MAX_SEGMENTS = 30
 REDO = True                 # re-align even when the vs file already exists
@@ -205,55 +226,101 @@ def resolve_model(model_key):
     """
     Turn a MODELS key into the exact `PhonemeTimestampAligner` kwargs, and a label.
 
-    Returns `(kwargs, label)` where kwargs has exactly ONE of `model_name` / `cupe_ckpt_path`,
+    Returns `(kwargs, label)` where kwargs has exactly ONE of `model_name` / `ckpt_path` set,
     so the constructor's priority rule can never make the other one a lie.
     """
     if model_key not in MODELS:
         raise KeyError(f"unknown model {model_key!r}; MODELS has {sorted(MODELS)}")
     entry = dict(MODELS[model_key])
-    if ('model_name' in entry) == ('cupe_ckpt_path' in entry):
+    if 'cupe_ckpt_path' in entry:                      # the older spelling
+        if 'ckpt_path' in entry:
+            raise ValueError(f"MODELS[{model_key!r}] sets both ckpt_path and cupe_ckpt_path")
+        entry['ckpt_path'] = entry.pop('cupe_ckpt_path')
+    if ('model_name' in entry) == ('ckpt_path' in entry):
         raise ValueError(f"MODELS[{model_key!r}] must set exactly one of model_name / "
-                         f"cupe_ckpt_path, got {sorted(entry)}")
-    if 'cupe_ckpt_path' in entry and not os.path.exists(entry['cupe_ckpt_path']):
+                         f"ckpt_path, got {sorted(entry)}")
+    if 'ckpt_path' in entry and not os.path.exists(entry['ckpt_path']):
         raise FileNotFoundError(f"MODELS[{model_key!r}] checkpoint not found: "
-                                f"{entry['cupe_ckpt_path']}")
+                                f"{entry['ckpt_path']}")
     # BFA wants both kwargs present; the unused one must be explicitly None.
-    kwargs = {"model_name": entry.get("model_name"),
-              "cupe_ckpt_path": entry.get("cupe_ckpt_path")}
+    kwargs = {"model_name": entry.get("model_name"), "ckpt_path": entry.get("ckpt_path")}
     return kwargs, model_key
 
 
 _CKPT_DEFAULTS_CACHE = {}
+_CKPT_IDENTITY_CACHE = {}
 
 
 def checkpoint_decoder_defaults(model_key):
     """
-    The decoder settings the checkpoint was TRAINED with - i.e. what a `None` on any of
-    `DECODER_AXES` actually resolves to.
+    The decoder settings the model is published or was trained with - i.e. what a `None` on
+    any of `DECODER_AXES` actually resolves to.
 
-    Read straight from the checkpoint's `hyper_parameters` rather than by constructing an
-    aligner, so validation stays cheap enough to run before the sweep starts. Returns `{}` for
-    a shipped `model_name` that is not on disk yet; duplicate detection then just cannot check
-    that axis, which it says out loud.
+    Read straight from the model's own record (a release's config.json, a training
+    checkpoint's `hyper_parameters`) rather than by constructing an aligner, so validation
+    stays cheap enough to run before the sweep starts. A published model is downloaded here if
+    it is not on disk yet.
     """
-    if model_key in _CKPT_DEFAULTS_CACHE:
-        return _CKPT_DEFAULTS_CACHE[model_key]
+    if model_key not in _CKPT_DEFAULTS_CACHE:
+        _read_checkpoint(model_key)
+    return _CKPT_DEFAULTS_CACHE[model_key]
 
-    path = MODELS[model_key].get("cupe_ckpt_path")
-    defaults = {}
-    if path and os.path.exists(path):
+
+def checkpoint_identity(model_key):
+    """
+    Which model family and phoneme set a MODELS entry is, read off the model: `family`,
+    `phoneme_set` ('ph66', or 'std/<lang_group>'), `lang_group`, for a released p4mbfa model
+    the `gold_fingerprint` of the token list it was trained on, and for any released model
+    the training run it is (`source_experiment`, `source_checkpoint`).
+    """
+    if model_key not in _CKPT_IDENTITY_CACHE:
+        _read_checkpoint(model_key)
+    return _CKPT_IDENTITY_CACHE[model_key]
+
+
+def model_path(model_key):
+    """Where a MODELS entry is on disk; a published `model_name` is downloaded if needed."""
+    kwargs = resolve_model(model_key)[0]
+    if kwargs["ckpt_path"]:
+        return kwargs["ckpt_path"]
+    from bournemouth_aligner import hub
+    return hub.resolve_model(kwargs["model_name"])
+
+
+def _read_checkpoint(model_key):
+    """One read of the model for both `checkpoint_decoder_defaults` and `_identity`."""
+    path = model_path(model_key)
+    release = {}
+    if os.path.isdir(path):                  # a release: everything is in config.json
+        with open(os.path.join(path, "config.json"), encoding="utf-8") as f:
+            release = json.load(f)
+        hp, config = release["decoder"], release["model_config"]
+        fingerprint = release.get("labels", {}).get("gold_fingerprint")
+    else:                                    # a training checkpoint
         ckpt = torch.load(path, map_location='cpu', weights_only=False)
         hp = ckpt.get('hyper_parameters', {}) or {}
         if hasattr(hp, '__dict__') and not isinstance(hp, dict):
             hp = vars(hp)
-        defaults = {
-            "boundary_bonus_weight": float(hp.get("boundary_bonus_weight", 0.0)),
-            "min_phone_frames": int(hp.get("min_phone_frames", 6)),
-            "soft_phone_frames": int(hp.get("soft_phone_frames", 4)),
-        }
+        config = ckpt.get('model_config', {}) or {}
+        fingerprint = None
         del ckpt
+    defaults = {
+        "boundary_bonus_weight": float(hp.get("boundary_bonus_weight", 0.0)),
+        "min_phone_frames": int(hp.get("min_phone_frames", 6)),
+        "soft_phone_frames": int(hp.get("soft_phone_frames", 4)),
+    }
+    if 'n_tokens' in config:
+        group = config.get('lang_group')
+        identity = {"family": "p4mbfa", "phoneme_set": f"std/{group}", "lang_group": group,
+                    "gold_fingerprint": fingerprint}
+    else:
+        identity = {"family": "p3cupe", "phoneme_set": "ph66", "lang_group": None,
+                    "gold_fingerprint": None}
+    training = release.get("training", {})
+    identity["source_experiment"] = training.get("experiment")
+    identity["source_checkpoint"] = training.get("source_checkpoint")
     _CKPT_DEFAULTS_CACHE[model_key] = defaults
-    return defaults
+    _CKPT_IDENTITY_CACHE[model_key] = identity
 
 
 def effective_decoder_config(exp):
@@ -316,9 +383,6 @@ def _check_for_duplicates(experiments):
                 f"(`None` means the checkpoint's trained value - see checkpoint_decoder_defaults.)")
         seen[key] = exp
 
-    if not checkpoint_decoder_defaults(experiments[0]["model"]):
-        print("[note] the checkpoint's trained decoder settings could not be read, so `None` "
-              "axes were not checked for duplicates.")
     return experiments
 
 
@@ -384,6 +448,9 @@ def write_manifest(exp, extra=None):
         # historical row.
         "decoder_effective": effective_decoder_config(exp),
         "model": model_kwargs,
+        # Family, phoneme set and language group, from the checkpoint itself. The scorer needs
+        # the phoneme set to know which id is silence and which groups the phonemes fall in.
+        **checkpoint_identity(exp["model"]),
         "bfa_fixed": BFA_FIXED,
         "duration_max_segments": DURATION_MAX_SEGMENTS,
         "coverage_min": COVERAGE_MIN,
@@ -478,10 +545,12 @@ def build_aligner(exp, log_file=None):
 
     model_kwargs, label = resolve_model(exp["model"])
     eff = effective_decoder_config(exp)
-    source = (f"ckpt {os.path.basename(model_kwargs['cupe_ckpt_path'])}"
-              if model_kwargs['cupe_ckpt_path'] else f"shipped {model_kwargs['model_name']}")
+    source = (f"ckpt {os.path.basename(model_kwargs['ckpt_path'])}"
+              if model_kwargs['ckpt_path'] else f"published {model_kwargs['model_name']}")
+    identity = checkpoint_identity(exp["model"])
     log_message(
-        f"[{timestamp_now()}] BFA aligner: model={label} ({source}), "
+        f"[{timestamp_now()}] BFA aligner: model={label} ({source}, "
+        f"{identity.get('family', '?')} / {identity.get('phoneme_set', '?')}), "
         + ", ".join(f"{axis}={_fmt(exp[axis], eff[axis])}" for axis in DECODER_AXES)
         + f", vs_ext={exp['vs_ext']}   (* = the checkpoint's trained value)",
         log_file,
@@ -732,9 +801,10 @@ def analyze_phoneme_vocab_mappings(paths_list, log_file=None):
     '''
     from bournemouth_aligner import PhonemeTimestampAligner
 
-    # phonemizer only - no model needed
-    bfa = PhonemeTimestampAligner(preset=None, model_name=None, cupe_ckpt_path=None,
-                                  lang="en-us")
+    # phonemizer only - no model needed. This analysis is about espeak's vocabulary and how
+    # ph66 reduces it, so it is pinned to that set whatever the default is.
+    bfa = PhonemeTimestampAligner(preset=None, model_name=None, ckpt_path=None,
+                                  lang="en-us", phoneme_set="ph66")
     P = bfa.phonemizer
     lang = 'en'
     P.set_backend(lang)

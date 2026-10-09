@@ -107,6 +107,8 @@ class TestCLIFlags:
         assert "AUDIO_PATH" in r.stdout
         assert "TEXT_OR_SRT" in r.stdout
         assert "--preset" in r.stdout
+        assert "--phoneme-set" in r.stdout
+        assert "--ckpt-path" in r.stdout
         assert "--mel-path" in r.stdout
         assert "--textgrid" in r.stdout
 
@@ -121,6 +123,9 @@ class TestCLIFlags:
         # Should mention a few well-known presets
         for code in ("en-us", "de", "fr", "hi", "ar"):
             assert code in r.stdout
+        # both tables, and the std one by language group
+        for word in ("--phoneme-set=std", "--phoneme-set=ph66", "latin", "cyrillic", "zh-Hant"):
+            assert word in r.stdout
 
     def test_missing_args(self):
         r = _run()
@@ -142,9 +147,14 @@ class TestPresetResolution:
     def _import(self):
         from bournemouth_aligner.cli import _resolve_model_lang
         from bournemouth_aligner import presets
-        self.resolve = _resolve_model_lang
         self.presets = presets
         self.default_model = presets.DEFAULT_MODEL
+        # The ph66 tests below pin the ph66 table, so they name the set; the std ones use
+        # `self.resolve_std`, which is what the CLI does when no --phoneme-set is given.
+        self.resolve = lambda preset, model, lang: _resolve_model_lang(preset, model, lang, "ph66")
+        self.resolve_std = _resolve_model_lang
+
+    # -- ph66 --------------------------------------------------------------------------------
 
     def test_en_us_preset(self):
         model, lang = self.resolve("en-us", None, None)
@@ -152,18 +162,17 @@ class TestPresetResolution:
         assert lang == "en-us"
 
     def test_de_preset(self):
-        # Non-English falls back to the multilingual checkpoint, and the preset carries the
-        # espeak language through either way.
+        # One p3cupe model is published (English), so every ph66 preset resolves to it; the
+        # preset still carries the espeak language through.
         model, lang = self.resolve("de", None, None)
-        assert model == (self.presets.P3CUPE_UNIVERSAL or self.presets.P3CUPE_EU)
+        assert model == self.presets.P3CUPE_EN
         assert lang == "de"
 
-    def test_hi_preset(self):
-        # Hindi is in the supported list but no checkpoint has seen it yet, so it resolves to
-        # the same placeholder. This test pins the FALLBACK, not a recommendation.
-        model, lang = self.resolve("hi", None, None)
-        assert model == (self.presets.P3CUPE_UNIVERSAL or self.presets.P3CUPE_EU)
-        assert lang == "hi"
+    def test_non_english_preset_warns_about_the_english_model(self, capsys):
+        self.resolve("hi", None, None)
+        assert "trained on English only" in capsys.readouterr().out
+        self.resolve("en-gb", None, None)
+        assert "trained on English only" not in capsys.readouterr().out
 
     def test_model_override(self):
         """--model should always win over --preset."""
@@ -192,6 +201,34 @@ class TestPresetResolution:
             model, lang = self.resolve(code, None, None)
             assert model == self.presets.P3CUPE_EN, code
             assert lang == code
+
+    # -- std (the default set) ---------------------------------------------------------------
+
+    def test_std_default_is_the_latin_model(self):
+        model, lang = self.resolve_std(None, None, None)
+        assert model == self.presets.P4MBFA_MODELS["latin"]
+        assert lang == "en"                       # 'en-us' in standard_g2p's own spelling
+
+    def test_std_language_picks_the_language_group(self):
+        for preset, group in (("de", "latin"), ("ru", "cyrillic"), ("zh", "cjk"),
+                              ("ja", "japanese")):
+            model, lang = self.resolve_std(preset, None, None)
+            assert model == self.presets.P4MBFA_MODELS[group], preset
+            assert lang == preset
+
+    def test_std_lang_overrides_the_preset_language_and_its_group(self):
+        model, lang = self.resolve_std("en-us", None, "ru")
+        assert lang == "ru"
+        assert model == self.presets.P4MBFA_MODELS["cyrillic"]
+
+    def test_std_unservable_language_raises(self):
+        with pytest.raises(self.presets.UnsupportedLanguageError, match="ph66"):
+            self.resolve_std("bn", None, None)
+
+    def test_model_without_a_set_leaves_the_language_as_typed(self):
+        """The checkpoint decides the set when it loads, so nothing is normalised up front."""
+        model, lang = self.resolve_std("en-us", "my_custom.ckpt", None)
+        assert (model, lang) == ("my_custom.ckpt", "en-us")
 
 
 # ---------------------------------------------------------------------------

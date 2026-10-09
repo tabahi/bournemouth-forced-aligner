@@ -1,5 +1,5 @@
 '''
-Windowing and stitching for p3cupe.
+Windowing and stitching, shared by p3cupe and p4mbfa (the trunk and its geometry are the same).
 
 The model is deliberately context-free: it never sees more than `window_size_ms` of audio at
 once. A clip is sliced into overlapping windows, every window is encoded independently, and the

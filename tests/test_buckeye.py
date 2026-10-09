@@ -17,6 +17,7 @@ from.
 
 Usage:
     python tests/test_buckeye.py --n 40 --seed 0
+    python tests/test_buckeye.py --n 40 --seed 0 --phoneme-set ph66
     python tests/test_buckeye.py --n 40 --min-dur 8 --cfg '{"boundary_bonus_weight": 30}'
     python tests/test_buckeye.py --clip tmp/buckeye_samples/s0103a    # every segment of a clip
     python tests/test_buckeye.py --n 40 --corrupt extra_ends --cfg '{"min_phone_frames": 4}'
@@ -44,8 +45,6 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 PATHS_LIST = "/mnt/intelpa-2/rehman/codes/speech_data_manager/paths_cache/paths_list_buckeye_all.json"
-LOCAL_CKPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'p3cupe',
-                          'm_pa07b_final_e5_libri360h.pt')
 TOLERANCES = (10, 25, 50)
 MAX_DIST = 100.0
 NON_SPEECH_LABELS = {
@@ -98,12 +97,17 @@ def r_value(hit_rate, over_seg):
     return 1.0 - (abs(r1) + abs(r2)) / 2.0
 
 
-def pred_onsets(seg_out, seg_start_ms, index_to_plabel):
+def pred_onsets(seg_out, seg_start_ms, silence_id, std=False):
+    """
+    Onsets of the speech phonemes. Silence is the aligner's own silence id - 0 in ph66, 1 in
+    std, where 0 is `<blank>`. In ph66 the label is checked too, which also drops its 'noise';
+    in std 'noise' and '<unk>' are real phones and stay, as in the training-side probe.
+    """
     onsets = set()
     for p in seg_out.get("phoneme_ts", []):
-        if p.get("phoneme_id") == 0:
+        if p.get("phoneme_id") == silence_id:
             continue
-        if str(p.get("phoneme_label", "")).strip().lower() in NON_SPEECH_LABELS:
+        if not std and str(p.get("phoneme_label", "")).strip().lower() in NON_SPEECH_LABELS:
             continue
         onsets.add(int(round(float(p["start_ms"]) - seg_start_ms)))
     return sorted(onsets)
@@ -223,10 +227,11 @@ def run(args):
     from bournemouth_aligner import PhonemeTimestampAligner
 
     cfg = dict(preset="en-us", duration_max=30, device="cuda" if torch.cuda.is_available() else "cpu")
-    if os.path.exists(LOCAL_CKPT):
-        # The p3cupe checkpoints are not on the hub yet; use the local copy.
-        cfg["cupe_ckpt_path"] = LOCAL_CKPT
     cfg.update(json.loads(args.cfg))
+    # The phoneme set picks the published model (mbfa-latin / CUPE-3-en) unless --cfg names
+    # one itself, in which case the model decides the set.
+    if not any(k in cfg for k in ("model_name", "ckpt_path", "cupe_ckpt_path")):
+        cfg["phoneme_set"] = args.phoneme_set
     aligner = PhonemeTimestampAligner(**cfg)
     aligner.warn_level = 0
 
@@ -256,7 +261,8 @@ def run(args):
             dur_ms = (s["end"] - s["start"]) * 1000
             known = sorted({int(round(b)) for b in s["boundaries"]})
             o = out_by_start.get(st)
-            pred = pred_onsets(o, st, aligner.phonemizer.index_to_plabel) if o else []
+            pred = (pred_onsets(o, st, aligner.silence_class, std=aligner.phoneme_set == "std")
+                    if o else [])
             f1 = scorer.add(known, pred, dur_ms, tag=f"{os.path.basename(audio_path)}@{s['start']:.2f}")
             n_segs += 1
             if args.verbose:
@@ -264,7 +270,8 @@ def run(args):
                       f"known={len(known):3d} pred={len(pred):3d} f1@25={100*f1:5.1f}")
     elapsed = time.time() - t0
     summ = scorer.summary()
-    summ.update(segments=n_segs, seconds=round(elapsed, 1), cfg=cfg)
+    summ.update(segments=n_segs, seconds=round(elapsed, 1), phoneme_set=aligner.inventory.name,
+                cfg=cfg)
     print(json.dumps(summ))
     if args.worst:
         for tag, dur, nk, f1 in sorted(scorer.per_segment, key=lambda r: r[3])[:args.worst]:
@@ -281,6 +288,9 @@ if __name__ == "__main__":
     ap.add_argument("--paths", default=PATHS_LIST, help="paths list JSON (e.g. a TIMIT one; "
                     "boundaries then come from each clip's .PHN when the SRT has none)")
     ap.add_argument("--clip", default=None, help="path prefix, e.g. tmp/buckeye_samples/s0103a")
+    ap.add_argument("--phoneme-set", choices=["std", "ph66"], default="std",
+                    help="std = standard_g2p + the latin p4mbfa checkpoint, ph66 = espeak-ng + "
+                         "p3cupe. Both are scored against the same boundaries.")
     ap.add_argument("--cfg", default="{}", help="JSON kwargs for PhonemeTimestampAligner")
     ap.add_argument("--corrupt", choices=["extra_ends", "missing"], default=None,
                     help="make the transcript unreliable; scoring still uses the true boundaries")

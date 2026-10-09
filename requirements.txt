@@ -2,7 +2,9 @@ torch>=1.9.0
 torchaudio>=0.9.0
 huggingface_hub>=0.8.0
 numpy>=1.19.0
-phonemizer>=3.3.0
+transformers>=4.30.0
+safetensors>=0.3.0
+# phonemizer>=3.3.0   # only for phoneme_set="ph66" (also needs the espeak-ng system package)
 librosa>=0.8.0
 torchcodec>=0.9.1
 matplotlib>=3.10.0

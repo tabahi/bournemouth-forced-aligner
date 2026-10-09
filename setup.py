@@ -23,7 +23,8 @@ setup(
         "huggingface_hub>=0.8.0",
         "numpy>=1.19.0",
         "click>=8.0.0",
-        "phonemizer>=3.3.0",
+        "transformers>=4.30.0",
+        "safetensors>=0.3.0",
         "librosa>=0.8.0"
     ],
     
@@ -52,6 +53,12 @@ setup(
             "soundfile>=0.10.0",
             "pydub>=0.25.0",
         ],
+        # The ph66 phoneme set (espeak-ng + p3cupe). Also needs the espeak-ng system package.
+        "ph66": ["phonemizer>=3.3.0"],
+        # Word segmenters for the std phoneme set's unspaced scripts.
+        "th": ["pythainlp"],
+        "ja": ["fugashi", "unidic-lite"],
+        "yue": ["pycantonese"],
     },
     
     # CLI entry point
@@ -72,7 +79,7 @@ setup(
         "Documentation": "https://github.com/tabahi/bournemouth-forced-aligner#readme",
         "Bug Tracker": "https://github.com/tabahi/bournemouth-forced-aligner/issues",
         "Source Code": "https://github.com/tabahi/bournemouth-forced-aligner",
-        "CUPE Models": "https://huggingface.co/Tabahi/CUPE-2i",
+        "Models": "https://huggingface.co/Tabahi",
     },
     
     # Package classification
@@ -104,6 +111,9 @@ setup(
     # Package data
     package_data={
         "bournemouth_aligner": ["py.typed", "*.txt", "*.md"],
+        # The vendored G2P tables: language-group token lists and the Mandarin dictionary keys.
+        "bournemouth_aligner.standard_g2p": ["LICENSE", "VENDORED.md", "mappings/*.json",
+                                             "dicts/*.tsv"],
     },
     include_package_data=True,
     

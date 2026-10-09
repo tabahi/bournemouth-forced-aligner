@@ -19,17 +19,22 @@ SAMPLE_AUDIO = "examples/samples/audio/109867__timkahn__butterfly.wav"
 class TestPhonemeTimestampAligner:
     """Test cases for PhonemeTimestampAligner."""
 
-    @pytest.fixture(scope="class")
-    def aligner(self):
-        """Create a test aligner instance using preset."""
+    @pytest.fixture(scope="class", params=["std", "ph66"])
+    def aligner(self, request):
+        """
+        A test aligner per phoneme set. Everything below is about structure - shapes, keys,
+        error codes - which is the same for both, so every test runs twice. A set whose
+        checkpoint, G2P model or espeak-ng is not available on this machine is skipped.
+        """
         try:
             return PhonemeTimestampAligner(
                 preset="en-us",
+                phoneme_set=request.param,
                 duration_max=10,
                 device='cpu'
             )
         except Exception as e:
-            pytest.skip(f"Cannot initialize aligner: {e}")
+            pytest.skip(f"Cannot initialize the {request.param} aligner: {e}")
 
     @pytest.fixture
     def dummy_audio(self):
@@ -214,7 +219,9 @@ class TestPhonemeTimestampAligner:
         result = aligner.process_segments(srt_data, [dummy_audio], debug=False)
         assert isinstance(result, list)
         assert len(result) == 1
-        assert result[0] == {"segments": []}
+        # An empty result still says which phoneme set its ids would have been in.
+        assert result[0]["segments"] == []
+        assert result[0]["phoneme_set"] == aligner.inventory.name
 
     # ---- process_segments: single clip ----
 

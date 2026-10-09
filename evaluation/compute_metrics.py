@@ -41,6 +41,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from evaluation.layout import (MANIFEST_DIR, PATHS_LISTS, PLOTS_DIR, RESULTS_DIR,
                                alignment_path, resolve_srt)
 
+from bournemouth_aligner.standard_g2p.phoneme_features import (
+    GROUP_NAMES as _STD_GROUP_NAMES,
+    GROUPS as _STD_GROUPS,
+)
 from bournemouth_aligner.ipamappers.ph66_mapper import (
     phoneme_groups_mapper,
     phoneme_groups_index,
@@ -229,11 +233,43 @@ NON_SPEECH_LABELS = {
 
 
 # Phoneme-group bookkeeping.
-# phoneme_groups_mapper: ph66 phoneme_id -> group id;  phoneme_groups_index: name -> group id.
+#
+# Every predicted phoneme is filed under a group NAME, in the grouping of the phoneme set it
+# was aligned in:
+#   ph66 (and MFA, through ARPABET)   the 16 groups of ph66_mapper.phoneme_groups_index
+#   std                               the 15 gold groups of standard_g2p.phoneme_features
+# The two cut the vowels differently (ph66 by backness, std by height) and are not comparable
+# group for group, so each name also maps onto a MANNER class that both can fill. A ph66 row
+# and a std row are compared on the `mn_*` columns; the `err_*` columns are each set's own
+# finer breakdown.
 PHONEME_GROUP_NAMES = {gid: name for name, gid in phoneme_groups_index.items()}
 # 'SIL' is dropped by _is_speech_phone(), so it can never collect an error.
 REPORTED_PHONEME_GROUPS = [name for name in sorted(phoneme_groups_index, key=lambda n: phoneme_groups_index[n])
                            if name != "SIL"]
+# 'special' holds std's SIL / noise / <unk>, which are never reported as a phoneme group.
+STD_REPORTED_GROUPS = [name for name in _STD_GROUP_NAMES if name != "special"]
+
+MANNER_GROUPS = ["vowels", "voiceless_stops", "voiced_stops", "voiceless_fricatives",
+                 "voiced_fricatives", "affricates", "nasals", "laterals", "rhotics", "glides",
+                 "glottals"]
+# Group name (either set's) -> manner class. Absent = not a speech class ('noise', 'other').
+# 'glottals' is filled by std only: ph66 has no such group and files /h/ under voiceless
+# fricatives, which is the one place the two tables do not line up.
+MANNER_OF_GROUP = {
+    # ph66
+    "front_vowels": "vowels", "central_vowels": "vowels", "back_vowels": "vowels",
+    "low_vowels": "vowels", "diphthongs": "vowels",
+    "voiceless_stops": "voiceless_stops", "voiced_stops": "voiced_stops",
+    "voiceless_fricatives": "voiceless_fricatives", "voiced_fricatives": "voiced_fricatives",
+    "voiceless_affricates": "affricates", "voiced_affricates": "affricates",
+    "nasals": "nasals", "laterals": "laterals", "rhotics": "rhotics", "glides": "glides",
+    # std
+    "vowel_close": "vowels", "vowel_mid": "vowels", "vowel_open": "vowels",
+    "stop_voiceless": "voiceless_stops", "stop_voiced": "voiced_stops",
+    "fricative_vl": "voiceless_fricatives", "fricative_vd": "voiced_fricatives",
+    "affricate": "affricates", "nasal": "nasals", "lateral": "laterals", "rhotic": "rhotics",
+    "glide": "glides", "glottal": "glottals",
+}
 
 # BFA labels its phonemes with a ph66 'phoneme_id'; MFA (english_us_arpa) writes
 # ARPABET symbols with a stress digit instead.  Mapping ARPABET onto the ph66
@@ -266,16 +302,26 @@ def _phone_label(phone):
     return ""
 
 
-def _phone_group(phone):
+def _is_std(phoneme_set):
+    """True for an alignment written in the std phoneme set ('std' or 'std/<lang_group>')."""
+    return bool(phoneme_set) and str(phoneme_set).split("/", 1)[0] == "std"
+
+
+def _phone_group(phone, phoneme_set=None):
     """
-    Phoneme-group id of a phoneme_ts entry, or None when its phoneme cannot be
-    identified.  BFA entries carry a ph66 'phoneme_id' directly; MFA entries are
-    resolved through ARPABET (stress stripped), and an IPA label is looked up in the
-    ph66 inventory as a last resort.
+    Phoneme-group NAME of a phoneme_ts entry, or None when its phoneme cannot be
+    identified.  A std entry is looked up by its label, which is a gold token.  A ph66
+    entry carries a ph66 'phoneme_id' directly; MFA entries are resolved through ARPABET
+    (stress stripped), and an IPA label is looked up in the ph66 inventory as a last
+    resort.
     """
+    if _is_std(phoneme_set):
+        gid = _STD_GROUPS.get(str(phone.get("phoneme_label", "")))
+        return _STD_GROUP_NAMES[gid] if gid is not None else None
+
     phoneme_id = phone.get("phoneme_id")
     if phoneme_id is not None:
-        return phoneme_groups_mapper.get(int(phoneme_id))
+        return PHONEME_GROUP_NAMES.get(phoneme_groups_mapper.get(int(phoneme_id)))
 
     label = _phone_label(phone).strip()
     if not label:
@@ -286,17 +332,28 @@ def _phone_group(phone):
         ph66 = label
     if ph66 is None:
         return None
-    return phoneme_groups_mapper.get(phoneme_mapped_index[ph66])
+    return PHONEME_GROUP_NAMES.get(phoneme_groups_mapper.get(phoneme_mapped_index[ph66]))
 
 
-def _is_speech_phone(phone):
-    """False for padding / silence / noise entries that must not produce boundaries."""
+def _is_speech_phone(phone, phoneme_set=None):
+    """
+    False for padding / silence / noise entries that must not produce boundaries.
+
+    Which id is silence depends on the phoneme set: it is 0 in ph66, but in std 0 is `<blank>`
+    and silence is 1.  So a std entry is judged by its label alone, and only SIL is dropped -
+    std's `noise` and `<unk>` are real phones the G2P wrote (junk in the IPA, a phoneme outside
+    the language group's list) that the aligner placed like any other, and the training-side
+    probe counts their onsets too.
+    """
+    if _is_std(phoneme_set):
+        return str(phone.get("phoneme_label", "")) != "SIL"
     if phone.get("phoneme_id") == 0:
         return False
     return _phone_label(phone).strip().lower() not in NON_SPEECH_LABELS
 
 
-def detect_timestamp_frame(vs_seg, seg_start_ms, seg_duration_ms, slack_ms=100.0):
+def detect_timestamp_frame(vs_seg, seg_start_ms, seg_duration_ms, slack_ms=100.0,
+                           phoneme_set=None):
     """
     Work out whether a segment's predicted timestamps are segment-relative or
     clip-absolute, by checking which interpretation places the phonemes inside the
@@ -307,7 +364,8 @@ def detect_timestamp_frame(vs_seg, seg_start_ms, seg_duration_ms, slack_ms=100.0
     segment and the genuinely ambiguous one (a segment that starts early enough
     that both readings land inside it).
     """
-    starts = [float(p["start_ms"]) for p in vs_seg.get("phoneme_ts", []) if _is_speech_phone(p)]
+    starts = [float(p["start_ms"]) for p in vs_seg.get("phoneme_ts", [])
+              if _is_speech_phone(p, phoneme_set)]
     if not starts:
         return "unknown"
 
@@ -328,6 +386,7 @@ def segment_pred_boundaries(
     offset_end=0.0,
     drop_estimated=False,
     unmapped_labels=None,
+    phoneme_set=None,
 ):
     """
     Collect the predicted boundaries of one segment, expressed in the ground-truth
@@ -342,7 +401,8 @@ def segment_pred_boundaries(
         (onsets, ends, gaps, n_phones, boundary_groups) — onsets/ends are sorted,
         de-duplicated, integer millisecond boundary times; gaps are the silences
         between consecutive predicted phonemes (ms); boundary_groups maps a boundary
-        time to the phoneme group of the phoneme it belongs to.  When phonemes share
+        time to the phoneme group NAME of the phoneme it belongs to, in the grouping
+        of `phoneme_set` (see MANNER_OF_GROUP for the shared classes).  When phonemes share
         a timestamp the earliest wins, and a time that is one phoneme's end and the
         next one's onset is attributed to the onset, since onsets are what the
         metrics score.
@@ -351,7 +411,7 @@ def segment_pred_boundaries(
     could not be resolved are tallied into it.
     """
     phones = sorted(
-        (p for p in vs_seg.get("phoneme_ts", []) if _is_speech_phone(p)),
+        (p for p in vs_seg.get("phoneme_ts", []) if _is_speech_phone(p, phoneme_set)),
         key=lambda p: (float(p["start_ms"]), float(p["end_ms"])),
     )
     if drop_estimated:
@@ -374,7 +434,7 @@ def segment_pred_boundaries(
         onsets.append(onset)
         ends.append(end)
 
-        group = _phone_group(phone)
+        group = _phone_group(phone, phoneme_set)
         if group is not None:
             onset_groups.setdefault(onset, group)
             end_groups.setdefault(end,     group)
@@ -521,9 +581,10 @@ def check_method_alignment(
     nn_distances          = []
     all_gaps              = []
 
-    group_error_sum   = defaultdict(float)   # group id -> sum of |error| over matched pairs
+    group_error_sum   = defaultdict(float)   # group name -> sum of |error| over matched pairs
     group_error_count = defaultdict(int)
-    group_pred_count  = defaultdict(int)     # group id -> predicted boundaries offered
+    group_pred_count  = defaultdict(int)     # group name -> predicted boundaries offered
+    phoneme_sets_seen = defaultdict(int)     # phoneme set -> files written in it
     ungrouped_pred    = 0                    # predicted boundaries with no resolvable group
     unmapped_labels   = defaultdict(int)     # phoneme label -> times it could not be mapped
 
@@ -568,6 +629,11 @@ def check_method_alignment(
 
         # Match segments by start time (rounded to ms) so that segments the aligner
         # dropped do not shift the indices of the ones it kept.
+        # BFA >= 2.0 stamps every result with the phoneme set its ids are in. A file without
+        # the stamp is an older ph66 alignment or MFA's, both of which the ph66 rules read.
+        file_phoneme_set = vs_data.get("phoneme_set")
+        phoneme_sets_seen[file_phoneme_set or ""] += 1
+
         vs_seg_by_start = {int(round(seg["start"] * 1000)): seg for seg in vs_data["segments"]}
 
         segment_pairs = []
@@ -585,7 +651,8 @@ def check_method_alignment(
         # where the two readings can actually be told apart.
         votes = defaultdict(int)
         for _, vs_seg, seg_start_ms, seg_duration_ms in segment_pairs:
-            votes[detect_timestamp_frame(vs_seg, seg_start_ms, seg_duration_ms)] += 1
+            votes[detect_timestamp_frame(vs_seg, seg_start_ms, seg_duration_ms,
+                                         phoneme_set=file_phoneme_set)] += 1
         if votes["relative"] == votes["absolute"]:
             file_frame = "unknown"
         else:
@@ -618,6 +685,7 @@ def check_method_alignment(
                 offset_end=offset_end,
                 drop_estimated=drop_estimated,
                 unmapped_labels=unmapped_labels if measure_group_errors else None,
+                phoneme_set=file_phoneme_set,
             )
             all_gaps.extend(gaps)
 
@@ -782,20 +850,39 @@ def check_method_alignment(
         "all_distances":          all_distances,
     }
 
+    # The phoneme set the alignment files were written in ("" = unstamped: older ph66 files,
+    # or MFA). More than one in `phoneme_sets_seen` means the experiment directory holds a
+    # mixture of two runs, which is worth knowing before reading its score.
+    alignment_data["phoneme_set"] = (max(phoneme_sets_seen, key=phoneme_sets_seen.get)
+                                     if phoneme_sets_seen else "")
+    alignment_data["phoneme_sets_seen"] = dict(phoneme_sets_seen)
+    if len(phoneme_sets_seen) > 1:
+        print(f"[WARN] alignment files are in more than one phoneme set: "
+              f"{dict(phoneme_sets_seen)}")
+
     # Mean |timing error| per phoneme group, over the matched pairs attributed to
     # the group of the predicted phoneme.
     alignment_data["measure_group_errors"] = measure_group_errors
     if measure_group_errors:
-        group_errors = {}
-        for name in REPORTED_PHONEME_GROUPS:
-            gid   = phoneme_groups_index[name]
-            count = group_error_count[gid]
-            group_errors[name] = {
-                "error_mean": (group_error_sum[gid] / count) if count else None,
-                "matched":    count,
-                "predicted":  group_pred_count[gid],
+        def _summary(names):
+            total = sum(group_error_count[n] for n in names)
+            return {
+                "error_mean": (sum(group_error_sum[n] for n in names) / total) if total else None,
+                "matched":    total,
+                "predicted":  sum(group_pred_count[n] for n in names),
             }
-            alignment_data[f"group_err_{name}"] = (group_error_sum[gid] / count) if count else None
+
+        # Each set's own groups. A group of the set this run was NOT aligned in simply has no
+        # entries, so the same code reports a ph66 run, a std run and an MFA run.
+        group_errors = {}
+        for name in REPORTED_PHONEME_GROUPS + STD_REPORTED_GROUPS:
+            group_errors[name] = _summary([name])
+            if name in REPORTED_PHONEME_GROUPS:
+                alignment_data[f"group_err_{name}"] = group_errors[name]["error_mean"]
+        # The manner classes both sets fill - what a ph66 row and a std row are compared on.
+        alignment_data["manner_errors"] = {
+            manner: _summary([n for n, m in MANNER_OF_GROUP.items() if m == manner])
+            for manner in MANNER_GROUPS}
         alignment_data["group_errors"]   = group_errors
         alignment_data["ungrouped_pred"] = ungrouped_pred
         alignment_data["unmapped_labels"] = dict(sorted(unmapped_labels.items(),
@@ -936,7 +1023,7 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
     # Column order is the reading order: identify the run first, then headline scores, then
     # supporting diagnostics. Group errors stay last because they are a detailed breakdown,
     # not the primary comparison columns.
-    id_cols    = ["method", "cfg_ckpt", "cfg_model", "dataset", "vs_ext", "notes"]
+    id_cols    = ["method", "cfg_ckpt", "cfg_model", "phoneme_set", "dataset", "vs_ext", "notes"]
     cfg_cols   = ["cfg_subset", "cfg_bonus_weight",
                   "cfg_min_phone_frames", "cfg_soft_phone_frames", "cfg_sub_frame_onsets",
                   "cfg_run_at"]
@@ -960,17 +1047,27 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
                   + ["ex_excluded_known_pct", "ex_excluded_pred_pct", "gross_error_ms"])
     diag_cols  = ["boundary_mode", "offset_start", "suggested_offset_start"]
     # Always emitted so the header stays stable across methods.
+    # `mn_*` first: the manner classes are what every method fills, so they are the columns
+    # to compare a ph66 row with a std row on. `err_*` is ph66's own 16 groups (blank for a
+    # std row), `std_*` is std's own 15 (blank for a ph66 or MFA row).
+    manner_cols = [f"mn_{name}" for name in MANNER_GROUPS]
     group_cols = [f"err_{name}" for name in REPORTED_PHONEME_GROUPS]
+    std_group_cols = [f"std_{name}" for name in STD_REPORTED_GROUPS]
     all_cols   = (id_cols + cfg_cols + f1_cols + r_value_cols + other_score_cols
-                  + scale_cols + err_cols + ex_cols + diag_cols + group_cols)
+                  + scale_cols + err_cols + ex_cols + diag_cols + manner_cols + group_cols
+                  + std_group_cols)
 
-    ckpt = ((manifest or {}).get("model", {}) or {}).get("cupe_ckpt_path")
+    model_cfg = (manifest or {}).get("model", {}) or {}
+    ckpt = model_cfg.get("ckpt_path") or model_cfg.get("cupe_ckpt_path")
     row = {
         "method":           method,
         "notes":            notes,
         "cfg_model":        cfg.get("model", ""),
-        "cfg_ckpt":         os.path.basename(ckpt) if ckpt else
-                            ((manifest or {}).get("model", {}) or {}).get("model_name", ""),
+        # What the alignment files themselves say, falling back to the manifest for files
+        # written before BFA stamped its output. Blank for MFA, which has no phoneme set here.
+        "phoneme_set":      (alignment_data.get("phoneme_set")
+                             or (manifest or {}).get("phoneme_set", "")),
+        "cfg_ckpt":         os.path.basename(ckpt) if ckpt else model_cfg.get("model_name", ""),
         "cfg_subset":       cfg.get("subset", ""),
         "cfg_bonus_weight":      eff.get("boundary_bonus_weight",
                                          cfg.get("boundary_bonus_weight", "")),
@@ -1021,6 +1118,13 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
     for name in REPORTED_PHONEME_GROUPS:
         mean = group_errors.get(name, {}).get("error_mean")
         row[f"err_{name}"] = round(mean, 2) if mean is not None else ""
+    for name in STD_REPORTED_GROUPS:
+        mean = group_errors.get(name, {}).get("error_mean")
+        row[f"std_{name}"] = round(mean, 2) if mean is not None else ""
+    manner_errors = alignment_data.get("manner_errors", {})
+    for name in MANNER_GROUPS:
+        mean = manner_errors.get(name, {}).get("error_mean")
+        row[f"mn_{name}"] = round(mean, 2) if mean is not None else ""
 
     if os.path.exists(csv_path):
         _migrate_csv_header(csv_path, all_cols)
@@ -1155,9 +1259,20 @@ def show_alignment_stats(output_json_path, method, dataset, vs_ext, csv_path=Non
             share = g["matched"] / g["predicted"] * 100 if g["predicted"] else 0.0
             print(f"  {name:<22} {g['error_mean']:>6.1f} ms   "
                   f"{g['matched']:>8} matched / {g['predicted']:>8} predicted ({share:.1f}%)")
-        empty = [name for name, g in group_errors.items() if not g["matched"]]
+        # Only the groups of the set this run was aligned in can be "empty"; the other
+        # set's groups have no predictions at all and saying so would be noise.
+        empty = [name for name, g in group_errors.items() if g["predicted"] and not g["matched"]]
         if empty:
             print(f"  (no matched boundaries: {', '.join(empty)})")
+
+    manner_rows = sorted(((name, g) for name, g in (alignment_data.get("manner_errors") or {}).items()
+                          if g["matched"]), key=lambda item: item[1]["error_mean"])
+    if manner_rows:
+        print(f"\n=== MEAN ERROR BY MANNER CLASS (comparable across phoneme sets) ===")
+        for name, g in manner_rows:
+            share = g["matched"] / g["predicted"] * 100 if g["predicted"] else 0.0
+            print(f"  {name:<22} {g['error_mean']:>6.1f} ms   "
+                  f"{g['matched']:>8} matched / {g['predicted']:>8} predicted ({share:.1f}%)")
 
     print(f"\n=== GAP ANALYSIS (silence between consecutive predicted phonemes) ===")
     print(f"  Gaps: {alignment_data['gap_total']}")
@@ -1312,7 +1427,7 @@ if __name__ == "__main__":
     # scores exactly its own files. The subset size is recorded in `cfg_subset`/`notes`, which
     # is what stops a 100-file row being read against a 6300-file one.
     SCORE_ALL = True
-    VS_RANGE  = range(3, 4)                # e.g. range(1, 3) to score just those; None = every manifest
+    VS_RANGE  = range(1, 3)                # e.g. range(1, 3) to score just those; None = every manifest
 
     # Time frame of the predicted phoneme timestamps:
     #   MFA aligns the extracted segment audio -> segment-relative  -> True

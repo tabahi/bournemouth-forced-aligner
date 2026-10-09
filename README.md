@@ -25,13 +25,14 @@ BFA takes two inputs — an **audio file** and its **text transcript** — and p
 Input:  🎵 audio.wav  +  📄 "butterfly"
 
 Output:
-  b   →    1 ms –  52 ms  (confidence: 0.95)
-  ʌ   →   52 ms – 169 ms  (confidence: 0.39)
-  ɾ   →  169 ms – 257 ms  (confidence: 0.02)
-  ɚ   →  257 ms – 352 ms  (confidence: 0.20)
-  f   →  352 ms – 448 ms  (confidence: 0.95)
-  l   →  448 ms – 498 ms  (confidence: 0.94)
-  aɪ  →  498 ms – 828 ms  (confidence: 0.96)
+  b   →    0 ms –  52 ms  (confidence: 0.89)
+  ə   →   52 ms – 168 ms  (confidence: 0.09)
+  t   →  168 ms – 258 ms  (confidence: 0.05)
+  ɝ   →  258 ms – 351 ms  (confidence: 0.01)
+  f   →  351 ms – 498 ms  (confidence: 0.28)
+  ɫ   →  498 ms – 572 ms  (confidence: 0.11)
+  a   →  572 ms – 826 ms  (confidence: 0.94)
+  ɪ   →  826 ms – 982 ms  (confidence: 0.25)
 ```
 
 Every phone ends where the next begins — the alignment covers the audio with no gaps, and each
@@ -45,7 +46,7 @@ The output can be exported as a **Praat TextGrid** file for visual inspection, o
 |---|---|
 | ⚡ Speed | ~1 second to align 10 seconds of audio (on CPU) |
 | 🎯 Resolution | 5 ms frames, with sub-frame onsets read off the posteriors |
-| 🌍 Languages | 80+ languages — English, German, French, Spanish, Hindi, Arabic, and many more |
+| 🌍 Languages | 63 languages in the default `std` phoneme set today (Latin, Cyrillic, Chinese, Japanese scripts), 80+ through the `ph66` set — see [Phoneme sets](#-phoneme-sets) |
 | 📄 Output formats | JSON timestamps, Praat TextGrid, phoneme embeddings |
 | 🖥️ Runs on | Linux, macOS, Windows — CPU or GPU |
 
@@ -53,7 +54,19 @@ The output can be exported as a **Praat TextGrid** file for visual inspection, o
 
 ## *What's new in v2.0*
 
-**BFA v2 runs on p3cupe, a phoneme model whose output *is* the boundary detector.** Each
+**Two phoneme sets, one aligner.** BFA now has a second, multilingual stack, and it is the
+default:
+
+| `phoneme_set` | Text → phonemes | Acoustic model | Languages |
+|---|---|---|---|
+| **`"std"`** *(default)* | [standard_g2p](https://github.com/tabahi/CharsiuG2P) — a ByT5 G2P, no system packages | **p4mbfa**, one model per *language group* ([`mbfa-latin`](https://huggingface.co/Tabahi/mbfa-latin), …) | 63 today, tonal languages included |
+| `"ph66"` | espeak-ng, reduced to 66 phonemes | **p3cupe** ([`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en)) | English — the best English model of the two |
+
+`PhonemeTimestampAligner(preset="de")` uses `std`; add `phoneme_set="ph66"` to get the espeak-ng
+stack. Everything else — the decoder, chunking, the output format — is the same code for both.
+See [Phoneme sets](#-phoneme-sets) for what differs and how to choose.
+
+**Both run on a phoneme model whose output *is* the boundary detector.** Each
 phone's posterior is trained to hold across the interior of its own segment and fall to exactly
 0.5 at each of its two boundaries, where the neighbouring phone rises through 0.5 — so a
 boundary is the **crossing of two posteriors**: a continuous quantity, read off by
@@ -67,8 +80,8 @@ interpolation rather than snapped to a frame.
   path is chosen, not patched up afterwards.
 - **⚠️ Breaking change.** v2 does not load v1 checkpoints, and the settings that only served
   them are gone. See the [CHANGELOG](CHANGELOG.md) for the full list and what replaced it.
-- **⚠️ Checkpoints are not published yet** — see [Language Presets](#-language-presets) for how
-  to point BFA at a local one in the meantime.
+- **Models download themselves.** Every model is a Hugging Face repository, fetched on first
+  use — see [Available models](#available-checkpoints).
 
 ---
 
@@ -87,14 +100,19 @@ interpolation rather than snapped to a frame.
 
 ### Step 1 — Install system dependencies
 
+Only **ffmpeg** is needed for the default (`std`) phoneme set. **espeak-ng** is needed only if
+you use `phoneme_set="ph66"`.
+
 **Linux (Ubuntu / Debian):**
 ```bash
-sudo apt-get install espeak-ng ffmpeg
+sudo apt-get install ffmpeg
+sudo apt-get install espeak-ng      # only for phoneme_set="ph66"
 ```
 
 **macOS:**
 ```bash
-brew install espeak-ng ffmpeg
+brew install ffmpeg
+brew install espeak-ng              # only for phoneme_set="ph66"
 ```
 
 Or install everything in the conda environment
@@ -108,13 +126,17 @@ conda install "ffmpeg" -c conda-forge
 ```
 
 **Windows:**  
-Download and install [eSpeak NG](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md) and [ffmpeg](https://ffmpeg.org/download.html), then add both to your system PATH.
+Download and install [ffmpeg](https://ffmpeg.org/download.html) and add it to your system PATH. For `phoneme_set="ph66"`, also install [eSpeak NG](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md).
 
 ### Step 2 — Install BFA
 
 ```bash
-pip install bournemouth-forced-aligner
+pip install bournemouth-forced-aligner            # the default std phoneme set
+pip install "bournemouth-forced-aligner[ph66]"    # + the espeak-ng / ph66 set
 ```
+
+Thai, Japanese and Cantonese are written without spaces and need a word segmenter, installed
+as an extra: `[th]`, `[ja]`, `[yue]`. Mandarin needs none.
 
 ### Step 3 — Verify it works
 
@@ -142,7 +164,7 @@ This aligns the word *butterfly* in [`butterfly.wav`](examples/samples/audio/109
 
 ![Butterfly mel-spectrum plot](mel_spectrum_butterfly.png)
 
-> **Tip:** Replace `"butterfly"` with any sentence spoken in the audio, and `--preset=en-us` with your language code (`de`, `fr`, `hi`, `ar`, …). Run `balign --help` to see more options.
+> **Tip:** Replace `"butterfly"` with any sentence spoken in the audio, and `--preset=en-us` with your language code (`de`, `fr`, `ru`, `zh`, `ja`, …). Run `balign --list-presets` to see which languages each phoneme set covers, and `balign --help` for more options.
 
 
 ### Python example
@@ -151,7 +173,7 @@ This aligns the word *butterfly* in [`butterfly.wav`](examples/samples/audio/109
 from bournemouth_aligner import PhonemeTimestampAligner
 
 # 1. Create the aligner — it will automatically download the right model
-#    Change "en-us" to your language code, e.g. "de", "fr", "es", "hi"
+#    Change "en-us" to your language code, e.g. "de", "fr", "es", "ru", "zh"
 aligner = PhonemeTimestampAligner(preset="en-us")
 
 # 2. Load your audio file (WAV, MP3, FLAC, etc.)
@@ -168,7 +190,7 @@ for phoneme in result["segments"][0]["phoneme_ts"]:
 
 That's it. No configuration files, no dictionary downloads, no corpus setup.
 
-> **Note:** The first run will automatically download the model from HuggingFace (~50 MB). Subsequent runs use the cached copy.
+> **Note:** The first run downloads two things from the Hugging Face Hub into its usual cache (`~/.cache/huggingface`): the aligner model (~55 MB) and, the first time text is phonemized, the `std` set's G2P model [`charsiu/g2p_multilingual_byT5_small_100`](https://huggingface.co/charsiu/g2p_multilingual_byT5_small_100) (~1.2 GB, once). Later runs use the cached copies. Set `$BFA_G2P_DIR` if you already have the G2P model somewhere, or use `phoneme_set="ph66"`, which needs no G2P model.
 
 ### Export to Praat TextGrid
 
@@ -186,21 +208,30 @@ aligner_de = PhonemeTimestampAligner(preset="de")
 # French
 aligner_fr = PhonemeTimestampAligner(preset="fr")
 
-# Hindi
-aligner_hi = PhonemeTimestampAligner(preset="hi")
-
 # Spanish
 aligner_es = PhonemeTimestampAligner(preset="es")
+
+# Russian, Mandarin, Japanese - each a different language group, so a different model
+aligner_ru = PhonemeTimestampAligner(preset="ru")
+aligner_zh = PhonemeTimestampAligner(preset="zh")
+aligner_ja = PhonemeTimestampAligner(preset="ja")
+
+# Hindi - no std model yet. ph66 will phonemize it, but its model was trained on English only
+aligner_hi = PhonemeTimestampAligner(preset="hi", phoneme_set="ph66")
 ```
 
-See the [full preset list](#-language-presets) for all 80+ supported languages.
+See [Phoneme sets](#-phoneme-sets) for which languages each set covers.
 
 ---
 
 ### 📊 Sample Output
 
+The block below is the `ph66` output. The `std` set writes the same structure with its own
+keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stress` and `length`
+— see [Understanding the Output](#understanding-the-output).
+
 <details>
-<summary>📋 Click to see the full JSON output for "butterfly"</summary>
+<summary>📋 Click to see the full JSON output for "butterfly" (<code>phoneme_set="ph66"</code>)</summary>
 
 ```json
 {
@@ -444,18 +475,23 @@ See the [full preset list](#-language-presets) for all 80+ supported languages.
 
 ### Understanding the Output
 
-Every segment in the output contains the following keys:
+The result is `{"phoneme_set": ..., "lang": ..., "segments": [...]}`. `phoneme_set` says which
+inventory every id in the file is written in — `"ph66"`, or `"std/<language group>"` such as
+`"std/latin"` — because the same number is a different phoneme in each.
+
+Every segment contains the following keys:
 
 | Key | What it contains | Useful for |
 |-----|-----------------|------------|
-| `phoneme_ts` | Per-phoneme timestamps: `ipa_label`, `start_ms`, `end_ms`, `confidence`, `is_estimated` | Phonetic annotation, TTS training |
-| `group_ts` | Same timestamps but grouped into 16 broad phoneme categories (vowels, stops, fricatives…) | Coarser acoustic analysis |
+| `phoneme_ts` | Per-phoneme timestamps: `ipa_label`, `start_ms`, `end_ms`, `confidence`, `is_estimated` (and `tone`, `stress`, `length` in the std set) | Phonetic annotation, TTS training |
+| `group_ts` | Same timestamps but grouped into broad phoneme categories (vowels, stops, fricatives…): 15 in std, 16 in ph66 | Coarser acoustic analysis |
 | `words_ts` | Word-level timestamps derived from the phonemes | Word-level annotation |
-| `ipa` | IPA sequence for the segment (from espeak-ng) | Phonemic transcription reference |
-| `ph66` | Numeric indices into BFA's 66-class phoneme set | Model-internal representation |
-| `pg16` | Numeric indices into 16 phoneme group categories | Model-internal representation |
+| `ipa` | IPA sequence for the segment, as the G2P wrote it | Phonemic transcription reference |
+| `local_ph` *(std)* / `ph66` *(ph66)* | Numeric phoneme indices in the model's own label space | Model-internal representation |
+| `gold_phg` *(std)* / `pg16` *(ph66)* | Numeric phoneme-group indices | Model-internal representation |
+| `tone`, `stress`, `length` *(std)* | One value per phoneme, from the G2P: tone index (0 = none), stress 0/1/2, length 0/1/2 | Prosody labels; tonal languages |
 | `words` | List of words in the segment | Word boundary reference |
-| `word_num` | Word index for each phoneme (parallel to `ph66`) | Maps each phoneme to its parent word |
+| `word_num` | Word index for each phoneme (parallel to the phoneme indices) | Maps each phoneme to its parent word |
 | `coverage_analysis` | Quality report: how many phonemes were aligned, missing, or estimated | Filtering out bad segments |
 
 **Reading `confidence`:** the peak posterior the model put on this phoneme inside its own segment. Higher is surer, but the scale is model-specific — see [Reading confidence](#reading-confidence) before setting a threshold. `is_estimated` is always `false`: forced alignment places every phoneme it reports, so nothing is inserted after the fact.
@@ -466,26 +502,106 @@ Every segment in the output contains the following keys:
 
 ## 🛠️ API Reference
 
+### 🔤 Phoneme sets
+
+A *phoneme set* is a phonemizer plus the label space its ids live in, and each one is decoded
+by its own model family. Naming either settles the other, and a model settles both.
+
+| | `phoneme_set="std"` *(default)* | `phoneme_set="ph66"` |
+|---|---|---|
+| Phonemizer | standard_g2p — a ByT5 G2P for 100 languages, vendored in BFA | espeak-ng (system package) |
+| Label space | one token list **per language group** (208 tokens for `latin`, 48 for `cjk`, …) + 15 phoneme groups | 66 phonemes + 16 groups, shared by every language |
+| Model | **p4mbfa** — one per language group: `mbfa-latin`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese` | **p3cupe** — `CUPE-3-en`, trained on English |
+| Tone, stress, length | yes, one value per phoneme | no |
+| Silence at punctuation | not by default (`punctuation_sil=True` to add it) | always |
+| Numbers, abbreviations | **not expanded** — spell them out | expanded by espeak-ng |
+| First-run download | G2P model, ~1.2 GB, once | none |
+
+**Languages in the `std` set.** A language belongs to one *language group* (by script), and a
+group can be aligned once it has a model. Four do today:
+
+| Language group | Tokens | Languages the G2P covers (BCP 47) |
+|---|---:|---|
+| `latin` | 208 | af az bs ca cs cy da de en en-GB eo es es-419 es-MX et eu fi fr fr-CA ga gl hu ia id io is it la lb lt mi ms mt nb nl pl pt pt-BR ro se sk sl sq sv sw tk tl tr uz … |
+| `cyrillic` | 127 | ba be bg hbs kk mk ru sr tt uk … |
+| `cjk` | 48 | zh zh-Hant yue |
+| `japanese` | 28 | ja |
+
+Run `balign --list-presets` for the exact list. Codes are accepted in any spelling BFA has
+ever taken — `en-us`, `EN-GB`, `pt-br`, `cmn`, `zh-tw` — and resolved to the canonical one.
+Vietnamese, Greek/Armenian/Georgian/Korean/Amharic, Arabic-script, Indic and Thai groups are
+defined but have no model yet; asking for one of their languages raises an error that
+names `phoneme_set="ph66"` as the way through. BFA never falls back silently, because the two
+sets' ids and output keys differ.
+
+```python
+aligner = PhonemeTimestampAligner(preset="de")                        # std / latin
+aligner = PhonemeTimestampAligner(preset="zh")                        # std / cjk, with tone
+aligner = PhonemeTimestampAligner(phoneme_set="ph66")                 # espeak-ng + CUPE-3-en
+aligner = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark")  # a published model by name
+aligner = PhonemeTimestampAligner(ckpt_path="my_checkpoint.pt", lang="ru")   # the file decides
+```
+
+The table lists what the G2P can phonemize into each group's tokens. Each model was *trained*
+on a subset of them (the FLEURS languages - see [Available models](#available-checkpoints));
+a language of the group the model never heard is aligned through the phonemes it shares.
+
+**Which to use for English.** Both work, and the English-only `CUPE-3-en` (ph66) is the more
+accurate of the two on English boundaries; `mbfa-latin` (std) is the one that also covers 35
+other languages, tone and stress. Onset f1 within 25 ms, same files and scorer, each model
+with its published decoder settings:
+
+| | TIMIT, 100 files | Buckeye, 3 interviews |
+|---|---|---|
+| ph66, `CUPE-3-en` | **75.8** | **68.9** |
+| std, `mbfa-latin` *(default)* | 73.1 | 63.6 |
+| std, `mbfa-latin-benchmark` | 74.1 | 63.2 |
+
+These are small samples; the model cards carry the 400-clip TIMIT numbers.
+
+**Switching language.** Within a language group, `aligner.phonemizer.set_backend(language="fr")`
+is enough. Across groups the model has to change too: `aligner.load_model(preset="ru")`.
+
+**Already-phonemized input.** In the std set, a segment that carries `gold_ph` — a
+standard_g2p `.gs.json` segment — is aligned from those phonemes and its text is not
+phonemized again, so the G2P model is never loaded for it:
+
+```python
+gs = json.load(open("clip.gs.json"))
+result = aligner.process_segments([{"segments": gs["segments"]}], [audio])
+```
+
+**Where the G2P model lives.** It is
+[`charsiu/g2p_multilingual_byT5_small_100`](https://huggingface.co/charsiu/g2p_multilingual_byT5_small_100),
+downloaded by `huggingface_hub` into its own cache (`~/.cache/huggingface`, moved with
+`$HF_HOME`) on the first call that phonemizes text. `$BFA_G2P_DIR` (or `g2p_model_dir=`) points
+BFA at a copy you already have, and `g2p_device=` puts the G2P on a different device from the
+aligner.
+
 ### 🌍 Language Presets
 
-BFA supports **80+ languages**. Pass the language code as `preset` and phonemisation is handled by [espeak-ng](https://github.com/espeak-ng/espeak-ng), which is free and works offline.
+The tables below are the **`ph66`** set's presets. For the default `std` set, see
+[Phoneme sets](#-phoneme-sets) above.
 
-> **Note:** the preset picks both the checkpoint and the espeak-ng language. Two checkpoints
-> exist today — **English** and **Multilingual** — so every non-English preset resolves to the
-> Multilingual one. The Multilingual checkpoint covers 7 European languages, so for anything
-> further afield the "Model Used" column below is a statement of intent until the **Universal**
-> checkpoint is trained. See [Available checkpoints](#available-checkpoints).
+`ph66` phonemizes **80+ languages**: pass the language code as `preset` together with `phoneme_set="ph66"` and phonemisation is handled by [espeak-ng](https://github.com/espeak-ng/espeak-ng), which is free and works offline.
+
+> **Note:** one p3cupe model is published, [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en),
+> and it was trained on **English only**. Every ph66 preset loads it. For English it is the
+> most accurate model BFA has; for any other language it is an English model aligning that
+> language's phonemes by their nearest English sounds, and BFA prints a warning saying so.
+> Prefer the `std` set wherever it has a model for the language. A multilingual p3cupe
+> checkpoint of your own still loads with `ckpt_path=`.
 
 **Supported language families:** Indo-European (Germanic, Romance, Slavic, Indic, Iranian…), Turkic, Semitic, Dravidian, and several others.
 
-**Not supported:** Tonal languages — Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese — and isolating/agglutinative families such as Japanese and Korean. That is a limit of the ph66 phoneme inventory, not just of the training data, so a different checkpoint will not fix it.
+**Not supported by ph66:** Tonal languages — Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese — and isolating/agglutinative families such as Japanese and Korean. That is a limit of the ph66 phoneme inventory, not just of the training data, so a different p3cupe model will not fix it. Mandarin, Cantonese and Japanese are covered by the `std` set.
 
 ```python
-aligner = PhonemeTimestampAligner(preset="de")   # German
-aligner = PhonemeTimestampAligner(preset="hi")   # Hindi
-aligner = PhonemeTimestampAligner(preset="fr")   # French
-aligner = PhonemeTimestampAligner(preset="ar")   # Arabic
-aligner = PhonemeTimestampAligner(preset="ru")   # Russian
+aligner = PhonemeTimestampAligner(preset="de", phoneme_set="ph66")   # German
+aligner = PhonemeTimestampAligner(preset="hi", phoneme_set="ph66")   # Hindi
+aligner = PhonemeTimestampAligner(preset="fr", phoneme_set="ph66")   # French
+aligner = PhonemeTimestampAligner(preset="ar", phoneme_set="ph66")   # Arabic
+aligner = PhonemeTimestampAligner(preset="ru", phoneme_set="ph66")   # Russian
 ```
 
 #### 📋 Complete Preset Table
@@ -493,155 +609,152 @@ aligner = PhonemeTimestampAligner(preset="ru")   # Russian
 <details>
 <summary>🔍 Click to view all 80+ supported language presets</summary>
 
-| **Language** | **Preset Code** | **Model Used** | **Language Family** |
-|--------------|-----------------|----------------|-------------------|
-| **🇺🇸 ENGLISH VARIANTS** | | |
-| English (US) | `en-us`, `en` | English | West Germanic |
-| English (UK) | `en-gb` | English | West Germanic |
-| English (Caribbean) | `en-029` | English | West Germanic |
-| English (Lancastrian) | `en-gb-x-gbclan` | English | West Germanic |
-| English (RP) | `en-gb-x-rp` | English | West Germanic |
-| English (Scottish) | `en-gb-scotland` | English | West Germanic |
-| English (West Midlands) | `en-gb-x-gbcwmd` | English | West Germanic |
-| **🇪🇺 EUROPEAN LANGUAGES** | | |
-| German | `de` | Multilingual | West Germanic |
-| French | `fr` | Multilingual | Romance |
-| French (Belgium) | `fr-be` | Multilingual | Romance |
-| French (Switzerland) | `fr-ch` | Multilingual | Romance |
-| Spanish | `es` | Multilingual | Romance |
-| Spanish (Latin America) | `es-419` | Multilingual | Romance |
-| Italian | `it` | Multilingual | Romance |
-| Portuguese | `pt` | Multilingual | Romance |
-| Portuguese (Brazil) | `pt-br` | Multilingual | Romance |
-| Polish | `pl` | Multilingual | West Slavic |
-| Dutch | `nl` | Multilingual | West Germanic |
-| Danish | `da` | Multilingual | North Germanic |
-| Swedish | `sv` | Multilingual | North Germanic |
-| Norwegian Bokmål | `nb` | Multilingual | North Germanic |
-| Icelandic | `is` | Multilingual | North Germanic |
-| Czech | `cs` | Multilingual | West Slavic |
-| Slovak | `sk` | Multilingual | West Slavic |
-| Slovenian | `sl` | Multilingual | South Slavic |
-| Croatian | `hr` | Multilingual | South Slavic |
-| Bosnian | `bs` | Multilingual | South Slavic |
-| Serbian | `sr` | Multilingual | South Slavic |
-| Macedonian | `mk` | Multilingual | South Slavic |
-| Bulgarian | `bg` | Multilingual | South Slavic |
-| Romanian | `ro` | Multilingual | Romance |
-| Hungarian | `hu` | Multilingual | Uralic |
-| Estonian | `et` | Multilingual | Uralic |
-| Latvian | `lv` | Multilingual | Baltic |
-| Lithuanian | `lt` | Multilingual | Baltic |
-| Catalan | `ca` | Multilingual | Romance |
-| Aragonese | `an` | Multilingual | Romance |
-| Papiamento | `pap` | Multilingual | Romance |
-| Haitian Creole | `ht` | Multilingual | Romance |
-| Afrikaans | `af` | Multilingual | West Germanic |
-| Luxembourgish | `lb` | Multilingual | West Germanic |
-| Irish Gaelic | `ga` | Multilingual | Celtic |
-| Scottish Gaelic | `gd` | Multilingual | Celtic |
-| Welsh | `cy` | Multilingual | Celtic |
-| **🌏 INDO-EUROPEAN LANGUAGES (Universal)** | | |
-| Russian | `ru` | Universal *(planned)* | East Slavic |
-| Russian (Latvia) | `ru-lv` | Universal *(planned)* | East Slavic |
-| Ukrainian | `uk` | Universal *(planned)* | East Slavic |
-| Belarusian | `be` | Universal *(planned)* | East Slavic |
-| Hindi | `hi` | Universal *(planned)* | Indic |
-| Bengali | `bn` | Universal *(planned)* | Indic |
-| Urdu | `ur` | Universal *(planned)* | Indic |
-| Punjabi | `pa` | Universal *(planned)* | Indic |
-| Gujarati | `gu` | Universal *(planned)* | Indic |
-| Marathi | `mr` | Universal *(planned)* | Indic |
-| Nepali | `ne` | Universal *(planned)* | Indic |
-| Assamese | `as` | Universal *(planned)* | Indic |
-| Oriya | `or` | Universal *(planned)* | Indic |
-| Sinhala | `si` | Universal *(planned)* | Indic |
-| Konkani | `kok` | Universal *(planned)* | Indic |
-| Bishnupriya Manipuri | `bpy` | Universal *(planned)* | Indic |
-| Sindhi | `sd` | Universal *(planned)* | Indic |
-| Persian | `fa` | Universal *(planned)* | Iranian |
-| Persian (Latin) | `fa-latn` | Universal *(planned)* | Iranian |
-| Kurdish | `ku` | Universal *(planned)* | Iranian |
-| Greek (Modern) | `el` | Universal *(planned)* | Greek |
-| Greek (Ancient) | `grc` | Universal *(planned)* | Greek |
-| Armenian (East) | `hy` | Universal *(planned)* | Indo-European |
-| Armenian (West) | `hyw` | Universal *(planned)* | Indo-European |
-| Albanian | `sq` | Universal *(planned)* | Indo-European |
-| Latin | `la` | Universal *(planned)* | Italic |
-| **🇹🇷 TURKIC LANGUAGES (Universal)** | | |
-| Turkish | `tr` | Universal *(planned)* | Turkic |
-| Azerbaijani | `az` | Universal *(planned)* | Turkic |
-| Kazakh | `kk` | Universal *(planned)* | Turkic |
-| Kyrgyz | `ky` | Universal *(planned)* | Turkic |
-| Uzbek | `uz` | Universal *(planned)* | Turkic |
-| Tatar | `tt` | Universal *(planned)* | Turkic |
-| Turkmen | `tk` | Universal *(planned)* | Turkic |
-| Uyghur | `ug` | Universal *(planned)* | Turkic |
-| Bashkir | `ba` | Universal *(planned)* | Turkic |
-| Chuvash | `cu` | Universal *(planned)* | Turkic |
-| Nogai | `nog` | Universal *(planned)* | Turkic |
-| **🇫🇮 URALIC LANGUAGES (Universal)** | | |
-| Finnish | `fi` | Universal *(planned)* | Uralic |
-| Lule Saami | `smj` | Universal *(planned)* | Uralic |
-| **🕌 SEMITIC LANGUAGES (Universal)** | | |
-| Arabic | `ar` | Universal *(planned)* | Semitic |
-| Hebrew | `he` | Universal *(planned)* | Semitic |
-| Amharic | `am` | Universal *(planned)* | Semitic |
-| Maltese | `mt` | Universal *(planned)* | Semitic |
-| **🏝️ MALAYO-POLYNESIAN LANGUAGES (Universal)** | | |
-| Indonesian | `id` | Universal *(planned)* | Malayo-Polynesian |
-| Malay | `ms` | Universal *(planned)* | Malayo-Polynesian |
-| **🇮🇳 DRAVIDIAN LANGUAGES (Universal)** | | |
-| Tamil | `ta` | Universal *(planned)* | Dravidian |
-| Telugu | `te` | Universal *(planned)* | Dravidian |
-| Kannada | `kn` | Universal *(planned)* | Dravidian |
-| Malayalam | `ml` | Universal *(planned)* | Dravidian |
-| **🇬🇪 SOUTH CAUCASIAN LANGUAGES (Universal)** | | |
-| Georgian | `ka` | Universal *(planned)* | South Caucasian |
-| **🗾 LANGUAGE ISOLATES & OTHERS (Universal)** | | |
-| Basque | `eu` | Universal *(planned)* | Language Isolate |
-| Quechua | `qu` | Universal *(planned)* | Quechuan |
-| **🛸 CONSTRUCTED LANGUAGES (Universal)** | | |
-| Esperanto | `eo` | Universal *(planned)* | Constructed |
-| Interlingua | `ia` | Universal *(planned)* | Constructed |
-| Ido | `io` | Universal *(planned)* | Constructed |
-| Lingua Franca Nova | `lfn` | Universal *(planned)* | Constructed |
-| Lojban | `jbo` | Universal *(planned)* | Constructed |
-| Pyash | `py` | Universal *(planned)* | Constructed |
-| Lang Belta | `qdb` | Universal *(planned)* | Constructed |
-| Quenya | `qya` | Universal *(planned)* | Constructed |
-| Klingon | `piqd` | Universal *(planned)* | Constructed |
-| Sindarin | `sjn` | Universal *(planned)* | Constructed |
+| **Language** | **Preset Code** | **Language Family** |
+|--------------|-----------------|-------------------|
+| **🇺🇸 ENGLISH VARIANTS** | |
+| English (US) | `en-us`, `en` | West Germanic |
+| English (UK) | `en-gb` | West Germanic |
+| English (Caribbean) | `en-029` | West Germanic |
+| English (Lancastrian) | `en-gb-x-gbclan` | West Germanic |
+| English (RP) | `en-gb-x-rp` | West Germanic |
+| English (Scottish) | `en-gb-scotland` | West Germanic |
+| English (West Midlands) | `en-gb-x-gbcwmd` | West Germanic |
+| **🇪🇺 EUROPEAN LANGUAGES** | |
+| German | `de` | West Germanic |
+| French | `fr` | Romance |
+| French (Belgium) | `fr-be` | Romance |
+| French (Switzerland) | `fr-ch` | Romance |
+| Spanish | `es` | Romance |
+| Spanish (Latin America) | `es-419` | Romance |
+| Italian | `it` | Romance |
+| Portuguese | `pt` | Romance |
+| Portuguese (Brazil) | `pt-br` | Romance |
+| Polish | `pl` | West Slavic |
+| Dutch | `nl` | West Germanic |
+| Danish | `da` | North Germanic |
+| Swedish | `sv` | North Germanic |
+| Norwegian Bokmål | `nb` | North Germanic |
+| Icelandic | `is` | North Germanic |
+| Czech | `cs` | West Slavic |
+| Slovak | `sk` | West Slavic |
+| Slovenian | `sl` | South Slavic |
+| Croatian | `hr` | South Slavic |
+| Bosnian | `bs` | South Slavic |
+| Serbian | `sr` | South Slavic |
+| Macedonian | `mk` | South Slavic |
+| Bulgarian | `bg` | South Slavic |
+| Romanian | `ro` | Romance |
+| Hungarian | `hu` | Uralic |
+| Estonian | `et` | Uralic |
+| Latvian | `lv` | Baltic |
+| Lithuanian | `lt` | Baltic |
+| Catalan | `ca` | Romance |
+| Aragonese | `an` | Romance |
+| Papiamento | `pap` | Romance |
+| Haitian Creole | `ht` | Romance |
+| Afrikaans | `af` | West Germanic |
+| Luxembourgish | `lb` | West Germanic |
+| Irish Gaelic | `ga` | Celtic |
+| Scottish Gaelic | `gd` | Celtic |
+| Welsh | `cy` | Celtic |
+| **🌏 INDO-EUROPEAN LANGUAGES** | |
+| Russian | `ru` | East Slavic |
+| Russian (Latvia) | `ru-lv` | East Slavic |
+| Ukrainian | `uk` | East Slavic |
+| Belarusian | `be` | East Slavic |
+| Hindi | `hi` | Indic |
+| Bengali | `bn` | Indic |
+| Urdu | `ur` | Indic |
+| Punjabi | `pa` | Indic |
+| Gujarati | `gu` | Indic |
+| Marathi | `mr` | Indic |
+| Nepali | `ne` | Indic |
+| Assamese | `as` | Indic |
+| Oriya | `or` | Indic |
+| Sinhala | `si` | Indic |
+| Konkani | `kok` | Indic |
+| Bishnupriya Manipuri | `bpy` | Indic |
+| Sindhi | `sd` | Indic |
+| Persian | `fa` | Iranian |
+| Persian (Latin) | `fa-latn` | Iranian |
+| Kurdish | `ku` | Iranian |
+| Greek (Modern) | `el` | Greek |
+| Greek (Ancient) | `grc` | Greek |
+| Armenian (East) | `hy` | Indo-European |
+| Armenian (West) | `hyw` | Indo-European |
+| Albanian | `sq` | Indo-European |
+| Latin | `la` | Italic |
+| **🇹🇷 TURKIC LANGUAGES** | |
+| Turkish | `tr` | Turkic |
+| Azerbaijani | `az` | Turkic |
+| Kazakh | `kk` | Turkic |
+| Kyrgyz | `ky` | Turkic |
+| Uzbek | `uz` | Turkic |
+| Tatar | `tt` | Turkic |
+| Turkmen | `tk` | Turkic |
+| Uyghur | `ug` | Turkic |
+| Bashkir | `ba` | Turkic |
+| Chuvash | `cu` | Turkic |
+| Nogai | `nog` | Turkic |
+| **🇫🇮 URALIC LANGUAGES** | |
+| Finnish | `fi` | Uralic |
+| Lule Saami | `smj` | Uralic |
+| **🕌 SEMITIC LANGUAGES** | |
+| Arabic | `ar` | Semitic |
+| Hebrew | `he` | Semitic |
+| Amharic | `am` | Semitic |
+| Maltese | `mt` | Semitic |
+| **🏝️ MALAYO-POLYNESIAN LANGUAGES** | |
+| Indonesian | `id` | Malayo-Polynesian |
+| Malay | `ms` | Malayo-Polynesian |
+| **🇮🇳 DRAVIDIAN LANGUAGES** | |
+| Tamil | `ta` | Dravidian |
+| Telugu | `te` | Dravidian |
+| Kannada | `kn` | Dravidian |
+| Malayalam | `ml` | Dravidian |
+| **🇬🇪 SOUTH CAUCASIAN LANGUAGES** | |
+| Georgian | `ka` | South Caucasian |
+| **🗾 LANGUAGE ISOLATES & OTHERS** | |
+| Basque | `eu` | Language Isolate |
+| Quechua | `qu` | Quechuan |
+| **🛸 CONSTRUCTED LANGUAGES** | |
+| Esperanto | `eo` | Constructed |
+| Interlingua | `ia` | Constructed |
+| Ido | `io` | Constructed |
+| Lingua Franca Nova | `lfn` | Constructed |
+| Lojban | `jbo` | Constructed |
+| Pyash | `py` | Constructed |
+| Lang Belta | `qdb` | Constructed |
+| Quenya | `qya` | Constructed |
+| Klingon | `piqd` | Constructed |
+| Sindarin | `sjn` | Constructed |
 
 </details>
 
-#### 🔧 Model Selection Guide
-
-| **Family** | **Covers** | **Status** |
-|---|---|---|
-| **English** | English variants | available |
-| **Multilingual** | 7 European languages | available |
-| **Universal** | the wider preset table above | *not trained yet* |
-
-Non-English presets fall back to **Multilingual** until **Universal** exists, so a preset for a
-language outside those 7 currently loads a model that has never heard it. The "Model Used"
-column above says where each preset is *headed*, not what loads today.
+Every preset in this table loads `CUPE-3-en`. The table says what espeak-ng and the ph66
+mapper can *phonemize*; the acoustic model has only been trained on English.
 
 **⚠️ Unsupported Language Types:**
 - **Tonal languages**: Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese
 - **Distant families**: Japanese, Korean, most African languages (Swahili, etc.)
 - **Indigenous languages**: Most Native American, Polynesian (except Indonesian/Malay)
 - **Recommendation**: these are limits of the ph66 phoneme inventory, not just of the training
-  data, so a different checkpoint will not fix them
+  data, so a different p3cupe model will not fix them. Use the `std` set where it covers
+  the language
 
 ### Initialization
 
 ```python
 PhonemeTimestampAligner(
     preset="en-us",               # Language code — selects model and phonemiser automatically
-    model_name=None,              # Override the model by name (optional)
-    cupe_ckpt_path=None,          # Override with a local model file path (optional)
-    lang="en-us",                 # espeak-ng language code for phonemisation
+    phoneme_set=None,             # "std" (default) or "ph66"; None = default, or the model's
+    model_name=None,              # A published model by name, e.g. "mbfa-latin-benchmark"
+    ckpt_path=None,               # A model on disk: release directory or training checkpoint
+    lang="en-us",                 # Language code for phonemisation
+    g2p_model_dir=None,           # std: a local copy of the G2P model (default: the HF cache)
+    g2p_device=None,              # std: device for the G2P model (default: same as `device`)
+    g2p_cache_size=None,          # std: word -> IPA entries remembered (default 500k)
+    punctuation_sil=False,        # std: write a silence at pause punctuation
     duration_max=30,              # Padding width in seconds for the batched short-segment path
     device="auto",                # "auto" | "cpu" | "cuda" | "mps"
     boundary_bonus_weight=None,   # Onset bonus; None = the checkpoint's own trained value
@@ -660,24 +773,31 @@ PhonemeTimestampAligner(
 )
 ```
 
-**For most users, only `preset` and `cupe_ckpt_path` need to be set.** Everything about the
-decoder defaults to the value the checkpoint was *trained* with, which is what its posteriors
-were shaped by.
+**For most users, only `preset` needs to be set** — plus `phoneme_set="ph66"` for the
+espeak-ng stack, or `ckpt_path` for a checkpoint of your own. Everything about the decoder
+defaults to the value the model was *published* with, which is what it was trained and scored
+with. `cupe_ckpt_path` and `mapper` are the older names of `ckpt_path` and `phoneme_set`
+and are still accepted.
 
 <details>
 <summary>Parameter details</summary>
 
 | Parameter | Default | What it does |
 |-----------|---------|-------------|
-| `preset` | `"en-us"` | Language code. Picks the checkpoint and the espeak-ng language. |
-| `model_name` | `None` | Checkpoint filename, overriding the preset's choice. Looked for on disk first, then on HuggingFace. |
-| `cupe_ckpt_path` | `None` | Path to a local p3cupe checkpoint. Highest priority. |
-| `lang` | `"en-us"` | espeak-ng language code. See [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
+| `preset` | `"en-us"` | Language code. Picks the language and, through it, the model. |
+| `phoneme_set` | `None` | `"std"` or `"ph66"`. `None` means the default (`std`) — or, with `ckpt_path` / `model_name`, whatever that model is. Asking for one set and passing a model of the other raises. See [Phoneme sets](#-phoneme-sets). |
+| `model_name` | `None` | A published model, overriding the preset's choice: `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `CUPE-3-en`, or any Hugging Face repository id in the same layout. Downloaded on first use. |
+| `ckpt_path` | `None` | Path to a model on disk, of either family: a release directory (`config.json` + `model.safetensors`) or a training checkpoint file. Highest priority, and decides the phoneme set by itself. A p4mbfa model also fixes the language group, so `lang` must be a language of that group. |
+| `lang` | `"en-us"` | Language code; overrides the preset's language. std: any BCP 47 code standard_g2p covers, in any case. ph66: an espeak-ng code, see [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
+| `g2p_model_dir` | `None` | std only. Directory already holding the G2P model (`config.json` + `pytorch_model.bin`). Default `$BFA_G2P_DIR`; with neither set it is downloaded from the Hugging Face Hub on first use. |
+| `g2p_device` | `None` | std only. Device for the G2P model; defaults to `device`. |
+| `g2p_cache_size` | `None` | std only. Word → IPA entries the G2P remembers (default 500k, ~55 MB; `0` = no limit). |
+| `punctuation_sil` | `False` | std only. Write a silence where the text has pause punctuation, as ph66 always does. Off by default because the p4mbfa models were trained without one; the aligner may skip any silence at no cost. An explicit `<SIL>` in the text is honoured either way. |
 | `duration_max` | `30` | Padding width for the batched path. Segments longer than this are decoded on their own, unpadded — so this trades memory against how many segments share one forward pass, and never truncates. |
 | `device` | `"auto"` | `"auto"` detects CUDA/MPS/CPU. The Viterbi itself always runs on CPU, where it measures ~3x faster than on CUDA (tiny per-frame tensors make it launch-bound). |
-| `boundary_bonus_weight` | `None` | Weight on the log-mel acoustic-change bonus added to every phone-onset transition inside the Viterbi. `None` uses the checkpoint's trained value (30 for the shipped one); `0` turns it off. See [The onset bonus](#the-onset-bonus). |
+| `boundary_bonus_weight` | `None` | Weight on the log-mel acoustic-change bonus added to every phone-onset transition inside the Viterbi. `None` uses the model's own value (30 for every published one); `0` turns it off. See [The onset bonus](#the-onset-bonus). |
 | `sub_frame_onsets` | `True` | Place each onset at the interpolated crossing of the two neighbouring posteriors instead of on the 5 ms grid. This is the readout the loss was shaped for. |
-| `min_phone_frames` | `None` | Shortest phone the aligner may emit, in 5 ms frames (6 = 30 ms for the shipped checkpoint). A clip whose text will not fit at this floor automatically gets a shorter one rather than losing its alignment. |
+| `min_phone_frames` | `None` | Shortest phone the aligner may emit, in 5 ms frames (6 = 30 ms for every published model). A clip whose text will not fit at this floor automatically gets a shorter one rather than losing its alignment. |
 | `soft_phone_frames` | `None` | Frames above the floor that a phone may give up, at a cost each — the soft half of the duration prior. |
 | `bad_confidence_threshold` | `0.6` | Share of low-confidence phonemes that flags a segment as `bad_alignment`. |
 | `low_confidence_level` | `0.25` | Confidence below which a phoneme counts towards that share. Calibrated against these checkpoints' posteriors — see [Reading confidence](#reading-confidence). |
@@ -689,37 +809,65 @@ were shaped by.
 | `chunk_vad` | `True` | Energy VAD used to measure speech seconds per window and to land cuts in pauses. |
 | `warn_level` | `1` | `0` silent, `1` warnings only, `2` adds the resolved frame geometry and decoder settings. |
 
-**Model priority (highest → lowest):** `cupe_ckpt_path` → `model_name` → `preset` → defaults.
+**Model priority (highest → lowest):** `ckpt_path` → `model_name` → `preset` → defaults.
 
 </details>
 
 ---
 
 <a id="available-checkpoints"></a>
-**Available checkpoints.** None are published yet.
+**Available models.** Each is a Hugging Face repository; BFA downloads its `config.json` and
+`model.safetensors` (~55 MB) on first use and reads everything else from them — the
+architecture, the frame geometry, the decoder settings and the label space.
 
-| Family | Checkpoint | Trained on |
+*p4mbfa (`std` set)* — one per language group. Each carries the token list it was trained on,
+and BFA refuses to load one whose list differs from its own tables:
+
+| Model | Language group | Trained on | Used by |
+|---|---|---|---|
+| [`mbfa-latin`](https://huggingface.co/Tabahi/mbfa-latin) | `latin` | FLEURS, 36 languages, 273 h | every `latin` preset — **the default** |
+| [`mbfa-latin-benchmark`](https://huggingface.co/Tabahi/mbfa-latin-benchmark) | `latin` | FLEURS, 36 languages, ~170 h | `model_name=` only |
+| [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | `cyrillic` | FLEURS: be bg hr kk mk ru sr uk, ~40 h | every `cyrillic` preset |
+| [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | `cjk` | FLEURS: Mandarin, Cantonese, ~9 h | `zh`, `zh-Hant`, `yue` |
+| [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | `japanese` | FLEURS: Japanese, 7 h | `ja` |
+
+The two latin models differ in training noise. `mbfa-latin` was trained with the most noise
+and is the one meant for real recordings; `mbfa-latin-benchmark` was trained with less and
+scores higher on TIMIT, which is clean studio speech (see each model card for the numbers).
+
+*p3cupe (`ph66` set):*
+
+| Model | Trained on | Used by |
 |---|---|---|
-| English | `m_pa07b_final_e5_libri360h.pt` | LibriSpeech, 360 h |
-| Multilingual | `m_pa07a_final_e4_MLS_7h.pt` | MLS, 7 European languages, English excluded |
-| Universal | *TODO — not trained yet* | *the wider preset table* |
+| [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | LibriSpeech, ~500 h, English | every `ph66` preset |
 
-<!-- TODO: publish these to HuggingFace and put the repo link here, e.g.
-     https://huggingface.co/<org>/<repo>/tree/main/ckpt -->
-
-Until they are on HuggingFace, `preset=` and `model_name=` resolve by looking for the file on
-disk first. BFA searches, in order:
-
-1. `$BFA_MODEL_DIR`
-2. `./models/p3cupe/` (relative to the working directory)
-3. `~/.cache/bournemouth_aligner/`
-
-So with a checkpoint at `models/p3cupe/m_pa07b_final_e5_libri360h.pt`, a plain
-`PhonemeTimestampAligner(preset="en-us")` works. Otherwise pass it explicitly:
+`CUPE-3-en` is the best model on TIMIT of either family, and the only p3cupe model published.
 
 ```python
-aligner = PhonemeTimestampAligner(cupe_ckpt_path="path/to/m_pa07b_final_e5_libri360h.pt")
+aligner = PhonemeTimestampAligner()                                    # mbfa-latin, English
+aligner = PhonemeTimestampAligner(preset="ru")                         # mbfa-cyrillic
+aligner = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark")   # by name
+aligner = PhonemeTimestampAligner(phoneme_set="ph66")                  # CUPE-3-en
+aligner = PhonemeTimestampAligner(model_name="CUPE-3-en")              # same thing
 ```
+
+**Offline, or your own models.** Before asking the Hub, `preset=` and `model_name=` look for a
+directory named after the model in `$BFA_MODEL_DIR`, then in `./models/`
+(`./models/mbfa-latin/config.json` + `model.safetensors`). `huggingface_hub`'s own switches
+apply as well: `$HF_HOME` moves the cache, `HF_HUB_OFFLINE=1` uses only what is cached.
+
+A model on disk is passed with `ckpt_path` — a release directory, or a training checkpoint
+file from [bfa_models](https://github.com/tabahi/bfa_models). The model says which family it
+is, so nothing else needs stating:
+
+```python
+aligner = PhonemeTimestampAligner(ckpt_path="path/to/mbfa-cjk", lang="zh")
+aligner = PhonemeTimestampAligner(ckpt_path="path/to/m_ma04a_epoch=6.ckpt")
+aligner = PhonemeTimestampAligner(ckpt_path="path/to/m_pa07f_epoch=0.ckpt")      # ph66
+```
+
+Each repository also holds the training checkpoint under `ckpt/`, for fine-tuning; BFA does
+not download it.
 
 
 ### `process_srt_file` — align a whole recording from a transcript file
@@ -822,24 +970,55 @@ See [batch_aligment.py](examples/batch_aligment.py) for a complete working examp
 Useful for inspecting how BFA will interpret your text before running alignment.
 
 ```python
+# std (default)
+result = aligner.phonemize_sentence("butterfly")
+
+print(result["eipa"])      # ['b', 'ə', 't', 'ɝ', 'f', 'ɫ', 'a', 'ɪ']  — the G2P's IPA phonemes
+print(result["mipa"])      # ['b', 'ə', 't', 'ɝ', 'f', 'ɫ', 'a', 'ɪ']  — the token each mapped to
+print(result["local_ph"])  # [22, 21, 9, 97, 19, 43, 4, 17]   — indices in the 'latin' token list
+print(result["gold_phg"])  # [5, 2, 4, 1, 7, 10, 3, 1]        — phoneme groups (15, shared by all languages)
+print(result["stress"])    # [0, 1, 0, 0, 0, 0, 2, 0]         — also "tone" and "length"
+print(result["words"])     # ['butterfly']
+print(result["word_num"])  # [0, 0, 0, 0, 0, 0, 0, 0]  — which word each phoneme belongs to
+```
+
+```python
+# ph66
+aligner = PhonemeTimestampAligner(preset="en-us", phoneme_set="ph66")
 result = aligner.phonemize_sentence("butterfly")
 
 print(result["eipa"])     # ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']  — original espeak-ng IPA
 print(result["mipa"])     # ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']  — mapped IPA (after ph66 reduction)
 print(result["ph66"])     # [29, 10, 58, 9, 43, 56, 23]             — numeric indices for the model
 print(result["pg16"])     # [7, 2, 14, 2, 8, 13, 5]                 — phoneme group indices
-print(result["words"])    # ['butterfly']
-print(result["word_num"]) # [0, 0, 0, 0, 0, 0, 0]  — which word each phoneme belongs to
 ```
 
-To change the espeak-ng language after initialisation:
+The key names differ between the sets; `aligner.phonemes_key` and `aligner.phoneme_groups_key`
+give the right ones for the aligner in hand.
+
+To change the language after initialisation (within the same language group, for std):
 ```python
 aligner.phonemizer.set_backend(language='de')  # switch to German phonemisation
 ```
 
+#### About the std token lists
+
+The `std` set maps every language onto one closed inventory of 270 "gold" tokens and then
+re-indexes them into the smaller list of the language's group — `local_ph`. Tone, stress and
+length are split off into their own layers instead of multiplying the phoneme classes, which
+is how Mandarin, Cantonese and English can share segment labels.
+
+- `phoneme_label` is the token; `ipa_label` is the phoneme the G2P wrote. They differ only
+  where a rare phoneme backed off to a close neighbour, or — for a phoneme outside the
+  language group's list — to `<unk>`.
+- The first four tokens are the same in every group: `<blank>` (never used), `SIL`, `noise`
+  (junk in the G2P's output) and `<unk>`.
+- A phoneme can back off to *two* tokens (`ʈ͡ʂ` → `ʈ ʂ`); both then carry its tone, stress,
+  length and word.
+
 #### About ph66 and the phoneme alphabet
 
-BFA uses a reduced alphabet of **66 phoneme classes (ph66)** that maps the full IPA inventory of any supported language onto a shared set of symbols. This is what the acoustic model was trained on.
+The `ph66` set uses a reduced alphabet of **66 phoneme classes** that maps the full IPA inventory of any supported language onto a shared set of symbols. This is what the p3cupe acoustic model was trained on.
 
 - `phoneme_label` in the output is the ph66 symbol (e.g. `"a:"`, `"b"`).
 - `ipa_label` is the original espeak-ng IPA for that position (e.g. `"ɑː"`, `"b"`).
@@ -934,28 +1113,32 @@ search itself — nothing is moved afterwards.
 
 `boundary_bonus_weight` adds `weight × (local log-mel spectral change)` nats to every
 transition that *starts* a phone at a given frame, so posterior evidence and acoustic change
-are traded off inside one global search. It defaults to whatever the loaded checkpoint was
-trained with (30 for the shipped one); `0` turns it off.
+are traded off inside one global search. It defaults to whatever the loaded model was
+published with (30 for every one of them); `0` turns it off.
 
 The evidence points both ways, so it is worth knowing which way your data leans:
 
-- **Against.** Scored per phone *onset* on TIMIT, the bonus costs about 7 f1@25 — it drags stop
-  onsets onto the burst and pulls vowel onsets early. (Measured on the English `pa01d`
-  checkpoint: per-phone f1@25 68.0 at weight 30 against 74.6 at weight 0.)
-- **For.** Measured on Buckeye conversational speech with the shipped MLS checkpoint, 40
-  segments × 3 seeds, it is the better setting on every one:
+- **Against.** Scored per phone *onset* — is each phone's own onset within 25 ms of its label
+  — the bonus costs accuracy: it drags stop onsets onto the burst and pulls vowel onsets early.
+  `CUPE-3-en` on TIMIT places 73.1% of phone onsets within 25 ms at weight 0 and 68.7% at
+  weight 30.
+- **For.** Scored as boundary f1 — is there a predicted boundary within 25 ms of each labelled
+  one — the bonus helps, and it helps the multilingual model most:
 
-  | | seed 0 | seed 1 | seed 2 |
-  |---|---|---|---|
-  | f1@25, weight 0 → 30 | 60.2 → **64.6** | 59.8 → **61.5** | 60.8 → **63.2** |
-  | f1@10, weight 0 → 30 | 36.2 → **43.8** | 34.5 → **40.1** | 39.1 → **45.1** |
+  | TIMIT f1@25 (held-out half of the 400-clip probe) | weight 0 | weight 30 |
+  |---|---|---|
+  | `CUPE-3-en` | 73.8 | **75.6** |
+  | `mbfa-latin` | 65.2 | **71.7** |
+  | `mbfa-latin-benchmark` | 68.8 | **72.9** |
 
-  and the median absolute onset error falls from 12–14 ms to 9–11 ms.
+  (Numbers from the model cards.) An earlier, unpublished p3cupe checkpoint trained on MLS
+  without English showed the same direction on Buckeye conversational speech: f1@25 up by 2–4
+  points and the median absolute onset error down from 12–14 ms to 9–11 ms.
 
-The difference is most likely the checkpoint. The shipped one was trained on MLS *without*
-English, so its English posteriors are weak and the aligner leans on acoustic change for
-placement more than a strong English model would. Re-measure with
-`tests/test_buckeye.py --cfg '{"boundary_bonus_weight": 0}'` when an English checkpoint exists.
+So: keep the default for segmentation-style use, where what matters is that boundaries exist
+in the right places; try `boundary_bonus_weight=0` when each phone's own onset time matters
+and the model is strong on your language. `tests/test_buckeye.py --cfg
+'{"boundary_bonus_weight": 0}'` measures it on Buckeye.
 
 <a id="reading-confidence"></a>
 #### Reading confidence
@@ -1264,8 +1447,12 @@ for f in *.wav; do balign "$f" "${f%.wav}.srt.json" "${f%.wav}.vs.json" --preset
 | `--textgrid PATH` | — | Save a Praat TextGrid file with phoneme, group, and word tiers. |
 | `--embeddings PATH` | — | Save per-phoneme CUPE embeddings as a `.pt` tensor. |
 | `--device auto\|cpu\|cuda` | `auto` | Inference device. |
-| `--lang CODE` | *(from preset)* | Override the espeak-ng language code only. |
-| `--model NAME` | *(from preset)* | Override the CUPE model name (advanced). |
+| `--phoneme-set std\|ph66` | `std` | Phoneme set and, with it, the model family. With `--model` / `--ckpt-path` the default is whatever that model is. |
+| `--lang CODE` | *(from preset)* | Override the language code only. |
+| `--model NAME` | *(from preset)* | A published model by name (`mbfa-latin-benchmark`, `CUPE-3-en`, …) or a Hugging Face repository id (advanced). |
+| `--ckpt-path PATH` | — | A model on disk, of either family: a release directory or a training checkpoint file (advanced). Decides the phoneme set by itself. |
+| `--g2p-device DEVICE` | *(same as `--device`)* | std only: device for the G2P model. |
+| `--punctuation-sil / --no-punctuation-sil` | off | std only: write a silence at pause punctuation. |
 | `--duration-max FLOAT` | `60.0` | Padding width in seconds for the batched short-segment path. Longer segments are decoded on their own, unpadded. |
 | `--boundary-bonus-weight FLOAT` | *(checkpoint's)* | Weight on the acoustic-change onset bonus. `0` turns it off. See [The onset bonus](#the-onset-bonus). |
 | `--sub-frame-onsets / --frame-grid-onsets` | on | Interpolate onsets at the posterior crossing rather than snapping to the 5 ms grid. |
@@ -1311,7 +1498,7 @@ BFA is built on the **CUPE (Contextless Universal Phoneme Encoder)** model. Unli
 graph TD
     A[Audio Input] --> B[RMS Normalization]
     B --> C[Audio Windowing]
-    C --> D[p3cupe Model Inference]
+    C --> D[p4mbfa / p3cupe Model Inference]
     D --> E[Phoneme/Group Posteriors]
     E --> F[Text Phonemization]
     F --> G[Segmental Viterbi]
@@ -1326,11 +1513,12 @@ graph TD
 1. **Audio preprocessing** — RMS normalisation, then a sliding window (120 ms windows, 80 ms
    stride). The model never sees more than one window at a time, which is what stops it
    learning any single language's phonotactics.
-2. **p3cupe inference** — a CNN assigns a probability to each of 66 phoneme classes for every
-   **5 ms** frame. The per-window outputs are stitched back onto one clip-long grid; the
+2. **Model inference** — a CNN (p4mbfa for the std set, p3cupe for ph66; same trunk) assigns
+   a probability to each phoneme class of its inventory for every **5 ms** frame. The per-window outputs are stitched back onto one clip-long grid; the
    window stride advances a whole number of frames, so `time_ms(frame f) = f × 5.0` exactly,
    with no correction term anywhere.
-3. **Text phonemisation** — espeak-ng converts the transcript to a sequence of ph66 indices.
+3. **Text phonemisation** — the transcript becomes a sequence of phoneme indices in that same
+   inventory: standard_g2p for std, espeak-ng for ph66.
 4. **Segmental Viterbi** — every frame is assigned to one phone of that sequence. Each phone
    is a chain of sub-states with a soft minimum duration, optional `SIL` states may be
    skipped, frames are scored on `log p(c|x) − log p̄(c)` (the hybrid-HMM scaled likelihood),
@@ -1347,13 +1535,13 @@ Everything about the decoder defaults to the value the loaded checkpoint was **t
 because its posteriors were shaped by targets that this same decoder built. The knobs below are
 worth turning in roughly this order.
 
-#### `boundary_bonus_weight` (default: the checkpoint's value, 30 for the shipped one)
+#### `boundary_bonus_weight` (default: the model's value, 30 for every published one)
 
 How much acoustic change is allowed to move an onset. This is the one knob with measurements
 pointing both ways — see [The onset bonus](#the-onset-bonus). Decode with `0` when comparing
 one checkpoint against another, so the comparison is about the model rather than about the flux.
 
-#### `min_phone_frames` / `soft_phone_frames` (default: the checkpoint's, 6 + 4)
+#### `min_phone_frames` / `soft_phone_frames` (default: the model's, 6 + 10)
 
 The duration prior, in 5 ms frames: the first `min_phone_frames` (30 ms) are mandatory, and the
 `soft_phone_frames` after them may each be given up at a cost. A phone shorter than the sum
@@ -1424,8 +1612,8 @@ complementary strengths.
 
 | | BFA | MFA |
 |--------|-----|-----|
-| **No dictionary needed** | ✅ espeak-ng generates phonemes on the fly | ❌ Requires a pronunciation dictionary |
-| **Language coverage** | 80+ languages via espeak-ng | Limited to available dictionaries |
+| **No dictionary needed** | ✅ a G2P model (or espeak-ng) generates phonemes on the fly | ❌ Requires a pronunciation dictionary |
+| **Language coverage** | 63 languages in the std set today, 80+ via espeak-ng in ph66 | Limited to available dictionaries |
 | **Output resolution** | 5 ms frames, sub-frame onsets | 10 ms frames |
 | **Boundary accuracy** | *being re-measured for v2* | — |
 
@@ -1445,29 +1633,34 @@ complementary strengths.
 ## Contribute
 
 - **ONNX port** — the exporter in [`bournemouth_aligner/cpp_onnx/`](bournemouth_aligner/cpp_onnx/) targets the v1 model and has not been ported to v2 yet. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you want to help.
-- **Mandarin and other tonal languages** — a new phoneme inventory would be needed; ph66 does not cover tone. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you'd like to help.
+- **More language groups** — the std set has token lists for Vietnamese, Greek/Armenian/Georgian/Korean, Arabic-script, Indic and Thai, but no trained checkpoint yet. Start a [discussion](https://github.com/tabahi/bournemouth-forced-aligner/issues) if you'd like to help.
 
 ## Frequently Asked Questions
 
 **Q: Do I need a pronunciation dictionary?**  
-No. BFA uses [espeak-ng](https://github.com/espeak-ng/espeak-ng) to generate IPA phonemisations automatically for all supported languages.
+No. The default `std` set phonemizes with a G2P model that BFA downloads on first use; the `ph66` set uses [espeak-ng](https://github.com/espeak-ng/espeak-ng). Neither needs a dictionary from you.
 
 **Q: Where do I get the model?**  
-The p3cupe checkpoints are not published yet. Put `m_pa07b_final_e5_libri360h.pt` under
-`models/p3cupe/` (or set `$BFA_MODEL_DIR`), or pass `cupe_ckpt_path=` directly. See
-[Available checkpoints](#available-checkpoints).
+Nowhere — BFA downloads it from Hugging Face the first time it is needed, picked by the
+language you ask for. To choose one yourself pass `model_name=`, or `ckpt_path=` for a model
+on disk. See [Available models](#available-checkpoints).
+
+**Q: Why are my numbers and abbreviations misaligned?**  
+In the `std` set the G2P reads one word at a time and does not expand digits, symbols or
+abbreviations the way espeak-ng does. Write them as they are spoken ("twenty five", not "25"),
+or use `phoneme_set="ph66"`.
 
 **Q: Does it work on noisy or spontaneous speech?**  
 Yes, but accuracy is lower than on clean read speech. Check `coverage_analysis["bad_alignment"]` to filter out unreliable segments.
 
 **Q: What is the difference between `phoneme_label` and `ipa_label`?**  
-`phoneme_label` is BFA’s internal ph66 symbol (e.g. `"a:"`); `ipa_label` is the original espeak-ng IPA (e.g. `"ˈɑːɹ"`). Use `ipa_label` for phonetic analysis and `phoneme_label` for model-internal comparisons.
+`phoneme_label` is the symbol in the model's own inventory — a ph66 symbol (e.g. `"a:"`) or a std token; `ipa_label` is the phoneme the G2P wrote before it was mapped (e.g. `"ˈɑːɹ"`). Use `ipa_label` for phonetic analysis and `phoneme_label` for model-internal comparisons.
 
 **Q: Why is confidence low for some phonemes?**  
 Two reasons, and they are worth telling apart. The model assigns low probability where the acoustic evidence is weak — short stops, reduced vowels, phonemes at segment boundaries. But the loss also deliberately does not saturate, so confidences sit lower *throughout* than you may expect: see [Reading confidence](#reading-confidence). Low confidence does not necessarily mean the timestamp is wrong; check visually in Praat if needed.
 
 **Q: Can I align a language that is not in the preset list?**  
-You can pass any espeak-ng `lang` code and BFA will phonemise it, but the ph66 mapper does not cover tonal languages or distant families, so results will vary. See [espeak-ng language codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md).
+With `phoneme_set="ph66"` you can pass any espeak-ng `lang` code and BFA will phonemise it, but the ph66 mapper does not cover tonal languages or distant families, so results will vary. See [espeak-ng language codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). The `std` set is stricter: a language it cannot serve raises instead of guessing.
 
 **Q: What audio format does it accept?**  
 Any format supported by `torchaudio` / ffmpeg — WAV, MP3, FLAC, OGG, M4A, and others.
