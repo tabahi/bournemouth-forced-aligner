@@ -8,7 +8,7 @@ from tqdm import tqdm
     
 #import re
 
-buckeye_base_dir =  '/mnt/intelpa-3/rehman/speech_data/buckeye_corpus'  # expect s01, s02, ... s40 subdirs, each with sXXXXa/b/*.wav, *.phones, *.words
+buckeye_base_dir =  '/mnt/intelpa-2/rehman/speech_data_small/buckeye_corpus'  # expect s01, s02, ... s40 subdirs, each with sXXXXa/b/*.wav, *.phones, *.words
 
 transcription_dir = 'tmp/data/buckeye_data'
 

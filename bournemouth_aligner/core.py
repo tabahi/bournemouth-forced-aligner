@@ -22,6 +22,11 @@ The one structural difference: p3cupe has a single label space for every languag
 p4mbfa checkpoint belongs to one LANGUAGE GROUP (latin, cyrillic, cjk, ...). The language picks
 the group and the group picks the checkpoint (`presets.py`).
 
+The models are the published ones and nothing else: `mbfa-latin`, `mbfa-latin-benchmark`,
+`mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese` (std) and `CUPE-3-en`, `CUPE-3-en-base`,
+`CUPE-3-mls7` (ph66), each a Hugging Face repository fetched on first use (`hub.py`), or the
+same thing on disk through `ckpt_path`.
+
 ## What places a boundary
 
 The model's posteriors ARE the boundary detector. Each phone is trained to peak at 1.0 across its
@@ -74,10 +79,10 @@ class PhonemeTimestampAligner:
     URL: https://github.com/tabahi/bournemouth-forced-aligner
     """
 
-    def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us',
-                 mapper=None, duration_max=30, device="auto", boundary_bonus_weight=None,
+    def __init__(self, preset="en-us", model_name=None, lang='en-us',
+                 duration_max=30, device="auto", boundary_bonus_weight=None,
                  sub_frame_onsets=True, min_phone_frames=None, soft_phone_frames=None,
-                 bad_confidence_threshold=0.6, low_confidence_level=0.25, chunk_audio=True,
+                 bad_confidence_threshold=0.6, low_confidence_level=None, chunk_audio=True,
                  chunk_seconds=DEFAULT_CHUNK_SECONDS, chunk_max_phonemes=DEFAULT_MAX_PHONEMES,
                  chunk_phonemes_per_second=DEFAULT_PHONEMES_PER_SECOND, chunk_vad=True,
                  segment_max_seconds=DEFAULT_SEGMENT_MAX_SECONDS, warn_level=1,
@@ -92,19 +97,20 @@ class PhonemeTimestampAligner:
                 `load_model()` must be called before aligning anything.
             model_name (str, optional): A published model, overriding the preset's choice:
                 "mbfa-latin", "mbfa-latin-benchmark", "mbfa-cyrillic", "mbfa-cjk",
-                "mbfa-japanese" (std) or "CUPE-3-en" (ph66), or any Hugging Face repository
-                id in the same layout. Downloaded on first use (`hub.resolve_model`).
-            cupe_ckpt_path (str, optional): Older name of `ckpt_path`.
+                "mbfa-japanese" (std) or "CUPE-3-en", "CUPE-3-en-base", "CUPE-3-mls7" (ph66),
+                or any Hugging Face repository id in the same layout. Downloaded on first use
+                (`hub.resolve_model`).
+            local_ckpt_path (str, optional): .
             lang (str): Language code for phonemization. Only overridden by `preset` while it
                 is still the default. For the std phoneme set any BCP 47 code standard_g2p
                 covers, in any case ("en", "en-GB", "pt-br", "zh-Hant", "ja"); for ph66 an
                 espeak-ng code, see
                 https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
-            mapper (str, optional): Deprecated name of `phoneme_set`.
             phoneme_set (str, optional): "std" (default) or "ph66". "std" phonemizes with
                 standard_g2p and decodes with the p4mbfa checkpoint of the language's group;
-                "ph66" phonemizes with espeak-ng and decodes with a p3cupe checkpoint. Left
-                unset with a `ckpt_path` or `model_name`, it is whatever that checkpoint is.
+                "ph66" phonemizes with espeak-ng and decodes with a p3cupe checkpoint:
+                CUPE-3-en for English, CUPE-3-mls7 for every other language. Left unset
+                with a `ckpt_path` or `model_name`, it is whatever that checkpoint is.
                 A language the std set cannot serve raises rather than falling back, because
                 the two sets' ids and output keys differ.
             ckpt_path (str, optional): Direct path to a model of either family on disk: a
@@ -128,25 +134,27 @@ class PhonemeTimestampAligner:
             device (str): "cpu", "cuda", "mps", or "auto" to detect.
             boundary_bonus_weight (float or None): Weight, in nats per standard deviation, on
                 the log-mel acoustic-change bonus added to every phone-onset transition inside
-                the Viterbi. `None` (default) uses the value the checkpoint was TRAINED with,
-                which is 30 for the shipped one; 0 turns the bonus off.
+                the Viterbi. `None` (default) uses the value the model was published with,
+                which is 30 for every released model; 0 turns the bonus off.
 
-                Worth knowing before changing it, because the evidence points both ways.
-                Against: scored per phone ONSET on TIMIT the bonus costs about 7 f1@25,
-                because it drags stop onsets onto the burst and pulls vowel onsets early
-                (`model3p/memory.md`, decoder sweep on the English pa01d checkpoint: 68.0 at
-                weight 30 against 74.6 at weight 0). For: measured here on Buckeye with the
-                unpublished MLS checkpoint (pa07a), 40 segments x 3 seeds, it is the better
-                setting on every one -
+                Which is better depends on what is being measured (TIMIT, held-out half of
+                the 400-clip probe, from the model cards):
 
-                    f1@25   seed 0  60.2 -> 64.6   seed 1  59.8 -> 61.5   seed 2  60.8 -> 63.2
-                    f1@10   seed 0  36.2 -> 43.8   seed 1  34.5 -> 40.1   seed 2  39.1 -> 45.1
+                                      boundary f1@25        phone onsets within 25 ms
+                                      bonus 0   bonus 30    bonus 0   bonus 30
+                    CUPE-3-en          73.8      75.6        73.1      68.7
+                    CUPE-3-en-base     73.8      76.0        74.6      68.6
+                    CUPE-3-mls7        70.9      74.2        71.1      66.4
+                    mbfa-latin         65.2      71.7
+                    mbfa-latin-bench.  68.8      72.9
 
-                and the median absolute onset error falls from 12-14 ms to 9-11 ms. The
-                difference is most likely the checkpoint: this one was trained on MLS without
-                English and its English posteriors are weak, so the aligner leans on acoustic
-                change for placement more than a strong English model would. Re-measure it
-                when an English p3cupe checkpoint exists.
+                Scored as a set of boundaries on read speech the bonus wins on every model.
+                Scored per phone ONSET it loses about five points, because it drags stop
+                onsets onto the burst and pulls vowel onsets early. And on conversational
+                speech (Buckeye, 3 interviews) the CUPE-3 models score higher WITHOUT it -
+                boundary f1@25 of 72.0 against 68.8 for CUPE-3-en - while the mbfa models do
+                not care (63.2 against 63.6). Keep it for read speech and segmentation; try 0
+                for spontaneous speech and when each phone's own onset is what matters.
             sub_frame_onsets (bool): Place each onset at the interpolated crossing of the two
                 neighbouring posteriors instead of on the 5 ms frame grid. This is the readout
                 the loss was shaped for; `False` gives plain frame indices.
@@ -159,13 +167,11 @@ class PhonemeTimestampAligner:
                 the checkpoint's value.
             bad_confidence_threshold (float): Share of low-confidence phonemes above which a
                 segment is flagged (`coverage_analysis["bad_alignment"]`). 1 disables it.
-            low_confidence_level (float): Confidence below which a phoneme counts towards that
-                share. **Not comparable with BFA <= 1.2's 0.5**, which was set against CTC
-                posteriors that sit near 1.0 inside a phone. p3cupe's loss deliberately does
-                not saturate, so its confidences are lower throughout: measured on the MLS
-                checkpoint (pa07a), the mean peak posterior of a correctly placed phone is 0.33 on
-                English read speech. This default is calibrated against that one checkpoint and
-                should be re-checked when an English-trained p3cupe checkpoint exists.
+            low_confidence_level (float or None): Confidence below which a phoneme counts
+                towards that share. `None` (default) takes the loaded model family's own
+                level, because the two are not on one scale: 0.2 for the CUPE-3 (p3cupe)
+                models and 0.1 for the mbfa (p4mbfa) ones. These models' loss deliberately
+                does not saturate, so a well-placed phone reads far below 1.0 in both.
             chunk_audio (bool): Align segments longer than `segment_max_seconds` by walking
                 overlapping windows instead of decoding them in one pass. See `chunking.py`
                 and `set_chunking()`. `False` always decodes whole, whatever the length.
@@ -180,9 +186,10 @@ class PhonemeTimestampAligner:
                 decoding is more accurate than chunking - chunk cuts can land mid-phone - so
                 raise it if the hardware allows; the cost is a python-loop DP that runs at
                 roughly 1.8 s per 32 s of audio.
-            warn_level (int): 0 = silent, 1 = warnings only (default), 2 = warnings plus
-                informational output (resolved geometry, decoder settings, coverage details).
-                Errors are raised as exceptions regardless.
+            warn_level (int): 0 = nothing is printed, a first-time download included.
+                1 (default) = warnings, and one line when a model is downloaded. 2 = also
+                download progress bars and informational output (resolved geometry, decoder
+                settings, coverage details). Errors are raised as exceptions regardless.
 
         Parameter priority (highest to lowest): `ckpt_path`, `model_name`, `preset`.
 
@@ -213,8 +220,8 @@ class PhonemeTimestampAligner:
         # --- phoneme set ------------------------------------------------------------------
         # What the caller ASKED for, or None. The set actually in use (`self.phoneme_set`) is
         # settled by `load_model`, because a checkpoint path decides it on its own.
-        self._requested_set = (None if phoneme_set is None and mapper is None
-                               else _presets.resolve_phoneme_set(phoneme_set, mapper))
+        self._requested_set = (None if phoneme_set is None
+                               else _presets.resolve_phoneme_set(phoneme_set))
         self._g2p_options = dict(device=g2p_device or device, model_dir=g2p_model_dir,
                                  cache_size=g2p_cache_size, punctuation_sil=punctuation_sil)
         self.phoneme_set = None
@@ -231,7 +238,9 @@ class PhonemeTimestampAligner:
         self._soft_phone_frames_override = soft_phone_frames
         self.boundary_bonus_weight = float(boundary_bonus_weight or 0.0)
         self.bad_confidence_threshold = bad_confidence_threshold
-        self.low_confidence_level = float(low_confidence_level)
+        # Settled by `load_model`: the family's own level unless one was given here.
+        self._low_confidence_override = low_confidence_level
+        self.low_confidence_level = low_confidence_level
         self.segment_max_seconds = float(segment_max_seconds)
 
         # --- chunking (chunking.py) -------------------------------------------------------
@@ -247,7 +256,6 @@ class PhonemeTimestampAligner:
         self.chunk_weak_run = DEFAULT_WEAK_RUN
         self.chunk_snap_to_silence = DEFAULT_SNAP_TO_SILENCE_SEC
 
-        ckpt_path = ckpt_path or cupe_ckpt_path
         if preset is not None or model_name is not None or ckpt_path is not None:
             self.load_model(preset=preset, model_name=model_name, ckpt_path=ckpt_path)
         else:
@@ -268,6 +276,18 @@ class PhonemeTimestampAligner:
     # ======================================================================================
     # Setup
     # ======================================================================================
+
+    @property
+    def warn_level(self):
+        return self._warn_level
+
+    @warn_level.setter
+    def warn_level(self, level):
+        # The phonemizer prints on its own behalf (the G2P's one-off download, an unmapped
+        # phoneme), so a level changed after construction has to reach it too.
+        self._warn_level = int(level)
+        if getattr(self, 'phonemizer', None) is not None:
+            self.phonemizer.verbose = self._warn_level
 
     def _info(self, msg):
         """Informational output - resolved geometry, decoder settings. `warn_level >= 2`."""
@@ -299,7 +319,6 @@ class PhonemeTimestampAligner:
         elif lang != self.lang:
             self.phonemizer.set_backend(language=lang)
         self.phoneme_set = phoneme_set
-        self.selected_mapper = phoneme_set          # the name older code reads
         self.lang = lang
         self._setup_labels()
 
@@ -335,23 +354,22 @@ class PhonemeTimestampAligner:
         self.total_phonemes_missed = 0
         self.perfect_matches = 0
 
-    def load_model(self, preset="en-us", model_name=None, ckpt_path=None, cupe_ckpt_path=None):
+    def load_model(self, preset="en-us", model_name=None, ckpt_path=None):
         """
         Load a model and adopt its phoneme set, geometry and decoder settings.
 
-        Priority: `ckpt_path` (or its older name `cupe_ckpt_path`), then `model_name`, then
-        `preset`. Whichever names the model, the preset still supplies the LANGUAGE as long as
-        none was given explicitly.
+        Priority: `ckpt_path`, then `model_name`, then `preset`. Whichever names the model,
+        the preset still supplies the LANGUAGE as long as none was given explicitly.
 
-        `model_name` is a published model ('mbfa-latin', 'CUPE-3-en', or a full Hub repository
-        id), downloaded on first use; `ckpt_path` is a release directory or a training
-        checkpoint file on disk.
+        `model_name` is a published model ('mbfa-latin', 'CUPE-3-mls7', or a full Hub
+        repository id), downloaded on first use; `ckpt_path` is a release directory or a
+        training checkpoint file on disk.
 
         The model has the last word on the phoneme set: a p3cupe one is ph66 and a p4mbfa one
         is std, whatever the default is. Asking for one set by name and handing over a model
         of the other raises.
         """
-        ckpt_path = ckpt_path or cupe_ckpt_path
+
         want_set = self._requested_set
         lang = self.lang
 
@@ -363,14 +381,18 @@ class PhonemeTimestampAligner:
                 if note:
                     self._warn(note)
             else:
-                model_name, lang = _presets.get_preset(
-                    preset=preset, lang=_presets.DEFAULT_LANG if self._lang_is_default else lang)
+                # The LANGUAGE picks the ph66 model (English, or English + 7), so an explicit
+                # `lang=` decides it just as a preset does.
+                asked = preset if (preset and self._lang_is_default) else lang
+                model_name, lang, note = _presets.get_preset(preset=asked, lang=asked)
+                if note:
+                    self._warn(note)
         elif preset and self._lang_is_default:
             lang = preset
 
         if ckpt_path is None:
-            # On disk first ($BFA_MODEL_DIR, ./models), then the model's Hub repository.
-            ckpt_path = hub.resolve_model(model_name)
+            # On disk first ($BFA_MODEL_DIR, ./models), then the Hub cache, then the Hub.
+            ckpt_path = hub.resolve_model(model_name, verbose=self.warn_level)
         elif not os.path.exists(ckpt_path):
             raise FileNotFoundError(
                 f"ckpt_path {ckpt_path!r} does not exist. It takes a release directory "
@@ -404,6 +426,9 @@ class PhonemeTimestampAligner:
         self.ms_per_frame = self.extractor.ms_per_frame
         self.frames_per_window = self.extractor.frames_per_window
         self._resolve_decoder()
+        self.low_confidence_level = float(
+            self.extractor.low_confidence_level if self._low_confidence_override is None
+            else self._low_confidence_override)
 
         self._info(f"BFA: {self.extractor.family} model {shown}, "
                    f"phoneme set {self.inventory.name}, language {self.lang}")
@@ -454,8 +479,8 @@ class PhonemeTimestampAligner:
         phoneme_set = self.phoneme_set or self._requested_set or _presets.DEFAULT_PHONEME_SET
         if model_name is None:
             model_name = (_presets.get_std_preset(self.lang)[0] if phoneme_set == "std"
-                          else _presets.DEFAULT_MODEL)
-        path = hub.resolve_model(model_name, local_dir=local_dir)
+                          else _presets.ph66_model(self.lang))
+        path = hub.resolve_model(model_name, local_dir=local_dir, verbose=self.warn_level)
         self._info(f"Model available at: {path}")
         return path
 
@@ -648,9 +673,8 @@ class PhonemeTimestampAligner:
 
         Returns:
             (timestamp_dicts, pooled_phoneme_embeddings, pooled_group_embeddings) where each
-            timestamp dict has 'phoneme_timestamps' and 'group_timestamps' as 8-tuples
-            `(id, start_frame, end_frame, target_idx, is_estimated, confidence, start_ms,
-            end_ms)`.
+            timestamp dict has 'phoneme_timestamps' and 'group_timestamps' as 7-tuples
+            `(id, start_frame, end_frame, target_idx, confidence, start_ms, end_ms)`.
         """
         assert self.extractor is not None, \
             "No model loaded. Use load_model() before aligning."
@@ -709,13 +733,11 @@ class PhonemeTimestampAligner:
             rows = {}
             for key, stamps, probs in (('phoneme_timestamps', frame_phonemes[b], log_probs_p[b]),
                                        ('group_timestamps', frame_groups[b], log_probs_g[b])):
-                # `is_estimated` is always False now - forced alignment places every target it
-                # reports - but the field stays in the output schema.
-                stamps = _calculate_confidences(probs, [(*t, False) for t in stamps])
+                stamps = _calculate_confidences(probs, stamps)
                 stamps = convert_to_ms(stamps, spectral_lens[b], offset, wav_lens[b],
                                        self.resampler_sample_rate,
                                        frame_stride_samples=self.frame_stride_wav)
-                rows[key] = sorted(stamps, key=lambda x: x[6])
+                rows[key] = sorted(stamps, key=lambda x: x[5])
             timestamp_dicts.append(rows)
 
         pooled_p, pooled_g = [None] * len(frame_phonemes), [None] * len(frame_phonemes)
@@ -1003,7 +1025,7 @@ class PhonemeTimestampAligner:
                 keep = max(1, min(keep, 1))
                 keep_mask = [i == 0 for i in range(len(stamps))]
 
-            last_end_ms = max(float(t[7]) for t in kept)
+            last_end_ms = max(float(t[6]) for t in kept)
             cut_rel = (last_end_ms / 1000.0) - start_sec
 
             if (not final) and self.chunk_snap_to_silence > 0:
@@ -1049,8 +1071,8 @@ class PhonemeTimestampAligner:
                        f"{n_total} phonemes unaligned ({seg_dur:.2f}s segment). The text is "
                        f"longer than the audio, or the audio is mostly silence.")
 
-        ph_rows.sort(key=lambda r: (r[0][6], r[0][3]))
-        grp_rows.sort(key=lambda r: (r[0][6], r[0][3]))
+        ph_rows.sort(key=lambda r: (r[0][5], r[0][3]))
+        grp_rows.sort(key=lambda r: (r[0][5], r[0][3]))
         ph_stamps = [r[0] for r in ph_rows]
         grp_stamps = [r[0] for r in grp_rows]
 
@@ -1082,10 +1104,10 @@ class PhonemeTimestampAligner:
         they are global on arrival.
         """
         out = []
-        for (ph, sf, ef, ti, est, conf, sms, ems) in stamps:
+        for (ph, sf, ef, ti, conf, sms, ems) in stamps:
             out.append((ph, float(sf) + frame_offset, float(ef) + frame_offset,
                         int(ti) + ph_offset if int(ti) >= 0 else int(ti),
-                        est, conf, sms, ems))
+                        conf, sms, ems))
         return out
 
     def _align_chunk(self, wav, t0, t1, seg_start_sec, phonemes, groups,
@@ -1129,7 +1151,7 @@ class PhonemeTimestampAligner:
         """
         How many of a window's `n_targets` phonemes to trust.
 
-        `stamps` are the window's aligned 8-tuples, in start-time order, with window-local
+        `stamps` are the window's aligned 7-tuples, in start-time order, with window-local
         target indices. They are re-keyed by target index here so a target the aligner could
         not place shows up as `None` and counts as derailed.
 
@@ -1143,7 +1165,7 @@ class PhonemeTimestampAligner:
         durations = [None] * n_targets
         confidences = [None] * n_targets
         ends_ms = [None] * n_targets
-        for (_ph, sf, ef, ti, _est, conf, _sms, ems) in stamps:
+        for (_ph, sf, ef, ti, conf, _sms, ems) in stamps:
             ti = int(ti)
             if 0 <= ti < n_targets and durations[ti] is None:
                 durations[ti] = float(ef) - float(sf)
@@ -1302,13 +1324,12 @@ class PhonemeTimestampAligner:
                               else "overflow"),
                 "start_ms": float(start_ms),
                 "end_ms": float(end_ms),
-                "confidence": float(avg_confidence),
-                "is_estimated": bool(is_estimated),
+                "confidence": float(confidence),
                 "target_seq_idx": int(target_seq_idx),
                 "index": idx
             }
-            for idx, (ph_idx, start_frame, end_frame, target_seq_idx, is_estimated,
-                      avg_confidence, start_ms, end_ms) in enumerate(phoneme_timestamps)
+            for idx, (ph_idx, start_frame, end_frame, target_seq_idx, confidence,
+                      start_ms, end_ms) in enumerate(phoneme_timestamps)
         ]
         # The std set's suprasegmental layers, one value per target phoneme. They come from
         # the G2P, not from the audio: what the dictionary says, placed on the aligned phone.
@@ -1340,13 +1361,12 @@ class PhonemeTimestampAligner:
                     "group_label": self.group_id_to_label.get(grp_idx, f"UNK_{grp_idx}"),
                     "start_ms": float(start_ms),
                     "end_ms": float(end_ms),
-                    "confidence": float(avg_confidence),
-                    "is_estimated": bool(is_estimated),
+                    "confidence": float(confidence),
                     "target_seq_idx": int(target_seq_idx),
                     "index": idx
                 }
-                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, is_estimated,
-                          avg_confidence, start_ms, end_ms) in enumerate(group_timestamps)
+                for idx, (grp_idx, start_frame, end_frame, target_seq_idx, confidence,
+                          start_ms, end_ms) in enumerate(group_timestamps)
             ]
 
         ts_out_segment["words_ts"] = self._align_words(

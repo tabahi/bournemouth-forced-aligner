@@ -1,5 +1,5 @@
 '''
-Loading a p3cupe model: a release directory (`Tabahi/CUPE-3-en`) or a training checkpoint.
+Loading a p3cupe model: a release directory (`Tabahi/CUPE-3-*`) or a training checkpoint.
 
 The clip-level forward pass - windows in, one stitched 5 ms frame grid out - is the same for
 both model families and lives in `segmental/extractor.py`. What is p3cupe's own is here: how
@@ -20,11 +20,7 @@ class CupeExtractor(BaseExtractor):
     '''A loaded p3cupe checkpoint. See `segmental.extractor.BaseExtractor`.'''
 
     family = 'p3cupe'
-    # p3cupe checkpoints from before a decoder key existed rebuild with the value that key
-    # had at the time.
-    DECODER_DEFAULTS = {'min_phone_frames': 6, 'soft_phone_frames': 4, 'soft_frame_cost': 1.0,
-                        'sil_skippable': True, 'optional_sil': True, 'class_prior_norm': True,
-                        'boundary_bonus_weight': 0.0, 'boundary_contrast_frames': 17}
+    low_confidence_level = 0.2
 
     def _build_model(self, checkpoint, verbose):
         if 'phoneme_classes' not in checkpoint['model_config']:

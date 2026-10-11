@@ -3,8 +3,8 @@ p3cupe: context-free universal phoneme encoder, CNN only.
 
 Takes a raw 16 kHz waveform window (120 ms) and emits one phoneme posterior per 5 ms frame.
 No transformer, no boundary head, no refiner, no blank class. This is the inference copy of
-the trunk; the training package it was ported from is `bournemouth_aligner/model3p/`, whose
-README.md and memory.md hold the design record.
+the trunk; the training package it was ported from is `bfa_models/p3cupe/` (the models
+repository), whose README.md and memory.md hold the design record.
 
 ## Geometry (every timestamp in this library comes from these numbers)
 
@@ -96,7 +96,7 @@ class FrameBlock(nn.Module):
             nn.Linear(dim * ffn_mult, dim),
         )
         # Zero-initialised residual output, so an untrained block is the identity. Kept
-        # identical to the training copy in `model3p/model.py` so the two cannot drift.
+        # identical to the training copy in `bfa_models/p3cupe/model.py` so the two cannot drift.
         nn.init.zeros_(self.ffn[-1].weight)
         nn.init.zeros_(self.ffn[-1].bias)
         self.drop = nn.Dropout(dropout)

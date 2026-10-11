@@ -90,8 +90,8 @@ def _calculate_confidences(log_probs, framestamps):
 
     Args:
         log_probs: Log probabilities [T, C]
-        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated)
-            tuples. Frames may be fractional.
+        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx) tuples.
+            Frames may be fractional.
 
     Returns:
         The same tuples with the confidence appended.
@@ -100,15 +100,14 @@ def _calculate_confidences(log_probs, framestamps):
     n_frames, n_classes = probs.shape
     updated_tuples = []
 
-    for phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated in framestamps:
+    for phoneme_id, start_frame, end_frame, target_seq_idx in framestamps:
         start = max(0, min(int(start_frame), n_frames - 1))
         end = max(start + 1, min(int(math.ceil(float(end_frame))), n_frames))
         if phoneme_id < n_classes:
             confidence = float(probs[start:end, phoneme_id].max())
         else:
             confidence = 0.0
-        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx,
-                               is_estimated, confidence))
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, confidence))
 
     return updated_tuples
 
@@ -116,13 +115,13 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
                   frame_stride_samples=None):
     '''
     Args:
-        framestamps: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence)
+        framestamps: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, confidence)
         spectral_length: Number of spectral frames (int)
         start_time: Start time of the segment in seconds, used to offset the timestamps
         wav_len: Length of the audio segment in samples, used to estimate the duration per spectral-frame
         sample_rate: Sample rate of the audio, used to convert frames to milliseconds
     Returns:
-        updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
+        updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, confidence, start_ms, end_ms)
     '''
     # Frames advance at a FIXED rate: the feature extractor's total conv stride (80 samples
     # = 5 ms for p3cupe). Dividing the clip duration by the frame count is not the same
@@ -135,16 +134,7 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
         duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
 
     updated_tuples = []
-    for tup in framestamps:
-        if len(tup) == 6:
-            phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence = tup
-        else:
-            # fallback for tuples with different length
-            phoneme_id, start_frame, end_frame = tup[:3]
-            target_seq_idx = tup[3] if len(tup) > 3 else -1
-            is_estimated = tup[4] if len(tup) > 4 else False
-            avg_confidence = tup[5] if len(tup) > 5 else 0.0
-
+    for phoneme_id, start_frame, end_frame, target_seq_idx, confidence in framestamps:
         # Calculate start and end times in seconds
         start_sec = start_offset_time + (start_frame * duration_per_frame)
         end_sec = start_offset_time + (end_frame * duration_per_frame)
@@ -152,7 +142,7 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
         start_ms = start_sec * 1000
         end_ms = end_sec * 1000
 
-        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms))
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, confidence, start_ms, end_ms))
 
     return updated_tuples
     
@@ -494,7 +484,6 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
         end_frame   = ms_to_frame(ph['end_ms'])
         label       = ph.get('ipa_label') or ph.get('phoneme_label', '?')
         confidence  = ph.get('confidence', 1.0)
-        estimated   = ph.get('is_estimated', False)
 
         # Boundary line at phoneme start (skip very first)
         if prev_end_frame is not None:

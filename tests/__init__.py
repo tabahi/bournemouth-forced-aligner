@@ -19,7 +19,7 @@ TEST_CONFIG = {
     "sample_rate": 16000,
     "test_duration": 2.0,
     "device": "cpu",
-    "model_name": "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
+    "model_name": "mbfa-latin",
     "lang": "en-us",
 }
 

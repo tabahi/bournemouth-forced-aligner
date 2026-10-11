@@ -16,7 +16,7 @@ is why a 5 ms frame grid is not the resolution limit.
 
 The targets that shape was trained towards came from this DP, run on the model's own posteriors
 (hard-EM). Decoding with anything else would be decoding with a different model than the one
-that was trained, so `viterbi_align` here is a port of `model3p/loss.py`'s, not a second
+that was trained, so `viterbi_align` here is a port of `bfa_models/p3cupe/loss.py`'s, not a second
 implementation.
 
 ## The topology
@@ -165,10 +165,11 @@ def boundary_bonus(flux, input_lens, contrast_frames=17):
 
     It snaps onsets onto abrupt acoustic change, which means stop BURSTS. On TIMIT's standard
     boundary scorer, which labels a stop's closure and its burst as two separate boundaries,
-    that is worth about +7 f1@25. Scored per phone ONSET - which is what this library emits -
-    it measured about -7, because it drags stop onsets to the burst and pulls vowel onsets
-    early (`model3p/memory.md`, decoder sweep on pa01d e3: per-phone f1@25 goes 68.0 at weight
-    30, 74.6 at weight 0). Hence the default of 0 in `core.py`.
+    that is worth +2 f1@25 on the CUPE-3 models and up to +6.5 on the mbfa ones. Scored per
+    phone ONSET - which is what this library emits - it costs about 5, because it drags stop
+    onsets to the burst and pulls vowel onsets early (CUPE-3-en-base, TIMIT: 68.6% of onsets
+    within 25 ms at weight 30, 74.6% at weight 0). The released models are published with 30,
+    which is what `core.py` uses unless told otherwise; its docstring has the table.
     '''
     b, t = flux.shape
     out = torch.zeros(b, t, device=flux.device)

@@ -230,7 +230,7 @@ def run(args):
     cfg.update(json.loads(args.cfg))
     # The phoneme set picks the published model (mbfa-latin / CUPE-3-en) unless --cfg names
     # one itself, in which case the model decides the set.
-    if not any(k in cfg for k in ("model_name", "ckpt_path", "cupe_ckpt_path")):
+    if not any(k in cfg for k in ("model_name", "ckpt_path")):
         cfg["phoneme_set"] = args.phoneme_set
     aligner = PhonemeTimestampAligner(**cfg)
     aligner.warn_level = 0

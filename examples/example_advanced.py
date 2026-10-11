@@ -12,7 +12,7 @@ def example_audio_file_processing():
     For batch processing, it's better to create a single Instance of PhonemeTimestampAligner, and use its `process_srt_file` method for each file. 
     Using this method is not recommended for batch processing since it will create a new instance of the extractor for each file, which is inefficient."""
 
-    cupe_ckpt_path="models/p3cupe/m_pa07b_final_e5_libri360h.pt"
+    model_name = "CUPE-3-en"  # a published model by name; a model on disk goes in ckpt_path="..."
 
     # This would typically come from your data collator
     example_paths = [
@@ -32,7 +32,7 @@ def example_audio_file_processing():
     ]
 
 
-    extractor = PhonemeTimestampAligner(cupe_ckpt_path=cupe_ckpt_path, lang='en-us', duration_max=10, device='cpu')
+    extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
 
 
 

@@ -388,7 +388,7 @@ class TestPhonemeTimestampAligner:
 
         required_fields = {"phoneme_id", "phoneme_label", "ipa_label",
                            "start_ms", "end_ms", "confidence",
-                           "is_estimated", "target_seq_idx", "index"}
+                           "target_seq_idx", "index"}
         for ts_item in result['segments'][0]['phoneme_ts']:
             assert required_fields.issubset(ts_item.keys()), \
                 f"Missing fields: {required_fields - set(ts_item.keys())}"

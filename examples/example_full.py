@@ -15,9 +15,9 @@ duration_max = 10 # it's only for padding and clipping. Set it more than your ex
 extractor = PhonemeTimestampAligner(duration_max=duration_max, device=device) # initialize without loading a model
 
 # Alternative: explicit model selection
-# cupe_ckpt_path = "models/p3cupe/m_pa07b_final_e5_libri360h.pt"  # a local checkpoint; published models go in model_name="..."
-# lang = 'en-us' # Each CUPE model is trained on a specific language(s)
-# extractor = PhonemeTimestampAligner(cupe_ckpt_path=cupe_ckpt_path, lang=lang, duration_max=duration_max, device=device)
+# model_name = "CUPE-3-en"  # a published model; a release directory or checkpoint on disk goes in ckpt_path="..."
+# lang = 'en-us' # Each model is trained on a specific language(s)
+# extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
 
 # Step 2a: Load and preprocess audio - manually
 

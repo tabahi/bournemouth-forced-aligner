@@ -108,10 +108,10 @@ class TestKeepCount:
 
     @staticmethod
     def _stamps(durations, confidences):
-        """Minimal 8-tuples: (id, start_frame, end_frame, target_idx, est, conf, s_ms, e_ms)."""
+        """Minimal 7-tuples: (id, start_frame, end_frame, target_idx, conf, s_ms, e_ms)."""
         out, f = [], 0
         for i, (d, c) in enumerate(zip(durations, confidences)):
-            out.append((1, f, f + d, i, False, c, f * 5.0, (f + d) * 5.0))
+            out.append((1, f, f + d, i, c, f * 5.0, (f + d) * 5.0))
             f += d
         return out
 
@@ -239,7 +239,7 @@ class TestWindowTrustCap:
         """n healthy phonemes evenly filling `span_ms` of a window starting at window_ms[0]."""
         a = window_ms[0]
         step = span_ms / n
-        return [(1, i * 2.0, (i + 1) * 2.0, i, False, conf, a + i * step, a + (i + 1) * step)
+        return [(1, i * 2.0, (i + 1) * 2.0, i, conf, a + i * step, a + (i + 1) * step)
                 for i in range(n)]
 
     def test_time_cap_trims_a_window_that_filled_its_audio(self):

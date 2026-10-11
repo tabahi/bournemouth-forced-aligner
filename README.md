@@ -60,7 +60,7 @@ default:
 | `phoneme_set` | Text → phonemes | Acoustic model | Languages |
 |---|---|---|---|
 | **`"std"`** *(default)* | [standard_g2p](https://github.com/tabahi/CharsiuG2P) — a ByT5 G2P, no system packages | **p4mbfa**, one model per *language group* ([`mbfa-latin`](https://huggingface.co/Tabahi/mbfa-latin), …) | 63 today, tonal languages included |
-| `"ph66"` | espeak-ng, reduced to 66 phonemes | **p3cupe** ([`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en)) | English — the best English model of the two |
+| `"ph66"` | espeak-ng, reduced to 66 phonemes | **p3cupe** ([`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en), [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7)) | English — the best English model of the two — plus 7 European languages |
 
 `PhonemeTimestampAligner(preset="de")` uses `std`; add `phoneme_set="ph66"` to get the espeak-ng
 stack. Everything else — the decoder, chunking, the output format — is the same code for both.
@@ -216,7 +216,7 @@ aligner_ru = PhonemeTimestampAligner(preset="ru")
 aligner_zh = PhonemeTimestampAligner(preset="zh")
 aligner_ja = PhonemeTimestampAligner(preset="ja")
 
-# Hindi - no std model yet. ph66 will phonemize it, but its model was trained on English only
+# Hindi - no std model yet. ph66 will phonemize it, but CUPE-3-mls7 was not trained on Hindi
 aligner_hi = PhonemeTimestampAligner(preset="hi", phoneme_set="ph66")
 ```
 
@@ -297,7 +297,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 1.046869084239006,
                     "end_ms": 52.5,
                     "confidence": 0.9456192255020142,
-                    "is_estimated": false,
                     "target_seq_idx": 0,
                     "index": 0
                 },
@@ -308,7 +307,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 52.5,
                     "end_ms": 168.70805740356445,
                     "confidence": 0.39453771710395813,
-                    "is_estimated": false,
                     "target_seq_idx": 1,
                     "index": 1
                 },
@@ -319,7 +317,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 168.70805740356445,
                     "end_ms": 257.18225479125977,
                     "confidence": 0.015983885154128075,
-                    "is_estimated": false,
                     "target_seq_idx": 2,
                     "index": 2
                 },
@@ -330,7 +327,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 257.18225479125977,
                     "end_ms": 352.5,
                     "confidence": 0.20140987634658813,
-                    "is_estimated": false,
                     "target_seq_idx": 3,
                     "index": 3
                 },
@@ -341,7 +337,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 352.5,
                     "end_ms": 447.5,
                     "confidence": 0.9529293775558472,
-                    "is_estimated": false,
                     "target_seq_idx": 4,
                     "index": 4
                 },
@@ -352,7 +347,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 447.5,
                     "end_ms": 497.5,
                     "confidence": 0.9412255883216858,
-                    "is_estimated": false,
                     "target_seq_idx": 5,
                     "index": 5
                 },
@@ -363,7 +357,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 497.5,
                     "end_ms": 827.5,
                     "confidence": 0.9648973345756531,
-                    "is_estimated": false,
                     "target_seq_idx": 6,
                     "index": 6
                 }
@@ -375,7 +368,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 1.046869084239006,
                     "end_ms": 52.5,
                     "confidence": 0.8825665712356567,
-                    "is_estimated": false,
                     "target_seq_idx": 0,
                     "index": 0
                 },
@@ -385,7 +377,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 52.5,
                     "end_ms": 168.70805740356445,
                     "confidence": 0.333845853805542,
-                    "is_estimated": false,
                     "target_seq_idx": 1,
                     "index": 1
                 },
@@ -395,7 +386,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 168.70805740356445,
                     "end_ms": 257.18225479125977,
                     "confidence": 0.06540156155824661,
-                    "is_estimated": false,
                     "target_seq_idx": 2,
                     "index": 2
                 },
@@ -405,7 +395,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 257.18225479125977,
                     "end_ms": 352.5,
                     "confidence": 0.5041145086288452,
-                    "is_estimated": false,
                     "target_seq_idx": 3,
                     "index": 3
                 },
@@ -415,7 +404,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 352.5,
                     "end_ms": 447.5,
                     "confidence": 0.9766589999198914,
-                    "is_estimated": false,
                     "target_seq_idx": 4,
                     "index": 4
                 },
@@ -425,7 +413,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 447.5,
                     "end_ms": 497.5,
                     "confidence": 0.9302259087562561,
-                    "is_estimated": false,
                     "target_seq_idx": 5,
                     "index": 5
                 },
@@ -435,7 +422,6 @@ keys (`local_ph` / `gold_phg` instead of `ph66` / `pg16`) and adds `tone`, `stre
                     "start_ms": 497.5,
                     "end_ms": 827.5,
                     "confidence": 0.9568509459495544,
-                    "is_estimated": false,
                     "target_seq_idx": 6,
                     "index": 6
                 }
@@ -483,7 +469,7 @@ Every segment contains the following keys:
 
 | Key | What it contains | Useful for |
 |-----|-----------------|------------|
-| `phoneme_ts` | Per-phoneme timestamps: `ipa_label`, `start_ms`, `end_ms`, `confidence`, `is_estimated` (and `tone`, `stress`, `length` in the std set) | Phonetic annotation, TTS training |
+| `phoneme_ts` | Per-phoneme timestamps: `ipa_label`, `start_ms`, `end_ms`, `confidence`, `target_seq_idx` (and `tone`, `stress`, `length` in the std set) | Phonetic annotation, TTS training |
 | `group_ts` | Same timestamps but grouped into broad phoneme categories (vowels, stops, fricatives…): 15 in std, 16 in ph66 | Coarser acoustic analysis |
 | `words_ts` | Word-level timestamps derived from the phonemes | Word-level annotation |
 | `ipa` | IPA sequence for the segment, as the G2P wrote it | Phonemic transcription reference |
@@ -492,7 +478,7 @@ Every segment contains the following keys:
 | `tone`, `stress`, `length` *(std)* | One value per phoneme, from the G2P: tone index (0 = none), stress 0/1/2, length 0/1/2 | Prosody labels; tonal languages |
 | `words` | List of words in the segment | Word boundary reference |
 | `word_num` | Word index for each phoneme (parallel to the phoneme indices) | Maps each phoneme to its parent word |
-| `coverage_analysis` | Quality report: how many phonemes were aligned, missing, or estimated | Filtering out bad segments |
+| `coverage_analysis` | Quality report: how many phonemes were aligned or missing, and whether the segment is flagged `bad_alignment` | Filtering out bad segments |
 
 **Reading `confidence`:** the peak posterior the model put on this phoneme inside its own segment. Higher is surer, but the scale is model-specific — see [Reading confidence](#reading-confidence) before setting a threshold. `is_estimated` is always `false`: forced alignment places every phoneme it reports, so nothing is inserted after the fact.
 
@@ -511,7 +497,7 @@ by its own model family. Naming either settles the other, and a model settles bo
 |---|---|---|
 | Phonemizer | standard_g2p — a ByT5 G2P for 100 languages, vendored in BFA | espeak-ng (system package) |
 | Label space | one token list **per language group** (208 tokens for `latin`, 48 for `cjk`, …) + 15 phoneme groups | 66 phonemes + 16 groups, shared by every language |
-| Model | **p4mbfa** — one per language group: `mbfa-latin`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese` | **p3cupe** — `CUPE-3-en`, trained on English |
+| Model | **p4mbfa** — one per language group: `mbfa-latin`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese` | **p3cupe** — `CUPE-3-en` for English, `CUPE-3-mls7` for everything else (English + de es fr it nl pl pt) |
 | Tone, stress, length | yes, one value per phoneme | no |
 | Silence at punctuation | not by default (`punctuation_sil=True` to add it) | always |
 | Numbers, abbreviations | **not expanded** — spell them out | expanded by espeak-ng |
@@ -527,8 +513,8 @@ group can be aligned once it has a model. Four do today:
 | `cjk` | 48 | zh zh-Hant yue |
 | `japanese` | 28 | ja |
 
-Run `balign --list-presets` for the exact list. Codes are accepted in any spelling BFA has
-ever taken — `en-us`, `EN-GB`, `pt-br`, `cmn`, `zh-tw` — and resolved to the canonical one.
+Run `balign --list-presets` for the exact list. Codes are accepted in any common spelling —
+`en-us`, `EN-GB`, `pt-br`, `cmn`, `zh-tw` — and resolved to the canonical one.
 Vietnamese, Greek/Armenian/Georgian/Korean/Amharic, Arabic-script, Indic and Thai groups are
 defined but have no model yet; asking for one of their languages raises an error that
 names `phoneme_set="ph66"` as the way through. BFA never falls back silently, because the two
@@ -538,6 +524,7 @@ sets' ids and output keys differ.
 aligner = PhonemeTimestampAligner(preset="de")                        # std / latin
 aligner = PhonemeTimestampAligner(preset="zh")                        # std / cjk, with tone
 aligner = PhonemeTimestampAligner(phoneme_set="ph66")                 # espeak-ng + CUPE-3-en
+aligner = PhonemeTimestampAligner(preset="fr", phoneme_set="ph66")    # espeak-ng + CUPE-3-mls7
 aligner = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark")  # a published model by name
 aligner = PhonemeTimestampAligner(ckpt_path="my_checkpoint.pt", lang="ru")   # the file decides
 ```
@@ -553,11 +540,15 @@ with its published decoder settings:
 
 | | TIMIT, 100 files | Buckeye, 3 interviews |
 |---|---|---|
-| ph66, `CUPE-3-en` | **75.8** | **68.9** |
+| ph66, `CUPE-3-en` *(English ph66 preset)* | 75.8 | **68.9** |
+| ph66, `CUPE-3-en-base` | **76.7** | 67.8 |
+| ph66, `CUPE-3-mls7` *(non-English ph66 preset)* | 74.9 | 65.2 |
 | std, `mbfa-latin` *(default)* | 73.1 | 63.6 |
 | std, `mbfa-latin-benchmark` | 74.1 | 63.2 |
 
-These are small samples; the model cards carry the 400-clip TIMIT numbers.
+These are small samples; the model cards carry the 400-clip TIMIT numbers. On Buckeye the
+three ph66 models score higher with the onset bonus switched off — see
+[The onset bonus](#the-onset-bonus).
 
 **Switching language.** Within a language group, `aligner.phonemizer.set_backend(language="fr")`
 is enough. Across groups the model has to change too: `aligner.load_model(preset="ru")`.
@@ -585,12 +576,13 @@ The tables below are the **`ph66`** set's presets. For the default `std` set, se
 
 `ph66` phonemizes **80+ languages**: pass the language code as `preset` together with `phoneme_set="ph66"` and phonemisation is handled by [espeak-ng](https://github.com/espeak-ng/espeak-ng), which is free and works offline.
 
-> **Note:** one p3cupe model is published, [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en),
-> and it was trained on **English only**. Every ph66 preset loads it. For English it is the
-> most accurate model BFA has; for any other language it is an English model aligning that
-> language's phonemes by their nearest English sounds, and BFA prints a warning saying so.
-> Prefer the `std` set wherever it has a model for the language. A multilingual p3cupe
-> checkpoint of your own still loads with `ckpt_path=`.
+> **Note:** the language picks one of two p3cupe models. English presets load
+> [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en), the most accurate English model BFA
+> has. Every other preset loads [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7),
+> which was trained on English and then on **German, Spanish, French, Italian, Dutch, Polish
+> and Portuguese**. For a language outside those eight it aligns that language's phonemes by
+> their nearest sounds in the ones it knows, and BFA prints a warning saying so. Prefer the
+> `std` set wherever it has a model for the language.
 
 **Supported language families:** Indo-European (Germanic, Romance, Slavic, Indic, Iranian…), Turkic, Semitic, Dravidian, and several others.
 
@@ -731,8 +723,9 @@ aligner = PhonemeTimestampAligner(preset="ru", phoneme_set="ph66")   # Russian
 
 </details>
 
-Every preset in this table loads `CUPE-3-en`. The table says what espeak-ng and the ph66
-mapper can *phonemize*; the acoustic model has only been trained on English.
+The English presets in this table load `CUPE-3-en` and every other one loads `CUPE-3-mls7`.
+The table says what espeak-ng and the ph66 mapper can *phonemize*; the acoustic models have
+been trained on English, German, Spanish, French, Italian, Dutch, Polish and Portuguese.
 
 **⚠️ Unsupported Language Types:**
 - **Tonal languages**: Chinese (Mandarin, Cantonese), Vietnamese, Thai, Burmese
@@ -762,22 +755,21 @@ PhonemeTimestampAligner(
     min_phone_frames=None,        # Duration floor in 5 ms frames; None = the checkpoint's value
     soft_phone_frames=None,       # Frames above the floor a phone may give up; None = ditto
     bad_confidence_threshold=0.6, # Flag segments where >60% of phonemes are low-confidence
-    low_confidence_level=0.25,    # What counts as "low confidence" for that share
+    low_confidence_level=None,    # What counts as "low confidence"; None = the model family's (0.6 CUPE-3, 0.1 mbfa)
     segment_max_seconds=120,      # Decode whole up to this length, chunk beyond it
     chunk_audio=True,             # Walk longer segments in overlapping windows
     chunk_seconds=10.0,           # Window length for that walk
     chunk_max_phonemes=200,       # Cap on one window's phoneme budget
     chunk_phonemes_per_second=15, # Budget rate, measured over SPEECH seconds
     chunk_vad=True,               # Energy VAD for speech-seconds and cut placement
-    warn_level=1,                 # 0 silent, 1 warnings, 2 warnings + geometry/decoder info
+    warn_level=1,                 # 0 silent (downloads too), 1 warnings, 2 + progress bars and geometry/decoder info
 )
 ```
 
 **For most users, only `preset` needs to be set** — plus `phoneme_set="ph66"` for the
 espeak-ng stack, or `ckpt_path` for a checkpoint of your own. Everything about the decoder
 defaults to the value the model was *published* with, which is what it was trained and scored
-with. `cupe_ckpt_path` and `mapper` are the older names of `ckpt_path` and `phoneme_set`
-and are still accepted.
+with.
 
 <details>
 <summary>Parameter details</summary>
@@ -786,7 +778,7 @@ and are still accepted.
 |-----------|---------|-------------|
 | `preset` | `"en-us"` | Language code. Picks the language and, through it, the model. |
 | `phoneme_set` | `None` | `"std"` or `"ph66"`. `None` means the default (`std`) — or, with `ckpt_path` / `model_name`, whatever that model is. Asking for one set and passing a model of the other raises. See [Phoneme sets](#-phoneme-sets). |
-| `model_name` | `None` | A published model, overriding the preset's choice: `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `CUPE-3-en`, or any Hugging Face repository id in the same layout. Downloaded on first use. |
+| `model_name` | `None` | A published model, overriding the preset's choice: `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `CUPE-3-en`, `CUPE-3-en-base`, `CUPE-3-mls7`, or any Hugging Face repository id in the same layout. Downloaded on first use. |
 | `ckpt_path` | `None` | Path to a model on disk, of either family: a release directory (`config.json` + `model.safetensors`) or a training checkpoint file. Highest priority, and decides the phoneme set by itself. A p4mbfa model also fixes the language group, so `lang` must be a language of that group. |
 | `lang` | `"en-us"` | Language code; overrides the preset's language. std: any BCP 47 code standard_g2p covers, in any case. ph66: an espeak-ng code, see [all codes](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md). |
 | `g2p_model_dir` | `None` | std only. Directory already holding the G2P model (`config.json` + `pytorch_model.bin`). Default `$BFA_G2P_DIR`; with neither set it is downloaded from the Hugging Face Hub on first use. |
@@ -800,14 +792,14 @@ and are still accepted.
 | `min_phone_frames` | `None` | Shortest phone the aligner may emit, in 5 ms frames (6 = 30 ms for every published model). A clip whose text will not fit at this floor automatically gets a shorter one rather than losing its alignment. |
 | `soft_phone_frames` | `None` | Frames above the floor that a phone may give up, at a cost each — the soft half of the duration prior. |
 | `bad_confidence_threshold` | `0.6` | Share of low-confidence phonemes that flags a segment as `bad_alignment`. |
-| `low_confidence_level` | `0.25` | Confidence below which a phoneme counts towards that share. Calibrated against these checkpoints' posteriors — see [Reading confidence](#reading-confidence). |
+| `low_confidence_level` | `None` | Confidence below which a phoneme counts towards that share. `None` takes the loaded model family's level — `0.6` for the CUPE-3 models, `0.1` for the mbfa ones — because the two are not on one confidence scale. See [Reading confidence](#reading-confidence). |
 | `segment_max_seconds` | `120` | Segments up to this long are decoded in one pass and never chunked. Whole decoding is more accurate than chunking, so raise it if the hardware allows; the cost is roughly 1.8 s of Viterbi per 32 s of audio. |
 | `chunk_audio` | `True` | Walk segments longer than `segment_max_seconds` in overlapping windows. See [Long audio](#long-audio). |
 | `chunk_seconds` | `10.0` | Window length for that walk. |
 | `chunk_max_phonemes` | `200` | Blunt cap on one window's phoneme budget. |
 | `chunk_phonemes_per_second` | `15.0` | Budget rate over **speech** seconds (a safe upper bound for English). |
 | `chunk_vad` | `True` | Energy VAD used to measure speech seconds per window and to land cuts in pauses. |
-| `warn_level` | `1` | `0` silent, `1` warnings only, `2` adds the resolved frame geometry and decoder settings. |
+| `warn_level` | `1` | `0` prints nothing at all, a first-time download included. `1` adds warnings and one line per download. `2` adds download progress bars, the resolved frame geometry and the decoder settings. |
 
 **Model priority (highest → lowest):** `ckpt_path` → `model_name` → `preset` → defaults.
 
@@ -835,26 +827,39 @@ The two latin models differ in training noise. `mbfa-latin` was trained with the
 and is the one meant for real recordings; `mbfa-latin-benchmark` was trained with less and
 scores higher on TIMIT, which is clean studio speech (see each model card for the numbers).
 
-*p3cupe (`ph66` set):*
+*p3cupe (`ph66` set)* — one label space for every language, so the language only picks which
+model has heard it:
 
 | Model | Trained on | Used by |
 |---|---|---|
-| [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | LibriSpeech, ~500 h, English | every `ph66` preset |
+| [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | LibriSpeech, ~500 h, English | every English `ph66` preset |
+| [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7) | `CUPE-3-en-base`, then Multilingual LibriSpeech: German, Spanish, French, Italian, Dutch, Polish, Portuguese, 100 h each | every other `ph66` preset |
+| [`CUPE-3-en-base`](https://huggingface.co/Tabahi/CUPE-3-en-base) | LibriSpeech, ~500 h, English | `model_name=` only |
 
-`CUPE-3-en` is the best model on TIMIT of either family, and the only p3cupe model published.
+The two English models come from the same lineage and score within noise of each other on
+TIMIT — boundary f1 within 25 ms of 75.6 (`CUPE-3-en`) and 76.0 (`CUPE-3-en-base`) on the
+held-out half of the 400-clip probe — the best of either family. `CUPE-3-mls7` is the only
+p3cupe model that has heard anything but English; the MLS epoch cost it about two points on
+English (74.2), so it is not the English choice.
 
 ```python
 aligner = PhonemeTimestampAligner()                                    # mbfa-latin, English
 aligner = PhonemeTimestampAligner(preset="ru")                         # mbfa-cyrillic
 aligner = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark")   # by name
 aligner = PhonemeTimestampAligner(phoneme_set="ph66")                  # CUPE-3-en
-aligner = PhonemeTimestampAligner(model_name="CUPE-3-en")              # same thing
+aligner = PhonemeTimestampAligner(preset="de", phoneme_set="ph66")     # CUPE-3-mls7
+aligner = PhonemeTimestampAligner(model_name="CUPE-3-en-base")         # by name
 ```
 
-**Offline, or your own models.** Before asking the Hub, `preset=` and `model_name=` look for a
-directory named after the model in `$BFA_MODEL_DIR`, then in `./models/`
-(`./models/mbfa-latin/config.json` + `model.safetensors`). `huggingface_hub`'s own switches
-apply as well: `$HF_HOME` moves the cache, `HF_HUB_OFFLINE=1` uses only what is cached.
+**Downloads happen once.** A model that is already in the `huggingface_hub` cache
+(`~/.cache/huggingface`, moved with `$HF_HOME`) is loaded straight from it: no request to the
+Hub, no progress bar, and it works the same with no connection. Only a model that is not
+there yet is fetched. The flip side: a repository that is updated on the Hub is not picked up
+by a machine that already holds it — delete it from the cache to fetch the new one.
+
+**Your own models.** Before the cache, `preset=` and `model_name=` look for a directory named
+after the model in `$BFA_MODEL_DIR`, then in `./models/`
+(`./models/mbfa-latin/config.json` + `model.safetensors`).
 
 A model on disk is passed with `ckpt_path` — a release directory, or a training checkpoint
 file from [bfa_models](https://github.com/tabahi/bfa_models). The model says which family it
@@ -863,7 +868,7 @@ is, so nothing else needs stating:
 ```python
 aligner = PhonemeTimestampAligner(ckpt_path="path/to/mbfa-cjk", lang="zh")
 aligner = PhonemeTimestampAligner(ckpt_path="path/to/m_ma04a_epoch=6.ckpt")
-aligner = PhonemeTimestampAligner(ckpt_path="path/to/m_pa07f_epoch=0.ckpt")      # ph66
+aligner = PhonemeTimestampAligner(ckpt_path="path/to/CUPE-3-mls7", lang="fr")    # ph66
 ```
 
 Each repository also holds the training checkpoint under `ckpt/`, for fine-tuning; BFA does
@@ -887,7 +892,7 @@ timestamps = aligner.process_srt_file(
 )
 
 
-aligner.warn_level = 3 # 0 = no warnings, 1 = important warnings (more critical for downstream tasks), 2 = all warnings (including low-confidence phonemes and bad confidence patterns). Critical errors will be raised as exceptions regardless of warn_level
+aligner.warn_level = 2  # 0 = nothing printed, 1 = warnings (default), 2 = also informational output. Errors are raised as exceptions regardless
 ```
 
 Returns a dict with a `"segments"` key. See [example_advanced.py](examples/example_advanced.py).
@@ -1034,8 +1039,7 @@ The `ph66` set uses a reduced alphabet of **66 phoneme classes** that maps the f
     "ipa_label": "ɑːɹ",
     "start_ms": 2478.1,
     "end_ms": 2606.8,
-    "confidence": 0.937,
-    "is_estimated": false
+    "confidence": 0.937
 },
 {
     "phoneme_id": 59,
@@ -1043,8 +1047,7 @@ The `ph66` set uses a reduced alphabet of **66 phoneme classes** that maps the f
     "ipa_label": "-",
     "start_ms": 2606.8,
     "end_ms": 2639.0,
-    "confidence": 0.665,
-    "is_estimated": false
+    "confidence": 0.665
 }
 ```
 
@@ -1121,23 +1124,35 @@ The evidence points both ways, so it is worth knowing which way your data leans:
 - **Against.** Scored per phone *onset* — is each phone's own onset within 25 ms of its label
   — the bonus costs accuracy: it drags stop onsets onto the burst and pulls vowel onsets early.
   `CUPE-3-en` on TIMIT places 73.1% of phone onsets within 25 ms at weight 0 and 68.7% at
-  weight 30.
+  weight 30 (`CUPE-3-en-base`: 74.6% and 68.6%; `CUPE-3-mls7`: 71.1% and 66.4%).
 - **For.** Scored as boundary f1 — is there a predicted boundary within 25 ms of each labelled
   one — the bonus helps, and it helps the multilingual model most:
 
   | TIMIT f1@25 (held-out half of the 400-clip probe) | weight 0 | weight 30 |
   |---|---|---|
   | `CUPE-3-en` | 73.8 | **75.6** |
+  | `CUPE-3-en-base` | 73.8 | **76.0** |
+  | `CUPE-3-mls7` | 70.9 | **74.2** |
   | `mbfa-latin` | 65.2 | **71.7** |
   | `mbfa-latin-benchmark` | 68.8 | **72.9** |
 
-  (Numbers from the model cards.) An earlier, unpublished p3cupe checkpoint trained on MLS
-  without English showed the same direction on Buckeye conversational speech: f1@25 up by 2–4
-  points and the median absolute onset error down from 12–14 ms to 9–11 ms.
+  (Numbers from the model cards.)
 
-So: keep the default for segmentation-style use, where what matters is that boundaries exist
-in the right places; try `boundary_bonus_weight=0` when each phone's own onset time matters
-and the model is strong on your language. `tests/test_buckeye.py --cfg
+- **Against, on conversational speech.** TIMIT is read speech. On Buckeye interviews the
+  same boundary f1 goes the other way for the p3cupe models, and the mbfa models are
+  indifferent (3 interviews, 118 segments, about 9,000 labelled boundaries — a small sample):
+
+  | Buckeye f1@25 | weight 0 | weight 30 |
+  |---|---|---|
+  | `CUPE-3-en` | **72.0** | 68.9 |
+  | `CUPE-3-en-base` | **72.4** | 67.8 |
+  | `CUPE-3-mls7` | **67.3** | 65.2 |
+  | `mbfa-latin` | 63.2 | 63.6 |
+  | `mbfa-latin-benchmark` | 64.1 | 63.2 |
+
+So: keep the default for read speech and segmentation-style use, where what matters is that
+boundaries exist in the right places; try `boundary_bonus_weight=0` for spontaneous speech
+with a ph66 model, and when each phone's own onset time matters. `tests/test_buckeye.py --cfg
 '{"boundary_bonus_weight": 0}'` measures it on Buckeye.
 
 <a id="reading-confidence"></a>
@@ -1152,9 +1167,23 @@ quality.
 **Read it as a relative number, not an absolute one.** The training target has entropy by
 design, so the posteriors never saturate and a perfectly well-placed phone routinely reads
 below 0.5 — a threshold that would be alarming for a model trained to emit one-hot spikes
-means nothing here. Compare segments against other segments *from the same checkpoint*; that
-is what `low_confidence_level` is for, and its default is calibrated against the checkpoints
-listed above.
+means nothing here. Compare segments against other segments *from the same checkpoint*: the
+models are not on one scale either. Measured on English (TIMIT, 100 files / Buckeye, 3
+interviews), each model with its published settings:
+
+| | mean confidence | `low_confidence_level` | phonemes below it |
+|---|---|---|---|
+| `CUPE-3-en` | 0.53 / 0.43 | 0.6 | 53% / 64% |
+| `CUPE-3-en-base` | 0.39 / 0.32 | 0.6 | 76% / 82% |
+| `CUPE-3-mls7` | 0.26 / 0.21 | 0.6 | 84% / 88% |
+| `mbfa-latin` | 0.25 / 0.20 | 0.1 | 48% / 55% |
+| `mbfa-latin-benchmark` | 0.17 / 0.15 | 0.1 | 56% / 58% |
+
+`low_confidence_level` defaults to the model family's level: 0.6 for the CUPE-3 models and
+0.1 for the mbfa ones. A segment longer than 60 phonemes is flagged
+`coverage_analysis["bad_alignment"]` when more than `bad_confidence_threshold` (0.6) of its
+phonemes fall below that level, so pass your own level where the share above runs close to
+that threshold for your model and recordings.
 
 ### Unreliable transcripts
 
@@ -1449,7 +1478,7 @@ for f in *.wav; do balign "$f" "${f%.wav}.srt.json" "${f%.wav}.vs.json" --preset
 | `--device auto\|cpu\|cuda` | `auto` | Inference device. |
 | `--phoneme-set std\|ph66` | `std` | Phoneme set and, with it, the model family. With `--model` / `--ckpt-path` the default is whatever that model is. |
 | `--lang CODE` | *(from preset)* | Override the language code only. |
-| `--model NAME` | *(from preset)* | A published model by name (`mbfa-latin-benchmark`, `CUPE-3-en`, …) or a Hugging Face repository id (advanced). |
+| `--model NAME` | *(from preset)* | A published model by name (`mbfa-latin-benchmark`, `CUPE-3-mls7`, …) or a Hugging Face repository id (advanced). |
 | `--ckpt-path PATH` | — | A model on disk, of either family: a release directory or a training checkpoint file (advanced). Decides the phoneme set by itself. |
 | `--g2p-device DEVICE` | *(same as `--device`)* | std only: device for the G2P model. |
 | `--punctuation-sil / --no-punctuation-sil` | off | std only: write a silence at pause punctuation. |
@@ -1566,7 +1595,7 @@ What counts as a doubtful phoneme, and how many of them make a doubtful segment.
 **Technical details:**
 
 - **Audio processing**: 16 kHz, 120 ms windows at 80 ms stride, 5 ms output frames
-- **Model**: p3cupe, a 13.5M-parameter CNN with a 38.9 ms receptive field and no transformer
+- **Model**: p3cupe / p4mbfa, a 13.5M-parameter CNN trunk with a 38.9 ms receptive field and no transformer
 - **Alignment**: segmental Viterbi with a soft duration prior, class-prior-normalised emissions
   and an optional acoustic-change onset bonus
 - **Quality assurance**: every transcript phoneme is aligned (bar skippable silences), and

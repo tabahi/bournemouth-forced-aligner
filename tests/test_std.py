@@ -167,14 +167,13 @@ class TestStdPresets:
         with pytest.raises(presets.UnsupportedLanguageError, match="excluded"):
             presets.get_std_preset("km")
 
-    def test_phoneme_set_and_its_deprecated_name(self):
+    def test_phoneme_set(self):
         assert presets.resolve_phoneme_set() == presets.DEFAULT_PHONEME_SET == "std"
-        assert presets.resolve_phoneme_set(mapper="ph66") == "ph66"
-        assert presets.resolve_phoneme_set("ph66", "ph66") == "ph66"
-        with pytest.raises(ValueError):
-            presets.resolve_phoneme_set("std", "ph66")
+        assert presets.resolve_phoneme_set("ph66") == "ph66"
         with pytest.raises(ValueError):
             presets.resolve_phoneme_set("ph67")
+        with pytest.raises(TypeError):
+            PhonemeTimestampAligner(preset=None, mapper="ph66")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -336,6 +335,14 @@ class TestStdAligner:
         assert (aligner.silence_class, aligner.pad_class) == (1, 0)
         assert (aligner.phonemes_key, aligner.phoneme_groups_key) == ("local_ph", "gold_phg")
 
+    def test_low_confidence_level_is_the_familys_unless_given(self, aligner, latin_ckpt):
+        assert aligner.low_confidence_level == aligner.extractor.low_confidence_level == 0.1
+        a = PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="en", device="cpu",
+                                    low_confidence_level=0.3)
+        assert a.low_confidence_level == 0.3
+        from bournemouth_aligner.p3cupe import CupeExtractor
+        assert CupeExtractor.low_confidence_level == 0.6
+
     def test_asking_for_the_other_set_raises(self, latin_ckpt):
         with pytest.raises(ValueError, match="phoneme_set='ph66'"):
             PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="en", phoneme_set="ph66",
@@ -346,7 +353,7 @@ class TestStdAligner:
             PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="ru", device="cpu")
 
     def test_old_language_spellings_are_accepted(self, latin_ckpt):
-        a = PhonemeTimestampAligner(cupe_ckpt_path=latin_ckpt, lang="pt-br", device="cpu")
+        a = PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="pt-br", device="cpu")
         assert a.lang == "pt-BR"
 
     def test_gold_segment_is_aligned_without_the_g2p(self, aligner):
@@ -408,7 +415,10 @@ class TestHub:
 
     def test_every_preset_names_a_published_model(self):
         assert set(presets.P4MBFA_MODELS.values()) <= set(presets.MODELS)
-        assert presets.MODELS[presets.P3CUPE_EN] == "ph66"
+        for name in (presets.P3CUPE_EN, presets.P3CUPE_EN_BASE, presets.P3CUPE_MLS7):
+            assert presets.MODELS[name] == "ph66"
+        assert presets.ph66_model("en-gb") == presets.P3CUPE_EN
+        assert presets.ph66_model("de") == presets.P3CUPE_MLS7
         assert presets.MODELS[presets.MBFA_LATIN_BENCHMARK] == "std"
         assert presets.get_std_preset("en-us")[0] == "mbfa-latin"
 
@@ -420,6 +430,36 @@ class TestHub:
         assert hub.find_model("Tabahi/mbfa-latin") == str(tmp_path / "mbfa-latin")
         assert hub.find_model("not-a-model") is None
         assert hub.resolve_model("mbfa-latin") == str(tmp_path / "mbfa-latin")   # no download
+
+    def test_a_cached_model_is_used_without_the_network(self, tmp_path, monkeypatch):
+        """Every file in the cache -> that directory, and `snapshot_download` is never called."""
+        import huggingface_hub
+        monkeypatch.delenv("BFA_MODEL_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)                       # no ./models here either
+        snapshot = tmp_path / "snapshot"
+        make_release(str(snapshot))
+        monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache",
+                            lambda repo_id, name, revision=None: str(snapshot / name))
+        monkeypatch.setattr(huggingface_hub, "snapshot_download",
+                            lambda *a, **k: pytest.fail("asked the Hub for a cached model"))
+        assert hub.resolve_model("mbfa-latin", verbose=0) == str(snapshot)
+
+    def test_a_missing_model_is_downloaded_once_and_quietly(self, tmp_path, monkeypatch, capsys):
+        import huggingface_hub
+        monkeypatch.delenv("BFA_MODEL_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)
+        snapshot = tmp_path / "snapshot"
+        make_release(str(snapshot))
+        calls = []
+        monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache",
+                            lambda repo_id, name, revision=None: None)
+        monkeypatch.setattr(huggingface_hub, "snapshot_download",
+                            lambda repo_id, **k: calls.append(repo_id) or str(snapshot))
+        assert hub.resolve_model("mbfa-latin", verbose=0) == str(snapshot)
+        assert capsys.readouterr().out == ""
+        assert hub.resolve_model("mbfa-latin", verbose=1) == str(snapshot)
+        assert "Downloading the model Tabahi/mbfa-latin" in capsys.readouterr().out
+        assert calls == ["Tabahi/mbfa-latin"] * 2
 
     def test_an_existing_path_resolves_to_itself(self, latin_ckpt):
         assert hub.resolve_model(latin_ckpt) == latin_ckpt

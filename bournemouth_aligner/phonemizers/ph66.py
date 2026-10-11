@@ -26,7 +26,7 @@ def ph66_inventory(phonemizer):
         phonemes_key=phonemizer.phonemes_key, groups_key=phonemizer.phoneme_groups_key)
 
 
-def make_ph66_phonemizer(language):
+def make_ph66_phonemizer(language, verbose=1):
     """A ph66 phonemizer for an espeak-ng language code, with `.inventory` attached."""
     try:
         from ..ipamappers.ph66_phonemeizer import Phonemizer
@@ -36,6 +36,6 @@ def make_ph66_phonemizer(language):
             "    pip install 'bournemouth-forced-aligner[ph66]'\n"
             "    apt-get install espeak-ng        (or the equivalent for your system)\n"
             f"({e})") from e
-    phonemizer = Phonemizer(language=language, remove_noise_phonemes=True)
+    phonemizer = Phonemizer(language=language, remove_noise_phonemes=True, verbose=verbose)
     phonemizer.inventory = ph66_inventory(phonemizer)
     return phonemizer

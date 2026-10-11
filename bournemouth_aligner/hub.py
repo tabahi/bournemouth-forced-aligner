@@ -2,27 +2,38 @@
 Where BFA's weights come from.
 
 Two kinds of download, both resolved here and nowhere else, and both left to huggingface_hub:
-they land in its own cache (`~/.cache/huggingface/hub`, moved with `$HF_HOME`), an offline
-machine falls back to what is already cached (`HF_HUB_OFFLINE=1` skips the check), and nothing
+they land in its own cache (`~/.cache/huggingface/hub`, moved with `$HF_HOME`), and nothing
 is ever written inside the installed package.
 
     aligner models   one Hub repository each - `Tabahi/mbfa-<group>` for the std phoneme set,
-                     `Tabahi/CUPE-3-en` for ph66. Only `config.json` and `model.safetensors`
+                     `Tabahi/CUPE-3-*` for ph66. Only `config.json` and `model.safetensors`
                      are fetched (~55 MB), not the training checkpoint the repository also
                      holds for fine-tuning.
     the G2P model    `charsiu/g2p_multilingual_byT5_small_100`, one ByT5 for every language
                      (~1.2 GB), plus the three small tokenizer files of `google/byt5-small`.
                      Needed only by the std set and only when text is actually phonemized.
 
+## The cache comes first
+
+A file that is already in the cache is used as it is: no request to the Hub, no progress bar,
+nothing printed. The network is touched only for a file that is not there yet, once. So a
+model loads the same with or without a connection, and a repository that is updated on the
+Hub is NOT picked up by a machine that already holds it - delete it from the cache (or pass
+`revision=`) to fetch the new one.
+
+A download prints one line at `verbose >= 1` and huggingface_hub's progress bars at
+`verbose >= 2`; at 0 it is silent.
+
 ## Overrides
 
-    $BFA_MODEL_DIR   a directory of aligner models, searched before the Hub: `<dir>/<name>/`
-                     holding config.json + model.safetensors
+    $BFA_MODEL_DIR   a directory of aligner models, searched before the cache and the Hub:
+                     `<dir>/<name>/` holding config.json + model.safetensors
     $BFA_G2P_DIR     a directory already holding the G2P model (config.json +
                      pytorch_model.bin, and optionally `tokenizer/`) - e.g. a CharsiuG2P
                      checkout's `tmp/local_model_weights/...`
 """
 
+import contextlib
 import os
 
 # --- aligner models -------------------------------------------------------------------------
@@ -68,7 +79,7 @@ def find_model(model_name):
     return None
 
 
-def resolve_model(model_name, local_dir=None, revision=None):
+def resolve_model(model_name, local_dir=None, revision=None, verbose=1):
     """
     A model name -> a path `load_extractor` can read, downloading it if it is not on disk.
 
@@ -78,6 +89,7 @@ def resolve_model(model_name, local_dir=None, revision=None):
             already exists - a release directory or a training checkpoint file.
         local_dir: download into this directory instead of the huggingface_hub cache.
         revision: a branch, tag or commit of the repository.
+        verbose: 0 silent, 1 announces a download, 2 shows its progress bars.
     Raises:
         FileNotFoundError: not on disk and not downloadable, with every place that was tried.
     """
@@ -89,9 +101,8 @@ def resolve_model(model_name, local_dir=None, revision=None):
 
     repo_id = repo_id_of(model_name)
     try:
-        from huggingface_hub import snapshot_download
-        path = snapshot_download(repo_id, revision=revision, local_dir=local_dir,
-                                 allow_patterns=list(MODEL_FILES))
+        path = fetch(repo_id, MODEL_FILES, revision=revision, local_dir=local_dir,
+                     verbose=verbose, what=f"the model {repo_id} (~55 MB)")
     except Exception as e:
         searched = ", ".join(os.path.join(d, model_name.split("/")[-1])
                              for d in model_search_dirs())
@@ -106,6 +117,61 @@ def resolve_model(model_name, local_dir=None, revision=None):
             f"https://huggingface.co/{repo_id} is not a BFA model: it has no "
             f"{' + '.join(MODEL_FILES)}")
     return path
+
+
+# --- the Hub --------------------------------------------------------------------------------
+
+def cached(repo_id, names, revision=None):
+    """
+    The cache directory holding every one of `names` for a repository, or None if any is
+    missing. Never touches the network.
+    """
+    from huggingface_hub import try_to_load_from_cache
+    directories = set()
+    for name in names:
+        path = try_to_load_from_cache(repo_id, name, revision=revision)
+        if not isinstance(path, str):           # None, or the "known to be absent" marker
+            return None
+        directories.add(os.path.dirname(path))
+    return directories.pop() if len(directories) == 1 else None
+
+
+def fetch(repo_id, names, revision=None, local_dir=None, verbose=1, what=None):
+    """
+    The directory holding `names` of a Hub repository: the cache if they are all in it,
+    otherwise a download - once, and quiet unless asked (see the module docstring).
+    """
+    if local_dir is None:
+        path = cached(repo_id, names, revision=revision)
+        if path is not None:
+            return path
+    if verbose >= 1:
+        print(f"Downloading {what or repo_id} from the Hugging Face Hub, once ...")
+    from huggingface_hub import snapshot_download
+    with _hub_output(shown=verbose >= 2):
+        return snapshot_download(repo_id, revision=revision, local_dir=local_dir,
+                                 allow_patterns=list(names))
+
+
+@contextlib.contextmanager
+def _hub_output(shown):
+    """
+    huggingface_hub's own progress bars and log lines on or off for one call, then back to
+    whatever they were - the caller's settings for the rest of their program are not ours.
+    """
+    from huggingface_hub.utils import (are_progress_bars_disabled, disable_progress_bars,
+                                       enable_progress_bars, logging as hub_logging)
+    bars_were_off, level_was = are_progress_bars_disabled(), hub_logging.get_verbosity()
+    if shown:
+        enable_progress_bars()
+    else:
+        disable_progress_bars()
+        hub_logging.set_verbosity_error()
+    try:
+        yield
+    finally:
+        (disable_progress_bars if bars_were_off else enable_progress_bars)()
+        hub_logging.set_verbosity(level_was)
 
 
 # --- G2P ------------------------------------------------------------------------------------
@@ -136,27 +202,17 @@ def ensure_g2p_model(model_dir=None, verbose=1):
         for tokenizer_dir in (os.path.join(model_dir, "tokenizer"), model_dir):
             if _has(tokenizer_dir, ("tokenizer_config.json",)):
                 return model_dir, tokenizer_dir
-        return model_dir, _download(G2P_TOKENIZER_REPO, G2P_TOKENIZER_FILES)
+        return model_dir, _download(G2P_TOKENIZER_REPO, G2P_TOKENIZER_FILES, verbose,
+                                    f"the G2P tokenizer {G2P_TOKENIZER_REPO}")
 
-    if verbose >= 1 and not _is_cached(G2P_REPO, G2P_FILES):
-        print(f"Downloading the G2P model {G2P_REPO} (~1.2 GB, once) ...")
-    return (_download(G2P_REPO, G2P_FILES),
-            _download(G2P_TOKENIZER_REPO, G2P_TOKENIZER_FILES))
+    return (_download(G2P_REPO, G2P_FILES, verbose, f"the G2P model {G2P_REPO} (~1.2 GB)"),
+            _download(G2P_TOKENIZER_REPO, G2P_TOKENIZER_FILES, verbose,
+                      f"the G2P tokenizer {G2P_TOKENIZER_REPO}"))
 
 
-def _is_cached(repo_id, names):
-    """Whether every one of `names` is already in the huggingface_hub cache."""
+def _download(repo_id, names, verbose=1, what=None):
     try:
-        from huggingface_hub import try_to_load_from_cache
-        return all(isinstance(try_to_load_from_cache(repo_id, name), str) for name in names)
-    except Exception:           # an old hub without the helper: just skip the announcement
-        return True
-
-
-def _download(repo_id, names):
-    try:
-        from huggingface_hub import snapshot_download
-        path = snapshot_download(repo_id, allow_patterns=list(names))
+        path = fetch(repo_id, names, verbose=verbose, what=what)
     except Exception as e:
         raise RuntimeError(
             f"could not download {', '.join(names)} from https://huggingface.co/{repo_id}: "

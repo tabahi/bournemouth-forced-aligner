@@ -384,7 +384,6 @@ def segment_pred_boundaries(
     timestamps_are_relative,
     offset_start=0.0,
     offset_end=0.0,
-    drop_estimated=False,
     unmapped_labels=None,
     phoneme_set=None,
 ):
@@ -394,8 +393,7 @@ def segment_pred_boundaries(
 
     Silence/padding phonemes are dropped, clip-absolute timestamps are shifted back
     to segment-relative, offsets are applied, and duplicate boundary times are
-    collapsed (BFA emits runs of 'is_estimated' phonemes that all share one
-    timestamp — without the de-duplication they would each count as a prediction).
+    collapsed, so two phonemes sharing a timestamp count as one prediction.
 
     Returns:
         (onsets, ends, gaps, n_phones, boundary_groups) — onsets/ends are sorted,
@@ -414,8 +412,6 @@ def segment_pred_boundaries(
         (p for p in vs_seg.get("phoneme_ts", []) if _is_speech_phone(p, phoneme_set)),
         key=lambda p: (float(p["start_ms"]), float(p["end_ms"])),
     )
-    if drop_estimated:
-        phones = [p for p in phones if not p.get("is_estimated")]
 
     shift = 0.0 if timestamps_are_relative else float(seg_start_ms)
 
@@ -458,7 +454,6 @@ def check_method_alignment(
     offset_start=0,
     offset_end=0,
     use_end_boundaries=False,
-    drop_estimated=False,
     measure_group_errors=False,
     align_max_dist=100.0,
     save_distances=True,
@@ -505,8 +500,6 @@ def check_method_alignment(
         use_end_boundaries: If False (default) only phoneme onsets are scored.  BFA
             end boundaries are not real segmentation points — they nearly double the
             predicted boundary count and wreck precision — so they are ignored.
-        drop_estimated: Drop phonemes flagged 'is_estimated' by BFA (degenerate
-            fallback timings).  They are de-duplicated in any case.
         measure_group_errors: Break the mean timing error down by phoneme group
             (the 16 groups of ph66_mapper.phoneme_groups_index).  Works for BFA (via
             'phoneme_id') and for MFA (via ARPABET_TO_PH66), so the two are directly
@@ -557,8 +550,7 @@ def check_method_alignment(
 
     boundary_mode = "onsets+ends" if use_end_boundaries else "onsets"
     print(f"[INFO] scoring {vs_ext}: boundary_mode={boundary_mode}, relative_boundaries={relative_boundaries}, "
-          f"offset_start={offset_start}, offset_end={offset_end}, align_max_dist={align_max_dist}, "
-          f"drop_estimated={drop_estimated}")
+          f"offset_start={offset_start}, offset_end={offset_end}, align_max_dist={align_max_dist}")
 
     with open(paths_list_path, "r") as f:
         paths_list = json.load(f)
@@ -629,8 +621,8 @@ def check_method_alignment(
 
         # Match segments by start time (rounded to ms) so that segments the aligner
         # dropped do not shift the indices of the ones it kept.
-        # BFA >= 2.0 stamps every result with the phoneme set its ids are in. A file without
-        # the stamp is an older ph66 alignment or MFA's, both of which the ph66 rules read.
+        # BFA stamps every result with the phoneme set its ids are in. A file without the
+        # stamp is MFA's, which the ph66 rules read.
         file_phoneme_set = vs_data.get("phoneme_set")
         phoneme_sets_seen[file_phoneme_set or ""] += 1
 
@@ -683,7 +675,6 @@ def check_method_alignment(
                 timestamps_are_relative=file_is_relative,
                 offset_start=offset_start,
                 offset_end=offset_end,
-                drop_estimated=drop_estimated,
                 unmapped_labels=unmapped_labels if measure_group_errors else None,
                 phoneme_set=file_phoneme_set,
             )
@@ -794,7 +785,6 @@ def check_method_alignment(
         "align_max_dist":            align_max_dist,
         "offset_start":              offset_start,
         "offset_end":                offset_end,
-        "drop_estimated":            drop_estimated,
 
         "processed_files":           processed_files,
         "missing_srt_files":         missing_SRT_files,
@@ -850,8 +840,7 @@ def check_method_alignment(
         "all_distances":          all_distances,
     }
 
-    # The phoneme set the alignment files were written in ("" = unstamped: older ph66 files,
-    # or MFA). More than one in `phoneme_sets_seen` means the experiment directory holds a
+    # The phoneme set the alignment files were written in ("" = unstamped: MFA). More than one in `phoneme_sets_seen` means the experiment directory holds a
     # mixture of two runs, which is worth knowing before reading its score.
     alignment_data["phoneme_set"] = (max(phoneme_sets_seen, key=phoneme_sets_seen.get)
                                      if phoneme_sets_seen else "")
@@ -902,9 +891,6 @@ def check_method_alignment(
         alignment_data[f"precision_{t}ms"] = precision
         alignment_data[f"f1_{t}ms"]        = (2 * recall * precision / (recall + precision)) if (recall + precision) > 0 else 0.0
         alignment_data[f"r_value_{t}ms"]   = r_value(hits[t] / total_known, over_segmentation)
-        # kept for backwards compatibility with older result JSONs / CSVs
-        alignment_data[f"detected_{t}ms"]  = hits[t]
-        alignment_data[f"predicted_{t}ms"] = hits[t]
 
         # Same hits, denominators restricted to boundaries that have a counterpart
         # within gross_error_ms.  hits[t] can never exceed either restricted total:
@@ -921,8 +907,6 @@ def check_method_alignment(
         alignment_data[f"onset_recall_{t}ms"]    = onset_recall
         alignment_data[f"onset_precision_{t}ms"] = onset_precision
         alignment_data[f"onset_f1_{t}ms"]        = (2 * onset_recall * onset_precision / (onset_recall + onset_precision)) if (onset_recall + onset_precision) > 0 else 0.0
-        alignment_data[f"onset_detected_{t}ms"]  = onset_hits[t]
-        alignment_data[f"onset_predicted_{t}ms"] = onset_hits[t]
 
     os.makedirs(os.path.dirname(os.path.abspath(output_json_path)), exist_ok=True)
     with open(output_json_path, 'w') as f:
@@ -1058,7 +1042,7 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
                   + std_group_cols)
 
     model_cfg = (manifest or {}).get("model", {}) or {}
-    ckpt = model_cfg.get("ckpt_path") or model_cfg.get("cupe_ckpt_path")
+    ckpt = model_cfg.get("ckpt_path")
     row = {
         "method":           method,
         "notes":            notes,
@@ -1205,7 +1189,7 @@ def show_alignment_stats(output_json_path, method, dataset, vs_ext, csv_path=Non
     print(f"\n=== LEVENSHTEIN-ALIGNED SCORES (one-to-one, monotonic) ===")
     print(f"  {'tol':>5}  {'recall':>8}  {'precision':>10}  {'F1':>7}  {'R-val':>7}   hits")
     for t in tolerance_ms_list:
-        hits = alignment_data.get(f"hits_{t}ms", alignment_data.get(f"detected_{t}ms", 0))
+        hits = alignment_data[f"hits_{t}ms"]
         print(f"  {t:>3}ms  {alignment_data[f'recall_{t}ms']:>7.2f}%  "
               f"{alignment_data[f'precision_{t}ms']:>9.2f}%  "
               f"{alignment_data.get(f'f1_{t}ms', 0):>6.2f}%  "
@@ -1414,7 +1398,9 @@ def score_one(vs_ext, method, dataset, paths_list_path, csv_path, *, limit_clips
 
 if __name__ == "__main__":
     method    = "BFA"      # BFA or MFA
-    dataset   = "buckeye"    # "timit" | "buckeye" - must match EXPERIMENT_GRID's dataset
+    # "timit" | "buckeye". Batch mode (SCORE_ALL) takes each extension's dataset from its own
+    # manifest, so this only decides the single-`vs_ext` and MFA runs.
+    dataset   = "buckeye"
     limit_clips = -1       # -1 = all clips
 
     # ---- batch mode ------------------------------------------------------------------
@@ -1427,7 +1413,9 @@ if __name__ == "__main__":
     # scores exactly its own files. The subset size is recorded in `cfg_subset`/`notes`, which
     # is what stops a 100-file row being read against a 6300-file one.
     SCORE_ALL = True
-    VS_RANGE  = range(1, 3)                # e.g. range(1, 3) to score just those; None = every manifest
+    # e.g. range(1, 3) to score just those; None = every manifest. bf1 - bf36 are the September
+    # sweeps over training-run checkpoints; the released-model suite starts at bf37.
+    VS_RANGE  = range(37, 1000)
 
     # Time frame of the predicted phoneme timestamps:
     #   MFA aligns the extracted segment audio -> segment-relative  -> True
@@ -1476,11 +1464,16 @@ if __name__ == "__main__":
         for ext in extensions:
             manifest = load_experiment_manifest(ext)
             label = (manifest or {}).get("label", ext)
+            # One sweep can cover both corpora, and scoring an extension against the other
+            # corpus's paths list finds none of its files.
+            ext_dataset = ((manifest or {}).get("experiment") or {}).get("dataset", dataset)
+            label = f"{ext_dataset}: {label}"
             print("\n" + "#" * 78)
             print(f"# {ext}   {label}")
             print("#" * 78)
 
-            data = score_one(ext, method, dataset, paths_list_path, csv_path,
+            data = score_one(ext, method, ext_dataset, PATHS_LISTS[ext_dataset],
+                             os.path.join(RESULTS_DIR, f"results_{ext_dataset}.csv"),
                              limit_clips=limit_clips, tolerance_ms_list=tolerance_ms_list,
                              offset_start=offset_start, offset_end=offset_end,
                              use_end_boundaries=use_end_boundaries,
@@ -1493,13 +1486,13 @@ if __name__ == "__main__":
                                 data.get("abs_error_mean")))
 
         print("\n" + "=" * 88)
-        print(f"{'vs_ext':<12} {'label':<34} {'files':>7} {'f1@25':>8} {'abs_err':>9}")
+        print(f"{'vs_ext':<12} {'label':<46} {'files':>7} {'f1@25':>8} {'abs_err':>9}")
         print("-" * 88)
         for ext, label, files, f1, err in summary:
             if files is None:
-                print(f"{ext:<12} {label:<34} {'-':>7} {'skipped (no alignments)':>19}")
+                print(f"{ext:<12} {label:<46} {'-':>7} {'skipped (no alignments)':>19}")
             else:
-                print(f"{ext:<12} {label:<34} {files:>7} {f1:>8.2f} {err:>9.2f}")
+                print(f"{ext:<12} {label:<46} {files:>7} {f1:>8.2f} {err:>9.2f}")
         print("=" * 88)
         print("Rows are only comparable at the SAME `files` count - a 100-file row reads "
               "several f1 points high.")

@@ -63,9 +63,8 @@ def load_checkpoint(ckpt_path):
     checkpoint = torch.load(ckpt_path, map_location='cpu', weights_only=False)
     if not isinstance(checkpoint, dict) or 'model_config' not in checkpoint:
         raise ValueError(
-            f"{ckpt_path} is not a p3cupe or p4mbfa checkpoint (no 'model_config'). BFA >= 2.0 "
-            f"only loads those two; the model2i/model3a checkpoints of earlier versions are "
-            f"not compatible.")
+            f"{ckpt_path} is not a p3cupe or p4mbfa checkpoint (no 'model_config'), and "
+            f"BFA loads only those two.")
     return checkpoint
 
 
@@ -74,9 +73,10 @@ def _load_release(directory):
     A release directory as a checkpoint dict.
 
     A release carries more than a training checkpoint does, and all of it is kept:
-      - `decoder` is the decoder the model was SELECTED with, which for CUPE-3-en is not the
-        one it was trained with (min_phone_frames 6, not 3). It is what `hyper_parameters`
-        is filled from, so the model decodes as it was scored.
+      - `decoder` is the decoder the model was SELECTED with, which for the CUPE-3 models is
+        not the one they were trained with (CUPE-3-en: min_phone_frames 6, not 3; the other
+        two: soft_phone_frames 10, not 4). It is what `hyper_parameters` is filled from, so
+        the model decodes as it was scored.
       - `labels` is the label space as strings. For p4mbfa it becomes the `inventory` stamp
         `MbfaExtractor.check_inventory` compares against this installation's tables.
     '''
@@ -147,15 +147,15 @@ class BaseExtractor:
         hp: the checkpoint's training hyperparameters, as a plain dict. For a released model,
             its geometry and the decoder it was published with.
         decoder_hp: the subset of them the aligner needs (`DECODER_KEYS`).
+        low_confidence_level: the confidence below which a phone of this family counts as
+            doubtful. A family constant, because the two are not on one confidence scale.
         classes_dim, groups_dim: logits of the phoneme and the group head.
         tones_dim: logits of the tone head, or None for a family without one.
         frames_per_window, frame_stride_samples, stride_frames, ms_per_frame: the geometry.
     '''
 
     family = None
-    # Fallbacks for hyperparameters an OLD checkpoint may not carry. None = the family's
-    # checkpoints always carry every key, so a missing one is an error and not a default.
-    DECODER_DEFAULTS = None
+    low_confidence_level = None
     tones_dim = None
 
     def __init__(self, ckpt_path, device='cpu', sample_rate=16000, verbose=1, checkpoint=None):
@@ -224,8 +224,6 @@ class BaseExtractor:
     # ------------------------------------------------------------------ plumbing
 
     def _read_decoder_hp(self):
-        if self.DECODER_DEFAULTS is not None:
-            return {k: self.hp.get(k, v) for k, v in self.DECODER_DEFAULTS.items()}
         missing = [k for k in DECODER_KEYS if k not in self.hp]
         if missing:
             raise ValueError(f"{self.ckpt_path}: hyper_parameters is missing {missing}; not a "
@@ -326,7 +324,7 @@ class BaseExtractor:
 
         Log-mel rather than the model's own tap because it has no parameters, so training
         cannot erode it - the learned tap's boundary score fell as the front end specialised
-        for phone identity (`model3p/memory.md`, pa01c).
+        for phone identity (`bfa_models/p3cupe/memory.md`, run pa01c).
         '''
         import torchaudio
         wav = audio_batch.reshape(audio_batch.shape[0], -1).float()

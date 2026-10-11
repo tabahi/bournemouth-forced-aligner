@@ -36,8 +36,8 @@ at index 1 instead of 0, so the aligner itself did not change.
   package.
 
 **New constructor parameters:** `phoneme_set`, `ckpt_path`, `g2p_model_dir`, `g2p_device`,
-`g2p_cache_size`, `punctuation_sil`. `mapper` and `cupe_ckpt_path` remain as the older names
-of `phoneme_set` and `ckpt_path`. CLI: `--phoneme-set`, `--ckpt-path`, `--g2p-device`,
+`g2p_cache_size`, `punctuation_sil`. They replace `mapper` and `cupe_ckpt_path`, which are
+removed (see "Removed — everything kept for older versions"). CLI: `--phoneme-set`, `--ckpt-path`, `--g2p-device`,
 `--punctuation-sil`; `--list-presets` prints both tables.
 
 **Published models.** Every model is a Hugging Face repository of two files, `config.json` +
@@ -54,7 +54,12 @@ space from `config.json`.
 | [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | std / cyrillic | FLEURS, 8 languages (`mr01a`, epoch 10) |
 | [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std / cjk | FLEURS Mandarin + Cantonese (`mc01a`, epoch 13) |
 | [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | std / japanese | FLEURS Japanese (`mj01a`, epoch 8) |
-| [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | ph66 | LibriSpeech 500 h, English (`pa07f`, epoch 0). The only p3cupe model published |
+| [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | ph66 | LibriSpeech 500 h, English (`pa07f`, epoch 0). Every English ph66 preset |
+| [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7) | ph66 | `CUPE-3-en-base` + one epoch of MLS: de es fr it nl pl pt, 100 h each (`pa07a`, epoch 0). Every other ph66 preset |
+| [`CUPE-3-en-base`](https://huggingface.co/Tabahi/CUPE-3-en-base) | ph66 | LibriSpeech 500 h, English, the root of the p3cupe lineage (`pa01d`, epoch 3). By name only |
+
+These eight are the only models v2 knows: the model2i / model3a checkpoints of v1 do not load,
+and no preset points at a local training checkpoint.
 
 `model_name=` / `--model` takes one of these names, or any repository id in the same layout.
 `ckpt_path=` / `--ckpt-path` takes a model on disk: a release directory, or a training
@@ -80,7 +85,7 @@ first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an e
 ### Changed — defaults, output and dependencies (breaking)
 
 - **`PhonemeTimestampAligner(preset="en-us")` is now the std set.** Pass `phoneme_set="ph66"`
-  for the previous behaviour. Alignments from an explicit p3cupe `cupe_ckpt_path` are
+  for the previous behaviour. Alignments from an explicit p3cupe `ckpt_path` are
   unchanged: verified identical (timestamps, confidences, pooled embeddings, TextGrid) on the
   LJSpeech samples before and after the refactor.
 - **Language codes.** The std set takes BCP 47 codes and accepts every spelling BFA took
@@ -114,9 +119,15 @@ first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an e
 - Per-group errors are reported in each set's own groups (`err_*` for ph66's 16, `std_*` for
   std's 15) and in **manner classes both can fill** (`mn_*`), which is what a ph66 row and a
   std row are compared on. The CSV gains a `phoneme_set` column.
-- `process_alignments.py`: a `MODELS` entry takes a published `model_name`, or a `ckpt_path`
-  (or the older `cupe_ckpt_path`); the manifest records family, phoneme set, language group,
-  gold fingerprint and, for a published model, the training run it is, read from the model.
+- `process_alignments.py`: `MODELS` lists the eight released models and nothing else, each
+  twice — by `model_name` (downloaded from the Hub) and as `<name>-local`, the release
+  directory `export_hf.py` builds before a push. The manifest records family, phoneme set,
+  language group, gold fingerprint and the training run a model is, read from the model. A
+  p4mbfa model of another language group than the corpus is refused before the sweep starts
+  instead of failing once per file. `process_alignments.py N K` runs every N-th experiment of
+  the grid starting at the K-th, so N shells cover it in parallel.
+- `compute_metrics.py` scores each `.bfN` on the corpus its own manifest names, so one sweep
+  over TIMIT and Buckeye is scored in one pass.
 - Paths lists are named `<dataset>_paths_all.json`; the old `*_ph66.json` names are still read.
 - **New `evaluation/dataset/probe_cache.py`** builds the boundary-probe cache the p4mbfa
   training repository reads, for TIMIT and now Buckeye, from this repository's SRT trees.
@@ -137,16 +148,23 @@ the batch's frames, so the same clips aligned one at a time score 71.76 / 72.55 
 instead of 71.22 / 71.70. This is the decoder as trained and applies to both families; it
 means two runs are only comparable at the same batch size.
 
-**The three English-capable models side by side**, same files and scorer
-(`evaluation/process_alignments.py` + `compute_metrics.py`), each with its published decoder
-settings, frame-grid onsets, batch size 16. Small samples, to show the pipeline end to end —
-the model cards carry the 400-clip TIMIT probe numbers:
+**The five English-capable models side by side**, same files and scorer
+(`evaluation/process_alignments.py` + `compute_metrics.py`), frame-grid onsets, batch size 16,
+with the onset bonus off and at its published weight of 30. Small samples, to show the
+pipeline end to end — the model cards carry the 400-clip TIMIT probe numbers:
 
-| | TIMIT, 100 files f1@10 / 25 / 50 | Buckeye, 3 interviews f1@10 / 25 / 50 |
-|---|---|---|
-| ph66, `CUPE-3-en` (English only) | 57.3 / **75.8** / 85.7 | 43.2 / **68.9** / 82.6 |
-| std, `mbfa-latin` (36 languages) | 54.1 / **73.1** / 84.1 | 39.3 / **63.6** / 77.5 |
-| std, `mbfa-latin-benchmark` (36 languages) | 56.2 / **74.1** / 85.1 | 38.8 / **63.2** / 76.9 |
+| f1@10 / 25 / 50 | TIMIT, 100 files, bonus 0 | bonus 30 | Buckeye, 3 interviews, bonus 0 | bonus 30 |
+|---|---|---|---|---|
+| ph66, `CUPE-3-en` | 54.3 / 74.8 / 85.8 | 57.3 / **75.8** / 85.7 | 46.0 / **72.0** / 83.9 | 43.2 / 68.9 / 82.6 |
+| ph66, `CUPE-3-en-base` | 47.4 / 74.1 / 86.1 | 58.0 / **76.7** / 86.3 | 44.5 / **72.4** / 83.8 | 42.2 / 67.8 / 81.9 |
+| ph66, `CUPE-3-mls7` | 49.7 / 72.1 / 85.0 | 56.7 / **74.9** / 85.1 | 42.2 / **67.3** / 80.7 | 40.6 / 65.2 / 80.0 |
+| std, `mbfa-latin` | 40.0 / 67.2 / 83.9 | 54.1 / **73.1** / 84.1 | 37.3 / 63.2 / 77.1 | 39.3 / **63.6** / 77.5 |
+| std, `mbfa-latin-benchmark` | 40.7 / 71.0 / 84.8 | 56.2 / **74.1** / 85.1 | 38.8 / **64.1** / 77.7 | 38.8 / 63.2 / 76.9 |
+
+The bonus helps every model on TIMIT (read speech, where a stop's closure and burst are
+labelled as two boundaries) and costs the three p3cupe models 2 - 4.6 points of f1@25 on
+Buckeye (conversational); the mbfa models are indifferent there. The published default stays
+30; `boundary_bonus_weight=0` is the setting to try on spontaneous speech with a ph66 model.
 
 ### Changed — the ph66 stack runs on p3cupe, and only on p3cupe
 
@@ -155,8 +173,8 @@ CNN-only phoneme model whose output **is** the boundary detector: each phone's p
 trained to hold 1.0 across the interior of its own segment and fall to exactly 0.5 at each of
 its two boundaries, where the neighbour rises through 0.5, so a boundary is the *crossing* of
 two posteriors rather than something to be recovered afterwards. The training package it was
-ported from lives at `bournemouth_aligner/model3p/`, whose `README.md` and `memory.md` are the
-design record.
+ported from is `p3cupe/` in [bfa_models](https://github.com/tabahi/bfa_models), whose
+`README.md` and `memory.md` are the design record.
 
 **New package `bournemouth_aligner/p3cupe/`** — inference only:
 
@@ -192,39 +210,10 @@ shaped by targets this same decoder built.
 
 ### Measured
 
-**Buckeye, 40 random segments per seed, onset f1 at 25 ms** (same scorer and seeds as before,
-`tests/test_buckeye.py`). Measured against `pa07a`, which was trained on MLS across 7 European
-languages with English EXCLUDED - so it scores below the English model2i/model3a checkpoint it
-replaces, exactly as `model3p/memory.md` records on TIMIT (per-phone f1@25 75.4 -> 63.8 over
-the 4 MLS epochs). **This is a model-availability result, not an architecture result.**
-
-An English checkpoint (`m_pa07b_final_e5_libri360h.pt`, LibriSpeech 360 h) now exists and has
-not been scored here - that is the one to compare English numbers against.
-
-| seed 2 | model3a `ue03c` | p3cupe `pa07a` (bonus 0) | p3cupe `pa07a` (bonus 30) |
-|---|---|---|---|
-| f1@10 | **44.1** | 39.1 | 45.1 |
-| f1@25 | **69.8** | 60.8 | 63.2 |
-| f1@50 | **82.8** | 74.6 | 76.5 |
-| median abs onset error | 11 ms | 12 ms | 9 ms |
-
-**The onset bonus.** `boundary_bonus_weight` now defaults to the checkpoint's own trained
-value (30), not to 0. Measured on Buckeye, 40 segments x 3 seeds, weight 0 -> 30:
-
-| | seed 0 | seed 1 | seed 2 |
-|---|---|---|---|
-| f1@25 | 60.2 -> **64.6** | 59.8 -> **61.5** | 60.8 -> **63.2** |
-| f1@10 | 36.2 -> **43.8** | 34.5 -> **40.1** | 39.1 -> **45.1** |
-
-It also holds on TIMIT's boundary scorer (100 files: f1@25 66.3 -> 72.2, median abs error
-18.9 -> 15.7 ms) - though that scorer counts TIMIT's separate closure and burst labels, which
-`model3p/memory.md` says the bonus wins on for the wrong reason, so it is corroboration of the
-existing record rather than independent evidence.
-
-It runs AGAINST that record's TIMIT finding that the bonus costs ~7 points per phone onset,
-measured on the English `pa01d` checkpoint. The likely difference is the checkpoint: a model
-with weak English posteriors leans on acoustic change for placement more than a strong one
-does. **Re-measure on `pa07b`.**
+Every number for the released models is in "Measured — std / p4mbfa" above; the onset bonus
+defaults to the value a model is published with (30 for all eight). The earlier comparisons
+in this section were made on a v1 checkpoint and on training runs that are not released, and
+have been removed with them.
 
 ### Changed — confidence
 
@@ -244,8 +233,46 @@ independently on `30s.wav`:
 
 So the measure accounts for +0.07 and the model for the rest: this loss deliberately does not
 saturate (its target distribution has entropy), so a well-aligned phone reads far below 1.0.
-`low_confidence_level` (new, default 0.25) replaces the hard-coded 0.5 cutoff in the
-bad-segment check, and is calibrated against this one checkpoint.
+`low_confidence_level` (new) replaces the hard-coded 0.5 cutoff in the bad-segment check.
+(The p3cupe row is an unreleased training checkpoint.)
+
+**The released models are not on one confidence scale**, so `low_confidence_level` defaults to
+`None` = the loaded model family's own level: **0.6 for the CUPE-3 (p3cupe) models, 0.1 for
+the mbfa (p4mbfa) ones**. Mean confidence on the samples above (TIMIT / Buckeye, published
+settings): `CUPE-3-en` 0.53 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 0.26 / 0.21,
+`mbfa-latin` 0.25 / 0.20, `mbfa-latin-benchmark` 0.17 / 0.15.
+
+### Removed — everything kept for older versions
+
+2.0 is a clean break, so nothing is carried for code written against 1.x or the 2.0 nightlies:
+
+- The constructor's `mapper=` and `cupe_ckpt_path=` (`phoneme_set=` and `ckpt_path=` are the
+  only spellings), `aligner.selected_mapper`, and `presets.DEFAULT_MODEL`.
+- **`is_estimated`** in every `phoneme_ts` / `group_ts` entry, which could only be `false`
+  since forced alignment places every target it reports. The low-level timestamp tuples are
+  7 long: `(id, start_frame, end_frame, target_idx, confidence, start_ms, end_ms)`.
+- The aligner functions re-exported from `bournemouth_aligner.p3cupe` (they live in
+  `bournemouth_aligner.segmental`), and `Phonemizer.break_words` (use `break_words_alpha`).
+- Decoder defaults for p3cupe checkpoints that do not carry every decoder setting: both
+  families now refuse such a file, as p4mbfa already did. The released models carry them all.
+- `presets.get_preset` returns `(model_name, lang, note)` and prints nothing.
+- Evaluation: the `*_paths_all_ph66.json` list names, the `cupe_ckpt_path` spelling in
+  `MODELS` and manifests, `drop_estimated`, and the duplicate `detected_*` / `predicted_*`
+  result keys.
+
+### Changed — downloads and console output
+
+- **The cache comes first.** A model or the G2P that is already in the huggingface_hub cache
+  is used without contacting the Hub at all. Before, every load asked the Hub whether the
+  repository had changed and drew a "Fetching 2 files" bar even when nothing was downloaded.
+  A repository updated on the Hub is therefore not picked up until it is deleted from the
+  cache or requested with `revision=`.
+- **`warn_level=0` prints nothing**, including on a first download. Level 1 adds one line per
+  download and real warnings; level 2 adds progress bars and the informational output.
+  Silenced at levels 0 and 1: huggingface_hub's progress bars, transformers' loading bar and
+  its tied-weights notice for the G2P checkpoint, and the espeak backend lines. The ph66
+  preset warning and the unknown-phoneme warning follow `warn_level` instead of printing
+  unconditionally.
 
 ### Fixed
 
@@ -290,12 +317,14 @@ floor.
 
 ### Changed — presets and model discovery
 
-`presets.py` holds the model names, and is the only place one appears. Every ph66 preset
-resolves to `CUPE-3-en`, the one p3cupe model published; it is English-only, so a non-English
-ph66 preset prints a warning that the model was not trained on that language (the std set is
-the multilingual one). The earlier local-file presets (`m_pa07b…` for English, `m_pa07a…` MLS
-for everything else) and the `P3CUPE_UNIVERSAL` placeholder are gone; a p3cupe checkpoint on
-disk still loads with `ckpt_path=`.
+`presets.py` holds the model names, and is the only place one appears. In the ph66 set the
+language picks between two p3cupe models: an English preset resolves to `CUPE-3-en`, every
+other one to `CUPE-3-mls7`, which adds German, Spanish, French, Italian, Dutch, Polish and
+Portuguese to English; a preset outside those eight prints a warning that the model was not
+trained on that language. An explicit `lang=` / `--lang` picks the model the same way a preset
+does. `CUPE-3-en-base` and `mbfa-latin-benchmark` are selectable by `model_name` only. The
+earlier local-file presets and the `P3CUPE_UNIVERSAL` placeholder are gone; a model on disk
+loads with `ckpt_path=`.
 
 `download_model` and every preset go through `hub.resolve_model`: `$BFA_MODEL_DIR/<name>/`,
 then `./models/<name>/`, then the model's Hugging Face repository, with an error that names

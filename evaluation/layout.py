@@ -48,22 +48,12 @@ DATASET_SRT_ROOTS = {
     "buckeye": os.path.join(REPO_ROOT, "tmp", "data", "buckeye_data"),
 }
 
-def _paths_list(dataset):
-    """
-    A corpus's paths list. Scoring only reads `text` and `boundaries` from the SRTs it points
-    at, which no phoneme set has a say in, so the same list serves ph66 and std runs alike and
-    the file is no longer named after one of them. A list written under the old
-    `*_paths_all_ph66.json` name is still picked up.
-    """
-    current = os.path.join(REPO_ROOT, "tmp", "paths", f"{dataset}_paths_all.json")
-    legacy = os.path.join(REPO_ROOT, "tmp", "paths", f"{dataset}_paths_all_ph66.json")
-    return legacy if (os.path.exists(legacy) and not os.path.exists(current)) else current
-
-
-# The paths lists, as written by `evaluation/dataset/*_parser.py`.
+# The paths lists, as written by `evaluation/dataset/*_parser.py`. Scoring only reads `text`
+# and `boundaries` from the SRTs they point at, which no phoneme set has a say in, so one list
+# serves ph66 and std runs alike.
 PATHS_LISTS = {
-    "timit": _paths_list("timit"),
-    "buckeye": _paths_list("buckeye"),
+    dataset: os.path.join(REPO_ROOT, "tmp", "paths", f"{dataset}_paths_all.json")
+    for dataset in ("timit", "buckeye")
 }
 
 

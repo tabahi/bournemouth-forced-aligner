@@ -2,9 +2,8 @@
 What `core.py` needs to know about a phoneme set, and nothing else.
 
 A phoneme set is two things: a phonemizer (text -> id sequence) and the label space those ids
-live in. `core.py` used to read both off the ph66 phonemizer's attributes, which is what tied it
-to ph66; it now reads the label space from an `Inventory` and treats the phonemizer as anything
-with `phonemize_sentence(text)` and `set_backend(language)`.
+live in. `core.py` reads the label space from an `Inventory` and treats the phonemizer as
+anything with `phonemize_sentence(text)` and `set_backend(language)`.
 
 Every phonemizer returns the same dict from `phonemize_sentence`:
 

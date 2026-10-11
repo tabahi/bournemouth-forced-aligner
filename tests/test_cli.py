@@ -148,7 +148,7 @@ class TestPresetResolution:
         from bournemouth_aligner.cli import _resolve_model_lang
         from bournemouth_aligner import presets
         self.presets = presets
-        self.default_model = presets.DEFAULT_MODEL
+        self.default_model = presets.P3CUPE_EN
         # The ph66 tests below pin the ph66 table, so they name the set; the std ones use
         # `self.resolve_std`, which is what the CLI does when no --phoneme-set is given.
         self.resolve = lambda preset, model, lang: _resolve_model_lang(preset, model, lang, "ph66")
@@ -162,17 +162,24 @@ class TestPresetResolution:
         assert lang == "en-us"
 
     def test_de_preset(self):
-        # One p3cupe model is published (English), so every ph66 preset resolves to it; the
-        # preset still carries the espeak language through.
+        # Every non-English ph66 preset resolves to the multilingual p3cupe model; the preset
+        # still carries the espeak language through.
         model, lang = self.resolve("de", None, None)
-        assert model == self.presets.P3CUPE_EN
+        assert model == self.presets.P3CUPE_MLS7
         assert lang == "de"
 
-    def test_non_english_preset_warns_about_the_english_model(self, capsys):
-        self.resolve("hi", None, None)
-        assert "trained on English only" in capsys.readouterr().out
-        self.resolve("en-gb", None, None)
-        assert "trained on English only" not in capsys.readouterr().out
+    def test_lang_alone_picks_the_model_too(self):
+        """`--lang fr` with no preset is French, so it gets the model French gets."""
+        assert self.resolve(None, None, "fr") == (self.presets.P3CUPE_MLS7, "fr")
+        assert self.resolve("en-us", None, "pt-br") == (self.presets.P3CUPE_MLS7, "pt-br")
+
+    def test_untrained_language_warns(self, capsys):
+        model, _ = self.resolve("hi", None, None)
+        assert model == self.presets.P3CUPE_MLS7
+        assert "was not trained on 'hi'" in capsys.readouterr().err
+        for code in ("en-gb", "de", "pt-br", "es-419", "fr-be"):
+            self.resolve(code, None, None)
+            assert "was not trained on" not in capsys.readouterr().err, code
 
     def test_model_override(self):
         """--model should always win over --preset."""
@@ -340,7 +347,7 @@ class TestCLIProcessing:
         r = _run(dummy_audio_path, srt_path, o, "--preset=en-us", timeout=120)
         _skip_if_failed(r)
         required = {"phoneme_id", "phoneme_label", "ipa_label",
-                    "start_ms", "end_ms", "confidence", "is_estimated"}
+                    "start_ms", "end_ms", "confidence"}
         data = json.loads(open(o).read())
         for seg in data["segments"]:
             for ts in seg["phoneme_ts"]:

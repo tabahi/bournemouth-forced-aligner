@@ -33,8 +33,7 @@ class MbfaExtractor(BaseExtractor):
     '''
 
     family = 'p4mbfa'
-    # No DECODER_DEFAULTS: a p4mbfa run reads every setting from its yaml without a code
-    # default, so its checkpoints always carry them and a missing one is an error.
+    low_confidence_level = 0.1
 
     def _build_model(self, checkpoint, verbose):
         model = MbfaCNN()

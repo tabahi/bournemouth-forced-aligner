@@ -8,7 +8,8 @@ so every scored row is labelled by the code that ran it rather than by memory da
 Every path it reads or writes is anchored at the repository root by `evaluation/layout.py`, so
 the working directory does not matter:
 
-    python evaluation/process_alignments.py 
+    python evaluation/process_alignments.py
+    python evaluation/process_alignments.py 10 3     # one of 10 parallel shells, see below
 
 Alignments land in `tmp/alignments/<dataset>/<bfN>/`, one directory per experiment, so a run
 can be thrown away with `rm -rf` without touching the corpus. See `layout.py`.
@@ -62,7 +63,7 @@ DATASET_AUDIO_ROOTS = {
     "timit": "/mnt/intelpa-2/rehman/speech_data_small/timit/raw/TIMIT",
 
     # buckeye base dir: expect s01, s02, ... s40 subdirs, each with sXXXXa/b/*.wav, *.phones, *.words
-    "buckeye": "/mnt/intelpa-3/rehman/speech_data/buckeye_corpus",     
+    "buckeye": "/mnt/intelpa-2/rehman/speech_data_small/buckeye_corpus",     
 }
 
 # ---- the acoustic model -------------------------------------------------------------
@@ -70,42 +71,41 @@ DATASET_AUDIO_ROOTS = {
 # BFA from its Hugging Face repository on first use) or a LOCAL path (`ckpt_path`: a release
 # directory or a training checkpoint file) - never both, because
 # `PhonemeTimestampAligner.load_model` gives `ckpt_path` priority over `model_name` and
-# silently ignores the other. `cupe_ckpt_path` is the older spelling of `ckpt_path` and is
-# still read.
+# silently ignores the other.
 #
 # The PHONEME SET is not declared here: the model decides it (p3cupe is ph66, p4mbfa is std),
 # and `checkpoint_identity` reads it back for the manifest so every scored row says which set
 # it was aligned in. Both families are scored against the same ground-truth boundaries, so
 # their rows are directly comparable.
 #
-models_dir = os.path.join(REPO_ROOT, "models", "p3cupe")
-bfa_tmp_models = "/mnt/intelpa-2/rehman/codes/bfa_models"
+# Only the released models are listed (bfa_models/p4mbfa/hf_release.yaml says which training
+# run each one is and why). The September sweeps over training-run checkpoints (pa07*, pa08*,
+# pa09*, ma02a_e30) are gone from here; their manifests stay in tmp/manifests as the record.
+bfa_models = "/mnt/intelpa-2/rehman/codes/bfa_models"
+# `export_hf.py release` builds every release here before `push` uploads it.
+RELEASES_DIR = f"{bfa_models}/tmp/training/selected_models_for_hf"
+
+PUBLISHED = (
+    # ---- p3cupe (ph66 phoneme set)
+    "CUPE-3-en",              # pa07f e0: English, LibriSpeech 500 h - the English ph66 preset
+    "CUPE-3-en-base",         # pa01d e3: English, the root of the lineage. By name only
+    "CUPE-3-mls7",            # pa07a e0: CUPE-3-en-base + 7 MLS languages - every other preset
+    # ---- p4mbfa (std phoneme set), one per language group
+    "mbfa-latin",             # ma04a e6: the std default, trained at the most noise
+    "mbfa-latin-benchmark",   # ma02a e8: best latin model on TIMIT. By name only
+    # TIMIT and Buckeye are English, so the three below cannot be scored on them -
+    # `_validate_experiment` refuses a model whose language group is not the corpus's.
+    "mbfa-cyrillic",          # mr01a e10
+    "mbfa-cjk",               # mc01a e13
+    "mbfa-japanese",          # mj01a e8
+)
+
 MODELS = {
-    # ---- the published models (bfa_models/p4mbfa/hf_release.yaml says which run each is).
-    # TIMIT and Buckeye are English, so of the p4mbfa models only the 'latin' ones can be
-    # scored on them.
-    "mbfa-latin":           {"model_name": "mbfa-latin"},            # std default: ma04a e6
-    "mbfa-latin-benchmark": {"model_name": "mbfa-latin-benchmark"},  # best latin on TIMIT: ma02a e8
-    "CUPE-3-en":            {"model_name": "CUPE-3-en"},             # ph66: pa07f e0, English
-
-    # ---- local p4mbfa training checkpoints (std phoneme set)
-    "ma02a_e30":   {"ckpt_path": f"{bfa_tmp_models}/tmp/training/p4mbfa/ma02a/m_ma02a_final_e30.pt"},
-
-    # ---- local p3cupe training checkpoints (ph66 phoneme set)
-    # MLS, 7 European languages, English EXCLUDED. Its English scores say something about the
-    # training data, not about the architecture - do not read them as a p3cupe result.
-    "pa07a_e4": {"cupe_ckpt_path": f"{models_dir}/m_pa07a_final_e4_MLS_7h.pt"},
-    # English, LibriSpeech 360 h.
-    "pa07b_e5": {"cupe_ckpt_path": f"{models_dir}/m_pa07b_final_e5_libri360h.pt"},
-
-    "pa07c_e10": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07c/m_pa07c_final_e10.pt"},
-    "pa07e_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07e/m_pa07e_final_e1.pt"},
-    "pa07f_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07f/m_pa07f_final_e1.pt"},
-    "pa08b_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa07f/m_pa07f_final_e1.pt"},
-    "pa08c_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa08c/m_pa08c_final_e1.pt"},
-    "pa09a_e3": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa09a/m_pa09a_final_e3.pt"},
-    "pa09b_e1": {"cupe_ckpt_path": f"{bfa_tmp_models}/tmp/training/p3cupe/pa09b/m_pa09b_final_e1.pt"},
-
+    # ---- as a user gets them: downloaded from https://huggingface.co/Tabahi/<name>
+    **{name: {"model_name": name} for name in PUBLISHED},
+    # ---- the same releases from the local build, for checking one BEFORE it is pushed.
+    # Identical weights once pushed, so sweep one source or the other, not both.
+    **{f"{name}-local": {"ckpt_path": f"{RELEASES_DIR}/{name}"} for name in PUBLISHED},
 }
 
 # ---- BFA settings held CONSTANT across the grid --------------------------------------
@@ -115,7 +115,7 @@ BFA_FIXED = dict(
                                   # The Viterbi runs on CPU regardless - it is a python loop
                                   # over frames on small tensors, ~3x faster there than on CUDA.
     bad_confidence_threshold=0.9,
-    low_confidence_level=0.25,    # p3cupe confidences are NOT on the same scale as BFA <= 1.2's
+    low_confidence_level=None,    # None = the model family's own level (0.6 CUPE-3, 0.1 mbfa)
     chunk_audio=True,
     segment_max_seconds=120,      # TIMIT/Buckeye segments are far below this, so nothing chunks
 )
@@ -134,17 +134,18 @@ EXPERIMENT_GRID = dict(
     # a handful of them is already a few thousand boundaries; TIMIT clips are ~2.5 s, so it
     # takes ~100 of those to say anything.
     subset=[-1],
-    model=["mbfa-latin", "mbfa-latin-benchmark", "CUPE-3-en"],     # keys of MODELS
+    # keys of MODELS: the five that can align English
+    model=["CUPE-3-en", "CUPE-3-en-base", "CUPE-3-mls7", "mbfa-latin", "mbfa-latin-benchmark"],
     boundary_bonus_weight=[0.00, None],    # None = the checkpoint's trained value
     min_phone_frames=[None],              # in 5 ms frames; None = the checkpoint's value
     soft_phone_frames=[None],             # None = the checkpoint's value
     sub_frame_onsets=[False,],              # False = onsets on the 5 ms frame grid
 )
 
-# First `.bfN.json` suffix to allocate. Each experiment takes the next N. A manifest already
-# existing for that N with a DIFFERENT config is a hard error rather than a silent overwrite.
-# bf1 - bf36 hold the September p3cupe decoder sweeps (Buckeye, 10 clips); the published-model
-# suite starts after them so those stay on disk.
+# First `.bfN.json` suffix to allocate. Each experiment takes the next N, and re-using an N
+# that holds a DIFFERENT config deletes that run's alignments first (see `write_manifest`).
+# bf1 - bf36 hold the September p3cupe decoder sweeps over training-run checkpoints (Buckeye,
+# 10 clips); the released-model suite starts after them so those stay on disk.
 VS_COUNTER_START = 37
 
 DURATION_MAX_SEGMENTS = 30
@@ -166,17 +167,20 @@ DECODER_AXES = ("boundary_bonus_weight", "min_phone_frames", "soft_phone_frames"
 # Process distribution
 # =====================================================================================
 
+# `python evaluation/process_alignments.py N K` runs every N-th experiment of the grid,
+# starting at the K-th (0-based) - so N shells with K = 0 .. N-1 cover the grid between them,
+# one experiment at a time each. The `.bfN.json` numbering comes from the whole grid, so it is
+# the same whichever process runs an experiment.
 process_id = 0
 total_processes = 1
 if len(sys.argv) > 2:
     total_processes = int(sys.argv[1])
     process_id = int(sys.argv[2])
-
-# Kept for reference/logging only - BFA_FIXED pins the aligner to CPU, which is what makes it
-# safe to run this alongside a training job.
-cuda_num = int(process_id % torch.cuda.device_count()) if torch.cuda.is_available() else 0
-device_name = "cpu"  # f"cuda:{cuda_num}"
-
+    if not 0 <= process_id < total_processes:
+        raise SystemExit(f"process id {process_id} is not in 0 .. {total_processes - 1}")
+    # Share the cores: parallel sweeps that each start a full-size torch thread pool only
+    # contend (the Viterbi is a single python thread per process either way).
+    torch.set_num_threads(max(1, (os.cpu_count() or 1) // (2 * total_processes)))
 
 
 # =====================================================================================
@@ -232,10 +236,6 @@ def resolve_model(model_key):
     if model_key not in MODELS:
         raise KeyError(f"unknown model {model_key!r}; MODELS has {sorted(MODELS)}")
     entry = dict(MODELS[model_key])
-    if 'cupe_ckpt_path' in entry:                      # the older spelling
-        if 'ckpt_path' in entry:
-            raise ValueError(f"MODELS[{model_key!r}] sets both ckpt_path and cupe_ckpt_path")
-        entry['ckpt_path'] = entry.pop('cupe_ckpt_path')
     if ('model_name' in entry) == ('ckpt_path' in entry):
         raise ValueError(f"MODELS[{model_key!r}] must set exactly one of model_name / "
                          f"ckpt_path, got {sorted(entry)}")
@@ -304,10 +304,11 @@ def _read_checkpoint(model_key):
         config = ckpt.get('model_config', {}) or {}
         fingerprint = None
         del ckpt
+    # No fallbacks: BFA refuses a model that does not carry its decoder settings.
     defaults = {
-        "boundary_bonus_weight": float(hp.get("boundary_bonus_weight", 0.0)),
-        "min_phone_frames": int(hp.get("min_phone_frames", 6)),
-        "soft_phone_frames": int(hp.get("soft_phone_frames", 4)),
+        "boundary_bonus_weight": float(hp["boundary_bonus_weight"]),
+        "min_phone_frames": int(hp["min_phone_frames"]),
+        "soft_phone_frames": int(hp["soft_phone_frames"]),
     }
     if 'n_tokens' in config:
         group = config.get('lang_group')
@@ -345,6 +346,18 @@ def _validate_experiment(exp):
     if exp["dataset"] not in DATASET_AUDIO_ROOTS:
         raise KeyError(f"unknown dataset {exp['dataset']!r}; "
                        f"DATASET_AUDIO_ROOTS has {sorted(DATASET_AUDIO_ROOTS)}")
+
+    # A p4mbfa model belongs to one language group and BFA raises on a language outside it -
+    # per file, so without this a mismatched model "runs" and reports every file as failed.
+    group = checkpoint_identity(exp["model"])["lang_group"]
+    if group is not None:
+        from bournemouth_aligner import presets
+        corpus_group = presets.get_std_preset(BFA_FIXED["lang"])[2]
+        if group != corpus_group:
+            raise ValueError(
+                f"model {exp['model']!r} is a '{group}' model, but the corpora are "
+                f"{BFA_FIXED['lang']} ('{corpus_group}'): it cannot align them. Take it out "
+                f"of EXPERIMENT_GRID['model'].")
 
     bonus = exp["boundary_bonus_weight"]
     if bonus is not None and float(bonus) < 0:
@@ -480,7 +493,7 @@ def write_manifest(exp, extra=None):
 
 
 def load_manifest(vs_ext, manifest_dir=MANIFEST_DIR):
-    """Read back a manifest by `vs_ext`. Returns None when there is none (older runs)."""
+    """Read back a manifest by `vs_ext`. Returns None when there is none."""
     path = os.path.join(manifest_dir, f"{vs_tag(vs_ext)}.json")
     if not os.path.exists(path):
         return None
@@ -983,9 +996,12 @@ def run_experiment(exp, e, n_total, paths_list_cache):
 
 
 if __name__ == "__main__":
-    experiments = build_experiments()
+    all_experiments = build_experiments()
+    experiments = all_experiments[process_id::total_processes]
 
-    print(f"{len(experiments)} experiment(s) to run:")
+    print(f"{len(experiments)} experiment(s) to run"
+          + (f" (process {process_id} of {total_processes}; the grid has "
+             f"{len(all_experiments)})" if total_processes > 1 else "") + ":")
     for e, exp in enumerate(experiments, start=1):
         print(f"  {e}. {exp['vs_ext']:<12} {experiment_label(exp):<34} {exp}")
     line()

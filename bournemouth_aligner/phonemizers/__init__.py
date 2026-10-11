@@ -21,11 +21,11 @@ def make_phonemizer(phoneme_set, language, **std_options):
         phoneme_set: 'std' or 'ph66'.
         language: canonical BCP 47 code for std, espeak-ng code for ph66.
         **std_options: `device`, `model_dir`, `cache_size`, `punctuation_sil`, `verbose` -
-            see `std.StdPhonemizer`. Ignored by ph66.
+            see `std.StdPhonemizer`. ph66 takes only `verbose`.
     """
     if phoneme_set == "ph66":
         from .ph66 import make_ph66_phonemizer
-        return make_ph66_phonemizer(language)
+        return make_ph66_phonemizer(language, verbose=std_options.get("verbose", 1))
     if phoneme_set == "std":
         from .std import StdPhonemizer
         return StdPhonemizer(language, **std_options)

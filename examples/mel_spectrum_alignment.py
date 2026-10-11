@@ -76,8 +76,7 @@ def example_audio_timestamps():
     extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
 
     # Alternative: explicit model selection
-    # cupe_ckpt_path = "models/p3cupe/m_pa07b_final_e5_libri360h.pt"
-    # extractor = PhonemeTimestampAligner(cupe_ckpt_path=cupe_ckpt_path, lang='en-us', duration_max=10, device='cpu')
+    # extractor = PhonemeTimestampAligner(model_name="CUPE-3-en", lang='en-us', duration_max=10, device='cpu')
 
     full_clip_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 

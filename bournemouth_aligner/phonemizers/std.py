@@ -25,6 +25,7 @@ up with it, one entry per token.
     construction - a caller that only ever passes pre-phonemized segments never pays for it.
 """
 
+import contextlib
 import os
 import re
 
@@ -64,6 +65,25 @@ def std_inventory(lang_group):
         fingerprint=LGI.gold_fingerprint())
 
 
+@contextlib.contextmanager
+def _transformers_output(shown):
+    """
+    transformers' loading bar and log lines on or off while the G2P model is built, then back
+    to the caller's settings. Loading this checkpoint always logs that its input and output
+    embeddings are not tied - true, intended, and nothing a user of BFA can act on.
+    """
+    from transformers.utils import logging as tf_logging
+    level_was, bar_was_on = tf_logging.get_verbosity(), tf_logging.is_progress_bar_enabled()
+    if not shown:
+        tf_logging.set_verbosity_error()
+        tf_logging.disable_progress_bar()
+    try:
+        yield
+    finally:
+        tf_logging.set_verbosity(level_was)
+        (tf_logging.enable_progress_bar if bar_was_on else tf_logging.disable_progress_bar)()
+
+
 class StdPhonemizer:
     """
     Text -> one language group's local tokens.
@@ -77,7 +97,8 @@ class StdPhonemizer:
             ~55 MB), 0 = unbounded.
         punctuation_sil: write a SIL where the text has pause punctuation. See the module
             docstring.
-        verbose: 0 silent, 1 announces the one-off download.
+        verbose: 0 silent, 1 announces the one-off download, 2 also shows transformers'
+            own output while the G2P model loads.
     """
 
     def __init__(self, language, device="cpu", model_dir=None, cache_size=None,
@@ -133,8 +154,9 @@ class StdPhonemizer:
             gold_g2p.G2P_MODEL_local_dir = model_dir
             gold_g2p.G2P_TOKENIZER_local_dir = tokenizer_dir
             kwargs = {} if self.cache_size is None else {"cache_size": int(self.cache_size)}
-            _G2P_INSTANCES[key] = gold_g2p.goldG2P(device=self.device,
-                                                   default_lang=self.language, **kwargs)
+            with _transformers_output(shown=self.verbose >= 2):
+                _G2P_INSTANCES[key] = gold_g2p.goldG2P(device=self.device,
+                                                       default_lang=self.language, **kwargs)
         return _G2P_INSTANCES[key]
 
     # ------------------------------------------------------------------ text

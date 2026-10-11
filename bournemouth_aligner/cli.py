@@ -3,8 +3,8 @@ import json
 import os
 import textwrap
 from .core import PhonemeTimestampAligner, DEFAULT_SEGMENT_MAX_SECONDS
-from .presets import (DEFAULT_LANG, DEFAULT_MODEL, DEFAULT_PHONEME_SET, P4MBFA_MODELS,
-                      PHONEME_SETS, get_preset, get_std_preset, std_languages)
+from .presets import (DEFAULT_LANG, DEFAULT_PHONEME_SET, MLS7_LANGS, P3CUPE_EN, P3CUPE_MLS7,
+                      P4MBFA_MODELS, PHONEME_SETS, get_preset, get_std_preset, std_languages)
 from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
                        DEFAULT_PHONEMES_PER_SECOND)
 
@@ -22,11 +22,14 @@ def _resolve_model_lang(preset, model, lang, phoneme_set=None):
     checkpoint decides the set when it is loaded and the language is passed through as typed.
     """
     if phoneme_set == "ph66":
-        if preset:
-            preset_model, preset_lang = get_preset(preset, lang=lang or DEFAULT_LANG)
-        else:
-            preset_model, preset_lang = DEFAULT_MODEL, DEFAULT_LANG
-        return model or preset_model, lang or preset_lang
+        # The language picks the model (English, or English + 7), whichever option named it.
+        language = lang or preset or DEFAULT_LANG
+        if model:
+            return model, language
+        preset_model, language, note = get_preset(language, lang=language)
+        if note:
+            click.echo(f"Warning: {note}", err=True)
+        return preset_model, language
 
     language = lang or preset or DEFAULT_LANG
     if model and phoneme_set is None:
@@ -57,7 +60,8 @@ def _resolve_model_lang(preset, model, lang, phoneme_set=None):
 @click.option('--model', default=None,
               help='Published model to use instead of the preset\'s (advanced): mbfa-latin, '
                    'mbfa-latin-benchmark, mbfa-cyrillic, mbfa-cjk, mbfa-japanese, CUPE-3-en, '
-                   'or a Hugging Face repository id. Downloaded on first use.')
+                   'CUPE-3-en-base, CUPE-3-mls7, or a Hugging Face repository id. Downloaded '
+                   'on first use.')
 @click.option('--ckpt-path', type=click.Path(), default=None,
               help='Path to a model on disk (advanced): a release directory (config.json + '
                    'model.safetensors) or a training checkpoint file, of either family. '
@@ -85,9 +89,9 @@ def _resolve_model_lang(preset, model, lang, phoneme_set=None):
               help='Maximum segment duration in seconds (for windowed processing).')
 @click.option('--boundary-bonus-weight', default=None, type=float,
               help='Weight on the log-mel acoustic-change bonus added to every phone-onset '
-                   "transition. Default: the checkpoint's own trained value (30 for the "
-                   'shipped one). 0 turns it off; see the constructor docstring for what it '
-                   'is measured to cost and buy.')
+                   "transition. Default: the value the model was published with (30 for "
+                   'every released model). 0 turns it off; see the constructor docstring for '
+                   'what it is measured to cost and buy.')
 @click.option('--sub-frame-onsets/--frame-grid-onsets', default=True,
               help='Place onsets at the interpolated crossing of two posteriors (default) '
                    'rather than on the 5 ms frame grid.')
@@ -328,9 +332,12 @@ def main(audio_path, text_or_srt, output_path,
 # ---------------------------------------------------------------------------
 # Preset help text
 # ---------------------------------------------------------------------------
-_PRESET_HELP = """\
---phoneme-set=ph66  (espeak-ng + p3cupe; one model, CUPE-3-en, trained on English)
+_PRESET_HELP = f"""\
+--phoneme-set=ph66  (espeak-ng + p3cupe)
 ──────────────────────────────────────────────────────────────────────────────
+{P3CUPE_EN}: English.  {P3CUPE_MLS7}: every other language - trained on
+{' '.join(sorted(MLS7_LANGS))} (and English); the rest are aligned by nearest sounds.
+
 English       en-us  en  en-gb  en-gb-x-rp  en-gb-scotland
 European      de  fr  es  it  pt  pt-br  nl  pl  da  sv  nb  fi  cs  hu  ...
 Slavic/E.Eu.  ru  uk  be  bg  ro  hr  sr  sk  sl  mk
