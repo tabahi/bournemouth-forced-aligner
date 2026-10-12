@@ -1,12 +1,44 @@
+"""
+Buckeye -> the SRT tree and paths list the evaluation reads.
 
-import os
-import json
-import re
-import subprocess
+    python evaluation/dataset/buckeye_parser.py        # from the repository root
+
+One `.srt.json` per interview under `tmp/data/buckeye_data/`, and
+`tmp/paths/buckeye_paths_all.json` listing them. An interview is cut into segments wherever
+the transcript stops being the speaker's plain words - the interviewer, a laugh, a noise, a
+cut-off word (`is_break_token`) - and at a pause once a segment is long enough (`save_srt`):
+
+    {"labels": {"phoneme_set": "std/latin", "lang": "en", "lang_group": "latin",
+                "n_tokens": 208, "gold_fingerprint": "..."},
+     "segments": [{"start": 14.05, "end": 19.87, "text": "...", "boundaries": [0, 391, ...]}],
+     "phones": [{"start": 7038, "end": 7326, "phone": "ah", "local_ph": [21]}, ...],
+     "voiced_duration": 312.4}
+
+A segment's `boundaries` (ms from the segment start) is what the scorer reads: where each
+speech phone of the hand-labelled `.phones` file starts, inside the segment. A pause inside a
+segment starts no boundary; the phone after it does.
+
+`phones` is that file whole, in ms from the start of the recording: `phone` is the label as
+the transcriber wrote it and `local_ph` the same phone in the std phoneme set - latin local
+ids, the label space of the `mbfa-latin` models (one id, or two for a diphthong or an
+affricate). `std_labels.py` says how each Buckeye symbol is written and why, and
+evaluation/LABEL_MAPPING.md walks through the whole conversion with what each choice is worth.
+"""
+
 import glob
+import json
+import os
+import subprocess
+import sys
+
 from tqdm import tqdm
-    
-#import re
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from evaluation.dataset.std_labels import (BUCKEYE_MARKERS, BUCKEYE_TO_STD,     # noqa: E402
+                                           StdLabels, clean_buckeye_label)
 
 buckeye_base_dir =  '/mnt/intelpa-2/rehman/speech_data_small/buckeye_corpus'  # expect s01, s02, ... s40 subdirs, each with sXXXXa/b/*.wav, *.phones, *.words
 
@@ -46,21 +78,37 @@ def get_audio_duration(audio_path):
 
 
 
-# Tokens that end a segment outright.  <IVER> is the interviewer speaking; {B_TRANS}
-# and {E_TRANS} mark the start and end of the transcription.  {E_TRANS} carries the
-# end-of-file timestamp, so treating it as an ordinary word stretched the last segment
-# of every file to the end of the recording (s0303b: 215.7 -> 324.9 s holding "just uh").
-BREAK_TOKENS = {"<IVER>", "{B_TRANS}", "{E_TRANS}"}
+# Timestamps in `.words` and `.phones` are typed separately and differ by a fraction of a
+# millisecond, so a phone that starts a segment can read as starting just before it.
+EDGE_TOLERANCE_MS = 2
 
 
 def is_tag_token(word):
     """
-    True for the bracketed annotations (<SIL>, <LAUGH>, <VOCNOISE>, {E_TRANS}, ...).
+    True for the bracketed annotations (<SIL>, <LAUGH>, <VOCNOISE-that>, {E_TRANS}, ...).
 
-    These are stripped from the transcript, so they are not speech the aligner can
-    ever target - which is exactly why they must not define a segment's extent.
+    Judged by the opening bracket alone: a few dozen tags in the corpus are mistyped and
+    never close (`<NOISE_you`, `<ERROR INTRA`).
     """
-    return (word.startswith("<") and word.endswith(">")) or (word.startswith("{") and word.endswith("}"))
+    return word.startswith(("<", "{"))
+
+
+def is_break_token(word):
+    """
+    True for a token that ends a segment: every annotation except the pause `<SIL>`.
+
+    A segment is only as good as its transcript, and the transcript of a tag is nothing.
+    `<IVER>` is the interviewer, `<LAUGH>` / `<VOCNOISE>` / `<NOISE>` are sound the aligner has
+    no phoneme for - and the tags that carry a word (`<LAUGH-yeah>`, `<CUTOFF-th=the>`,
+    `<EXT-I've>`, `<ERROR-is=it's>`) are speech the `.phones` file labels but whose text is a
+    fragment, a slip or a guess. Left inside a segment, each one is a run of phones in the
+    audio with nothing in the text to place on it, and the aligner pays for that along the
+    whole segment, not at that one spot. Cutting the segment there keeps both halves clean.
+
+    `{E_TRANS}` carries the end-of-file timestamp, so treating it as a word stretched the
+    last segment of every file to the end of the recording.
+    """
+    return is_tag_token(word) and word != "<SIL>"
 
 
 def trim_to_speech(words, start_time):
@@ -85,7 +133,7 @@ def trim_to_speech(words, start_time):
     return start_time, words[first:last + 1]
 
 
-def save_srt(audio_path, srt_path, duration=0, phones_data=None, boundaries=None, words_data=None, max_duration=max_duration, target_duration=target_duration):
+def save_srt(audio_path, srt_path, duration=0, phones_data=None, boundaries=None, words_data=None, max_duration=max_duration, target_duration=target_duration, labels_header=None):
     # `audio_path` is unused since the librosa energy trim was deleted - segment ends
     # come from the .words annotation now, which is exact.  The parameter stays because
     # every caller passes it positionally and silently shifting srt_path would write an
@@ -108,18 +156,14 @@ def save_srt(audio_path, srt_path, duration=0, phones_data=None, boundaries=None
         if seg_end <= seg_start:
             return None
 
-        seg_text = clean_text_buckeye(" ".join(w["word"] for w in seg_words
-                                               if not is_tag_token(w["word"])))
+        seg_text = segment_text(seg_words)
         if not seg_text.strip():
             return None
 
         # `boundaries` are absolute ms from the .phones file; stored segment-relative.
-        seg_boundaries = []
-        if boundaries:
-            for boundary in boundaries:
-                boundary_time = boundary / 1000.0
-                if seg_start <= boundary_time <= seg_end:
-                    seg_boundaries.append(int((boundary_time - seg_start) * 1000))
+        start_ms, end_ms = seg_start * 1000, seg_end * 1000
+        seg_boundaries = [max(0, int(round(onset - start_ms))) for onset in boundaries or []
+                          if start_ms - EDGE_TOLERANCE_MS <= onset < end_ms - EDGE_TOLERANCE_MS]
 
         return {"start": seg_start, "end": seg_end, "text": seg_text, "boundaries": seg_boundaries}
 
@@ -134,7 +178,7 @@ def save_srt(audio_path, srt_path, duration=0, phones_data=None, boundaries=None
         current_segment_words = []
 
         for word_info in words_data:
-            if word_info["word"] in BREAK_TOKENS:
+            if is_break_token(word_info["word"]):
                 if current_segment_words:
                     segments_info.append((prev_break_time, current_segment_words))
                     current_segment_words = []
@@ -220,6 +264,8 @@ def save_srt(audio_path, srt_path, duration=0, phones_data=None, boundaries=None
 
     if phones_data is not None:
         srt_data["phones"] = phones_data
+    if labels_header is not None:
+        srt_data = {"labels": labels_header, **srt_data}
 
 
     with open(srt_path, 'w') as f:
@@ -227,64 +273,72 @@ def save_srt(audio_path, srt_path, duration=0, phones_data=None, boundaries=None
         print(f"Saved SRT to {srt_path}")
     return clean_duration
 
-def clean_text_buckeye(text):
-    # Implement any specific cleaning for Buckeye text here
-    text = text.strip()
-    # replace <IVER> with ...
-    text = re.sub(r"<IVER>", "...", text)
-
-    # replace SIL with , <SIL>
-    text = re.sub(r"<SIL>", ", ", text)
-
-    # remove any tokens with <> tags
-    text = re.sub(r"<[^>]+>", "", text)
-
-    return text
+# Buckeye's own spellings for sounds English has no spelling for. A G2P reads them as words
+# or as letter names (std:  -> ɪ k n o ʊ,  -> e ɪ t ʃ m i "aitch em ee",  ->
+# m ɪ s t ə m), which puts phones in the target that nobody said - and  alone is one
+# word in a hundred. Written here the way the corpus's own dictionary pronounces them.
+SPELLINGS = {"yknow": "you know", "hm": "hum", "hmm": "hum", "mm": "um", "mhm": "um hum",
+             "mm-hmm": "um hum", "mm-hm": "um hum"}
 
 
-def read_phones(phones_file_path):
-    
-    #print(f"Reading phones from {phones_file_path}")
-    with open(phones_file_path, 'r') as f:
-        lines = f.readlines()
-    phone_lines = [line.strip() for line in lines if line.strip()]
-    
-    phones = []
-    boundaries = []
-    start=False
-    for i, pline in enumerate(phone_lines):
-        
-        if start:
-            parts = pline.split()
-            if len(parts) >= 3:
-                if (parts[2].strip()=="{E_TRANS}") or i >= len(phone_lines)-1:
-                    break
+def segment_text(seg_words):
+    """
+    The transcript of a run of `.words` rows: its words, respelt, and nothing else.
 
-            next_parts = phone_lines[i + 1].split()
-            
-            time_start = round(float(parts[0])*1000)
-            time_end = round(float(next_parts[0])*1000)
-            if len(parts) < 3:
+    A pause (`<SIL>`) inside the run leaves no mark. Writing it as a comma was measured and
+    changes no onset: the aligner finds the silence without being told.
+    """
+    return " ".join(SPELLINGS.get(row["word"], row["word"]) for row in seg_words
+                    if not is_tag_token(row["word"]))
+
+
+def read_phones(phones_file_path, labels):
+    """
+    The hand-labelled phones of one recording, and every boundary between them.
+
+    A `.phones` file is an xwaves label file: each row is `time  colour  label`, and the time
+    is where that label ENDS - the phone runs from the previous row's time to its own. (The
+    `.words` file is the same, and a word's last phone ends on the word's own row time.)
+
+    `{B_TRANS}` and `{E_TRANS}` mark where the transcription starts and stops. They are not
+    sound, and nothing after the first `{E_TRANS}` is read.
+
+    Args:
+        labels: a `StdLabels` over `BUCKEYE_TO_STD`.
+    Returns:
+        `(phones, onsets)`, both in ms from the start of the recording. `phones` is one dict
+        per labelled interval - `start`, `end`, `phone` (the label, tidied by
+        `clean_buckeye_label`) and `local_ph` (its latin local ids). `onsets` is where each
+        SPEECH phone starts, which is what the scorer has a prediction for: the edge where a
+        pause, a noise or the interviewer begins is the end of a phone and the start of none.
+    """
+    rows, started = [], False
+    with open(phones_file_path, 'r', errors='replace') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
                 continue
+            if not started:
+                started = (line == "#")
+                continue
+            parts = line.split(None, 2)
+            # A row with a time and no label is an interval nobody labelled.
+            rows.append((round(float(parts[0]) * 1000), parts[2] if len(parts) > 2 else "UNKNOWN"))
 
-            phone_value = parts[2].strip()
-            if (phone_value=="VOCNOISE"):
-                phone_value = "noise"
-            elif (phone_value=="LAUGH"):
-                phone_value = "SIL"
-            elif (phone_value=="SIL"):
-                phone_value = "SIL"
-            elif (phone_value=="IVER"):
-                phone_value = "SIL"
-
-            phones.append({"start": time_start, "end": time_end, "phone": phone_value})
-            boundaries.append(time_start)
-            if time_end not in boundaries:
-                boundaries.append(time_end)
-        elif pline.strip() == "#":
-                start = True
-    
-    return phones, boundaries
+    phones, onsets = [], []
+    previous = 0
+    for time_ms, raw in rows:
+        symbols = clean_buckeye_label(raw)
+        if symbols == ["{E_TRANS}"]:
+            break
+        if symbols[0] not in BUCKEYE_MARKERS and time_ms > previous:
+            local = [i for symbol in symbols for i in labels.local_ph(symbol)]
+            phones.append({"start": previous, "end": time_ms, "phone": " ".join(symbols),
+                           "local_ph": local})
+            if all(labels.is_speech(symbol) for symbol in symbols):
+                onsets.append(previous)
+        previous = time_ms
+    return phones, onsets
 
 
 def read_words(words_file_path):
@@ -333,7 +387,7 @@ def read_words_with_timing(words_file_path):
 
     return words_data
 
-def assort_paths(setname="all", redo_srts=False):
+def assort_paths(labels, setname="all", redo_srts=False):
 
     assert setname in all_sets, f"Invalid setname: {setname}"
 
@@ -351,7 +405,9 @@ def assort_paths(setname="all", redo_srts=False):
     for spkr in tqdm(range(1, total_spkr+1), desc="Assorting dataset"):
         # buckeye_corpus/s40/s4004a/s4004a.wav
         spkr_dir = os.path.join(buckeye_base_dir, f"s{spkr:02d}")
-        wav_files = glob.glob(os.path.join(spkr_dir.strip(), '*/*.wav'))
+        # Sorted: the list's order decides which clips a `subset` run draws, and directory
+        # order changes when the corpus is copied to another disk.
+        wav_files = sorted(glob.glob(os.path.join(spkr_dir.strip(), '*/*.wav')))
         
         for clip_id in range(len(wav_files)):
             audio_path = wav_files[clip_id]
@@ -378,7 +434,7 @@ def assort_paths(setname="all", redo_srts=False):
             if (not os.path.exists(phone_path)):
                 print(f"Warning: {phone_path} does not exist.")
                 continue
-            phones, boundaries = read_phones(phone_path)
+            phones, onsets = read_phones(phone_path, labels)
             
             words_data = None
             if os.path.exists(words_path):
@@ -386,7 +442,8 @@ def assort_paths(setname="all", redo_srts=False):
             
             if redo_srts or (not os.path.exists(srt_path)):
                 if words_data:
-                    vdur = save_srt(audio_path, srt_path, duration, phones_data=phones, boundaries=boundaries, words_data=words_data, max_duration=30, target_duration=10)
+                    vdur = save_srt(audio_path, srt_path, duration, phones_data=phones, boundaries=onsets, words_data=words_data, max_duration=30, target_duration=10,
+                                    labels_header=labels.header)
                     total_vdur += vdur
 
                 else:
@@ -406,9 +463,12 @@ def assort_paths(setname="all", redo_srts=False):
 
 
 if __name__ == "__main__":
-    assorted_list_data = assort_paths(setname="all", redo_srts=False)
+    labels = StdLabels(BUCKEYE_TO_STD, "Buckeye")
 
-    # json dump of paths_list
+    assorted_list_data = assort_paths(labels, setname="all", redo_srts=True)
+    print(labels.summary())
+
+    os.makedirs(os.path.dirname(paths_list_path), exist_ok=True)
     with open(paths_list_path, 'w') as f:
         json.dump(assorted_list_data, f)
     print("Saved assorted_list_data to:", os.path.abspath(paths_list_path))

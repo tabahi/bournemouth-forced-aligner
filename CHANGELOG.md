@@ -128,6 +128,28 @@ first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an e
   the grid starting at the K-th, so N shells cover it in parallel.
 - `compute_metrics.py` scores each `.bfN` on the corpus its own manifest names, so one sweep
   over TIMIT and Buckeye is scored in one pass.
+- **The corpus parsers write the hand labels in the std phoneme set.** `timit_parser.py` and
+  `buckeye_parser.py` used to index TIMIT's and Buckeye's phone labels in ph66. They now write
+  latin local ids - the label space of `mbfa-latin` / `mbfa-latin-benchmark`, the only mbfa
+  models English belongs to - through the new `evaluation/dataset/std_labels.py`: a table per
+  corpus, then standard_g2p's own gold and `to_local` stages, the path the training probe
+  uses. A label is written the way the std G2P writes that phoneme in English (diphthongs and
+  affricates are two tokens, `l` is ɫ, `ah` is ə, allophones fold to their phoneme; the flap
+  and the glottal stop keep ɾ and ʔ). Every SRT is stamped with `labels`: phoneme set,
+  language group, token count and gold fingerprint. An unknown label raises.
+  On the 400 TIMIT probe clips the hand labels written this way agree with the G2P's own
+  sequence on 76.7% of tokens; the rest is what a transcriber hears and a dictionary does not
+  (unreleased stops, flaps, reduced vowels, glottal stops).
+- **Fixed: Buckeye phone labels were one interval late.** A `.phones` row's time is where its
+  label ENDS; the parser read it as the start, so every label sat on the interval after its
+  own (the interviewer's turns had a median length of 115 ms, flaps 80 ms; read correctly
+  they are 3 s and 25 ms). The boundary TIMES, which are all the scorer reads, were right
+  and are unchanged: start, end and text are identical for all 12,182 segments, and the
+  boundaries for all but 2, which lose a stray end-of-transcription mark 1 ms past their last
+  phone. TIMIT's boundaries are identical for all 6,300 clips.
+- The parsers list the corpus in sorted order and number TIMIT's speakers in sorted order.
+  Both depended on directory order or on Python's per-process set order before, so a
+  regenerated paths list drew a different `subset` and carried different speaker ids.
 - Paths lists are named `<dataset>_paths_all.json`; the old `*_ph66.json` names are still read.
 - **New `evaluation/dataset/probe_cache.py`** builds the boundary-probe cache the p4mbfa
   training repository reads, for TIMIT and now Buckeye, from this repository's SRT trees.
@@ -237,7 +259,7 @@ saturate (its target distribution has entropy), so a well-aligned phone reads fa
 (The p3cupe row is an unreleased training checkpoint.)
 
 **The released models are not on one confidence scale**, so `low_confidence_level` defaults to
-`None` = the loaded model family's own level: **0.6 for the CUPE-3 (p3cupe) models, 0.1 for
+`None` = the loaded model family's own level: **0.2 for the CUPE-3 (p3cupe) models, 0.1 for
 the mbfa (p4mbfa) ones**. Mean confidence on the samples above (TIMIT / Buckeye, published
 settings): `CUPE-3-en` 0.53 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 0.26 / 0.21,
 `mbfa-latin` 0.25 / 0.20, `mbfa-latin-benchmark` 0.17 / 0.15.

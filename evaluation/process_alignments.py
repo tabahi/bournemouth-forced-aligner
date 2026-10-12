@@ -35,9 +35,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from evaluation.layout import (OUTPUT_DIR, MANIFESTS, MANIFEST_DIR, LOG_DIR, PATHS_LISTS,
-                            alignment_path, assert_unique_stems, experiment_dir, resolve_srt,
-                            vs_tag)
+from evaluation.layout import (OUTPUT_DIR, MANIFESTS, LOG_DIR, PATHS_LISTS,
+                            alignment_path, assert_unique_stems, experiment_dir,
+                            manifest_path, resolve_srt, vs_tag)
 
 
 # =====================================================================================
@@ -49,7 +49,8 @@ from evaluation.layout import (OUTPUT_DIR, MANIFESTS, MANIFEST_DIR, LOG_DIR, PAT
 # the two ever disagree the sweep writes somewhere the scorer does not read, and every
 # extension is reported as "never aligned":
 #   OUTPUT_DIR    tmp/alignments/<dataset>/<bfN>/   the .bfN files, and nothing else
-#   MANIFESTS     tmp/manifests/                    manifests, logs and notes
+#   MANIFESTS     tmp/manifests/                    logs and notes
+#                 tmp/manifests/<dataset>/          the manifests, one directory per corpus
 # The corpus under tmp/data/ keeps only the SRTs and MFA's own .mfa.json alignments.
 
 # ---- corpus audio roots --------------------------------------------------------------
@@ -95,9 +96,9 @@ PUBLISHED = (
     "mbfa-latin-benchmark",   # ma02a e8: best latin model on TIMIT. By name only
     # TIMIT and Buckeye are English, so the three below cannot be scored on them -
     # `_validate_experiment` refuses a model whose language group is not the corpus's.
-    "mbfa-cyrillic",          # mr01a e10
-    "mbfa-cjk",               # mc01a e13
-    "mbfa-japanese",          # mj01a e8
+    #"mbfa-cyrillic",          # mr01a e10
+    #"mbfa-cjk",               # mc01a e13
+    #"mbfa-japanese",          # mj01a e8
 )
 
 MODELS = {
@@ -114,7 +115,7 @@ BFA_FIXED = dict(
     device="cpu",                 # CPU on purpose: does not contend with training on the GPUs.
                                   # The Viterbi runs on CPU regardless - it is a python loop
                                   # over frames on small tensors, ~3x faster there than on CUDA.
-    bad_confidence_threshold=0.9,
+    bad_confidence_threshold=0.6,
     low_confidence_level=None,    # None = the model family's own level (0.6 CUPE-3, 0.1 mbfa)
     chunk_audio=True,
     segment_max_seconds=120,      # TIMIT/Buckeye segments are far below this, so nothing chunks
@@ -129,14 +130,14 @@ BFA_FIXED = dict(
 # trained at bonus 30, the grid [None, 30.0] is two runs of the same configuration under two
 # different labels.
 EXPERIMENT_GRID = dict(
-    dataset=["timit", "buckeye"],         # "timit" | "buckeye"
+    dataset=["timit",],         # "timit" | "buckeye"
     # -1 = every clip. Buckeye clips are WHOLE INTERVIEWS - ~7 minutes each, 40 segments - so
     # a handful of them is already a few thousand boundaries; TIMIT clips are ~2.5 s, so it
     # takes ~100 of those to say anything.
     subset=[-1],
     # keys of MODELS: the five that can align English
     model=["CUPE-3-en", "CUPE-3-en-base", "CUPE-3-mls7", "mbfa-latin", "mbfa-latin-benchmark"],
-    boundary_bonus_weight=[0.00, None],    # None = the checkpoint's trained value
+    boundary_bonus_weight=[None],    # None = the checkpoint's trained value
     min_phone_frames=[None],              # in 5 ms frames; None = the checkpoint's value
     soft_phone_frames=[None],             # None = the checkpoint's value
     sub_frame_onsets=[False,],              # False = onsets on the 5 ms frame grid
@@ -146,14 +147,14 @@ EXPERIMENT_GRID = dict(
 # that holds a DIFFERENT config deletes that run's alignments first (see `write_manifest`).
 # bf1 - bf36 hold the September p3cupe decoder sweeps over training-run checkpoints (Buckeye,
 # 10 clips); the released-model suite starts after them so those stay on disk.
-VS_COUNTER_START = 37
+VS_COUNTER_START = 0
 
 DURATION_MAX_SEGMENTS = 30
 REDO = True                 # re-align even when the vs file already exists
 BATCH_SIZE = 16
 COVERAGE_MIN = 0.6          # segments below this coverage ratio are dropped from the output
 
-RUN_CLEANUP = False         # DESTRUCTIVE: deletes old .bfN.json files. See clean_up().
+RUN_CLEANUP = True         # DESTRUCTIVE: deletes old .bfN.json files. See clean_up().
 RUN_VOCAB_ANALYSIS = False  # one-off; phonemization does not depend on any swept parameter
 
 
@@ -447,8 +448,8 @@ def write_manifest(exp, extra=None):
     `compute_metrics.py` reads this back to fill the CSV's `notes` and `cfg_*` columns, so a
     row is labelled by the code that ran it rather than by memory days later.
     """
-    os.makedirs(MANIFEST_DIR, exist_ok=True)
-    path = os.path.join(MANIFEST_DIR, f"{vs_tag(exp['vs_ext'])}.json")
+    path = manifest_path(exp["dataset"], exp["vs_ext"])
+    os.makedirs(os.path.dirname(path), exist_ok=True)
 
     model_kwargs, _ = resolve_model(exp["model"])
     manifest = {
@@ -492,9 +493,9 @@ def write_manifest(exp, extra=None):
     return path, clashed
 
 
-def load_manifest(vs_ext, manifest_dir=MANIFEST_DIR):
-    """Read back a manifest by `vs_ext`. Returns None when there is none."""
-    path = os.path.join(manifest_dir, f"{vs_tag(vs_ext)}.json")
+def load_manifest(dataset, vs_ext):
+    """Read back one corpus's manifest by `vs_ext`. Returns None when there is none."""
+    path = manifest_path(dataset, vs_ext)
     if not os.path.exists(path):
         return None
     with open(path) as f:
@@ -1012,6 +1013,6 @@ if __name__ == "__main__":
 
     line()
     print(f"Alignments:  {OUTPUT_DIR}/<dataset>/<bfN>/   (delete a directory to drop a run)")
-    print(f"Manifests:   {MANIFEST_DIR}")
+    print(f"Manifests:   {MANIFESTS}/<dataset>/")
     print("Score these with compute_metrics.py; the CSV `notes` and `cfg_*` columns are filled "
           "from those manifests.")

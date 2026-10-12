@@ -136,7 +136,17 @@ pip install "bournemouth-forced-aligner[ph66]"    # + the espeak-ng / ph66 set
 ```
 
 Thai, Japanese and Cantonese are written without spaces and need a word segmenter, installed
-as an extra: `[th]`, `[ja]`, `[yue]`. Mandarin needs none.
+as an extra. Mandarin needs none.
+
+```bash
+pip install "bournemouth-forced-aligner[ja]"      # Japanese: fugashi + unidic-lite
+pip install "bournemouth-forced-aligner[yue]"     # Cantonese: pycantonese
+pip install "bournemouth-forced-aligner[th]"      # Thai: pythainlp
+```
+
+**Japanese will not load without it:** `PhonemeTimestampAligner(preset="ja")` raises
+`ImportError: word segmentation for 'jpn' needs fugashi unidic-lite` until `fugashi` and
+`unidic-lite` are installed (`pip install fugashi unidic-lite` does the same as the extra).
 
 ### Step 3 — Verify it works
 
@@ -214,7 +224,7 @@ aligner_es = PhonemeTimestampAligner(preset="es")
 # Russian, Mandarin, Japanese - each a different language group, so a different model
 aligner_ru = PhonemeTimestampAligner(preset="ru")
 aligner_zh = PhonemeTimestampAligner(preset="zh")
-aligner_ja = PhonemeTimestampAligner(preset="ja")
+aligner_ja = PhonemeTimestampAligner(preset="ja")   # needs: pip install fugashi unidic-lite
 
 # Hindi - no std model yet. ph66 will phonemize it, but CUPE-3-mls7 was not trained on Hindi
 aligner_hi = PhonemeTimestampAligner(preset="hi", phoneme_set="ph66")
@@ -755,7 +765,7 @@ PhonemeTimestampAligner(
     min_phone_frames=None,        # Duration floor in 5 ms frames; None = the checkpoint's value
     soft_phone_frames=None,       # Frames above the floor a phone may give up; None = ditto
     bad_confidence_threshold=0.6, # Flag segments where >60% of phonemes are low-confidence
-    low_confidence_level=None,    # What counts as "low confidence"; None = the model family's (0.6 CUPE-3, 0.1 mbfa)
+    low_confidence_level=None,    # What counts as "low confidence"; None = the model family's (0.2 CUPE-3, 0.1 mbfa)
     segment_max_seconds=120,      # Decode whole up to this length, chunk beyond it
     chunk_audio=True,             # Walk longer segments in overlapping windows
     chunk_seconds=10.0,           # Window length for that walk
@@ -792,7 +802,7 @@ with.
 | `min_phone_frames` | `None` | Shortest phone the aligner may emit, in 5 ms frames (6 = 30 ms for every published model). A clip whose text will not fit at this floor automatically gets a shorter one rather than losing its alignment. |
 | `soft_phone_frames` | `None` | Frames above the floor that a phone may give up, at a cost each — the soft half of the duration prior. |
 | `bad_confidence_threshold` | `0.6` | Share of low-confidence phonemes that flags a segment as `bad_alignment`. |
-| `low_confidence_level` | `None` | Confidence below which a phoneme counts towards that share. `None` takes the loaded model family's level — `0.6` for the CUPE-3 models, `0.1` for the mbfa ones — because the two are not on one confidence scale. See [Reading confidence](#reading-confidence). |
+| `low_confidence_level` | `None` | Confidence below which a phoneme counts towards that share. `None` takes the loaded model family's level — `0.2` for the CUPE-3 models, `0.1` for the mbfa ones — because the two are not on one confidence scale. See [Reading confidence](#reading-confidence). |
 | `segment_max_seconds` | `120` | Segments up to this long are decoded in one pass and never chunked. Whole decoding is more accurate than chunking, so raise it if the hardware allows; the cost is roughly 1.8 s of Viterbi per 32 s of audio. |
 | `chunk_audio` | `True` | Walk segments longer than `segment_max_seconds` in overlapping windows. See [Long audio](#long-audio). |
 | `chunk_seconds` | `10.0` | Window length for that walk. |
@@ -821,7 +831,7 @@ and BFA refuses to load one whose list differs from its own tables:
 | [`mbfa-latin-benchmark`](https://huggingface.co/Tabahi/mbfa-latin-benchmark) | `latin` | FLEURS, 36 languages, ~170 h | `model_name=` only |
 | [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | `cyrillic` | FLEURS: be bg hr kk mk ru sr uk, ~40 h | every `cyrillic` preset |
 | [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | `cjk` | FLEURS: Mandarin, Cantonese, ~9 h | `zh`, `zh-Hant`, `yue` |
-| [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | `japanese` | FLEURS: Japanese, 7 h | `ja` |
+| [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | `japanese` | FLEURS: Japanese, 7 h | `ja` (needs `fugashi` + `unidic-lite`, see [Install](#step-2--install-bfa)) |
 
 The two latin models differ in training noise. `mbfa-latin` was trained with the most noise
 and is the one meant for real recordings; `mbfa-latin-benchmark` was trained with less and
@@ -1173,13 +1183,13 @@ interviews), each model with its published settings:
 
 | | mean confidence | `low_confidence_level` | phonemes below it |
 |---|---|---|---|
-| `CUPE-3-en` | 0.53 / 0.43 | 0.6 | 53% / 64% |
-| `CUPE-3-en-base` | 0.39 / 0.32 | 0.6 | 76% / 82% |
-| `CUPE-3-mls7` | 0.26 / 0.21 | 0.6 | 84% / 88% |
+| `CUPE-3-en` | 0.53 / 0.43 | 0.2 | 23% / 34% |
+| `CUPE-3-en-base` | 0.39 / 0.32 | 0.2 | 32% / 42% |
+| `CUPE-3-mls7` | 0.26 / 0.21 | 0.2 | 58% / 65% |
 | `mbfa-latin` | 0.25 / 0.20 | 0.1 | 48% / 55% |
 | `mbfa-latin-benchmark` | 0.17 / 0.15 | 0.1 | 56% / 58% |
 
-`low_confidence_level` defaults to the model family's level: 0.6 for the CUPE-3 models and
+`low_confidence_level` defaults to the model family's level: 0.2 for the CUPE-3 models and
 0.1 for the mbfa ones. A segment longer than 60 phonemes is flagged
 `coverage_analysis["bad_alignment"]` when more than `bad_confidence_threshold` (0.6) of its
 phonemes fall below that level, so pass your own level where the share above runs close to

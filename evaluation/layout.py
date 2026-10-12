@@ -6,7 +6,7 @@ ONE definition, imported by both `process_alignments.py` (which writes the align
 sweep ends up scoring an empty set and reporting every extension as "never aligned".
 
     tmp/alignments/<dataset>/<bfN>/<clip>.json    every BFA alignment, and nothing else
-    tmp/manifests/bf<N>.json                      what configuration produced each <bfN>
+    tmp/manifests/<dataset>/bf<N>.json            what configuration produced each <bfN>
     tmp/manifests/logs/…                          per-experiment logs
     tmp/manifests/notes_<dataset>.txt             the running notes
     tmp/plots/                                    error histograms
@@ -31,7 +31,6 @@ OUTPUT_DIR = os.path.join(REPO_ROOT, "tmp", "alignments")
 
 # Manifests, logs and notes - the record of what was run, which outlives the alignments.
 MANIFESTS = os.path.join(REPO_ROOT, "tmp", "manifests")
-MANIFEST_DIR = MANIFESTS
 LOG_DIR = os.path.join(MANIFESTS, "logs")
 
 # The scored CSV rows. Inside the package and version-controlled: everything else here is
@@ -73,6 +72,22 @@ def resolve_srt(srt_path):
 def vs_tag(vs_ext):
     """`.bf3.json` -> `bf3`, `.mfa.json` -> `mfa`."""
     return str(vs_ext).replace(".json", "").lstrip(".")
+
+
+def manifest_dir(dataset):
+    """
+    The directory holding one corpus's manifests.
+
+    One per corpus, like the alignments: `bf3` on TIMIT and `bf3` on Buckeye are two
+    experiments with two sets of files, and in one shared directory the second sweep's
+    manifest replaced the first's, leaving alignments on disk that nothing described.
+    """
+    return os.path.join(MANIFESTS, dataset)
+
+
+def manifest_path(dataset, vs_ext):
+    """Where the manifest of one experiment lives: `tmp/manifests/<dataset>/<bfN>.json`."""
+    return os.path.join(manifest_dir(dataset), f"{vs_tag(vs_ext)}.json")
 
 
 def experiment_dir(dataset, vs_ext):

@@ -9,7 +9,7 @@ mfa_corpus/
 bournemouth_aligner/cpp_onnx/*.tgz
 bournemouth_aligner/cpp_onnx/onnxruntime-*
 *.csv
-
+memory.md
 *.yaml
 *.pyc
 *.pt

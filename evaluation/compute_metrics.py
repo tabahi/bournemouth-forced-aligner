@@ -38,8 +38,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Where the alignments, manifests and results live - the SAME definitions the sweep writes
 # under. See evaluation/layout.py.
-from evaluation.layout import (MANIFEST_DIR, PATHS_LISTS, PLOTS_DIR, RESULTS_DIR,
-                               alignment_path, resolve_srt)
+from evaluation.layout import (PATHS_LISTS, PLOTS_DIR, RESULTS_DIR, alignment_path,
+                               manifest_dir, manifest_path, resolve_srt)
+from evaluation.dataset.std_labels import TWO_TOKEN_PHONES
 
 from bournemouth_aligner.standard_g2p.phoneme_features import (
     GROUP_NAMES as _STD_GROUP_NAMES,
@@ -352,6 +353,28 @@ def _is_speech_phone(phone, phoneme_set=None):
     return _phone_label(phone).strip().lower() not in NON_SPEECH_LABELS
 
 
+def _continues_phone(previous, phone, word_num):
+    """
+    True when a std entry is the second token of a phone the ground truth labels as ONE.
+
+    The std G2P writes an English diphthong or affricate as two tokens (`ay` -> a ɪ, `ch` ->
+    t ʃ) and the aligner places both, but TIMIT and Buckeye label it as one phone with one
+    onset. The second token's onset falls inside that phone, where the ground truth has no
+    boundary of its own; ph66 and MFA write these phones as one symbol and never produce it.
+
+    Two tokens are one phone only inside one word: `that she` is t + ʃ, and both are scored.
+    """
+    if previous is None:
+        return False
+    if (str(previous.get("phoneme_label", "")), str(phone.get("phoneme_label", ""))) \
+            not in TWO_TOKEN_PHONES:
+        return False
+    i, j = previous.get("target_seq_idx"), phone.get("target_seq_idx")
+    if word_num is None or i is None or j is None or max(i, j) >= len(word_num):
+        return True
+    return word_num[i] == word_num[j]
+
+
 def detect_timestamp_frame(vs_seg, seg_start_ms, seg_duration_ms, slack_ms=100.0,
                            phoneme_set=None):
     """
@@ -386,6 +409,7 @@ def segment_pred_boundaries(
     offset_end=0.0,
     unmapped_labels=None,
     phoneme_set=None,
+    merge_two_token_phones=False,
 ):
     """
     Collect the predicted boundaries of one segment, expressed in the ground-truth
@@ -393,7 +417,9 @@ def segment_pred_boundaries(
 
     Silence/padding phonemes are dropped, clip-absolute timestamps are shifted back
     to segment-relative, offsets are applied, and duplicate boundary times are
-    collapsed, so two phonemes sharing a timestamp count as one prediction.
+    collapsed, so two phonemes sharing a timestamp count as one prediction.  With
+    `merge_two_token_phones`, the two tokens of a std diphthong or affricate count as the
+    one phone the ground truth labels (see _continues_phone).
 
     Returns:
         (onsets, ends, gaps, n_phones, boundary_groups) — onsets/ends are sorted,
@@ -418,12 +444,22 @@ def segment_pred_boundaries(
     onsets, ends, gaps = [], [], []
     onset_groups, end_groups = {}, {}
     last_end = None
+    merge = merge_two_token_phones and _is_std(phoneme_set)
+    word_num = vs_seg.get("word_num")
+    previous = None
     for phone in phones:
         start_ms = float(phone["start_ms"]) - shift
         end_ms   = float(phone["end_ms"])   - shift
         if last_end is not None and start_ms > last_end:
             gaps.append(start_ms - last_end)
         last_end = end_ms
+
+        if merge and _continues_phone(previous, phone, word_num):
+            # the phone that began at the first token now ends where the second one does
+            ends[-1] = int(round(end_ms + offset_end))
+            previous = None
+            continue
+        previous = phone
 
         onset = int(round(start_ms - offset_start))
         end   = int(round(end_ms   + offset_end))
@@ -458,6 +494,7 @@ def check_method_alignment(
     align_max_dist=100.0,
     save_distances=True,
     gross_error_ms=None,
+    merge_two_token_phones=False,
 ):
     """
     Score a predicted phoneme alignment against the ground-truth SRT boundaries.
@@ -510,6 +547,12 @@ def check_method_alignment(
             >= max(tolerance_ms_list); also caps the error statistics.
         save_distances: Store the per-boundary nearest-neighbour distances in the
             JSON (needed by plot_alignment_histogram; a few MB on large corpora).
+        merge_two_token_phones: In a std alignment, score a diphthong or an affricate as
+            the one phone the ground truth labels, not as the two tokens the G2P writes
+            (see _continues_phone).  No effect on ph66 or MFA, which write one symbol.
+            Off by default: it is the stricter reading, and on mbfa-latin it moves f1@25
+            by about a point in either direction depending on the boundary bonus
+            (evaluation/LABEL_MAPPING.md).
         gross_error_ms: Radius outside which a boundary counts as a GROSS error -
             a known boundary with no prediction anywhere near it, or a prediction
             with no ground truth anywhere near it.  Defaults to align_max_dist.
@@ -677,6 +720,7 @@ def check_method_alignment(
                 offset_end=offset_end,
                 unmapped_labels=unmapped_labels if measure_group_errors else None,
                 phoneme_set=file_phoneme_set,
+                merge_two_token_phones=merge_two_token_phones,
             )
             all_gaps.extend(gaps)
 
@@ -781,6 +825,7 @@ def check_method_alignment(
     alignment_data = {
         "vs_ext":                    vs_ext,
         "boundary_mode":             boundary_mode,
+        "merge_two_token_phones":    merge_two_token_phones,
         "relative_boundaries":       relative_boundaries,
         "align_max_dist":            align_max_dist,
         "offset_start":              offset_start,
@@ -928,15 +973,14 @@ def check_method_alignment(
 # `process_alignments.py` writes one manifest per `vs_ext` at alignment time, recording the
 # checkpoint, snap source/radius, subset and the rest. Reading it back here is what lets a CSV
 # row describe itself instead of relying on someone remembering what `.bf12` was.
+#
+# Manifests are kept per corpus (`tmp/manifests/<dataset>/`, see layout.manifest_path), so a
+# `vs_ext` only means something together with its dataset.
 
-# MANIFEST_DIR comes from scoring.layout - see the import at the top.
 
-
-def load_experiment_manifest(vs_ext, manifest_dir=None):
-    """Manifest for one `vs_ext`, or None (MFA rows and pre-manifest runs have none)."""
-    manifest_dir = manifest_dir or MANIFEST_DIR   # resolved at CALL time, so the module-level
-    vs_tag = str(vs_ext).replace(".json", "").lstrip(".")   # MANIFEST_DIR stays authoritative
-    path = os.path.join(manifest_dir, f"{vs_tag}.json")
+def load_experiment_manifest(vs_ext, dataset):
+    """One corpus's manifest for `vs_ext`, or None (MFA rows and pre-manifest runs have none)."""
+    path = manifest_path(dataset, vs_ext)
     if not os.path.exists(path):
         return None
     try:
@@ -947,21 +991,21 @@ def load_experiment_manifest(vs_ext, manifest_dir=None):
         return None
 
 
-def discover_vs_extensions(manifest_dir=None, vs_range=None):
+def discover_vs_extensions(dataset, vs_range=None):
     """
-    Every `.bfN.json` that has a manifest, in N order.
+    Every `.bfN.json` that has a manifest for `dataset`, in N order.
 
     `vs_range` optionally restricts it (e.g. `range(0, 14)`); without it, everything found is
     scored. Extensions with a manifest but no alignment files on disk are still returned - the
     caller reports them as skipped, which is more useful than silently omitting a run you
     thought you had.
     """
-    manifest_dir = manifest_dir or MANIFEST_DIR
-    if not os.path.isdir(manifest_dir):
+    directory = manifest_dir(dataset)
+    if not os.path.isdir(directory):
         return []
 
     found = []
-    for name in os.listdir(manifest_dir):
+    for name in os.listdir(directory):
         m = re.fullmatch(r"bf(\d+)\.json", name)
         if not m:
             continue
@@ -998,7 +1042,7 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
     # `decoder_effective` is preferred over `experiment` for the decoder axes, because those
     # accept None meaning "the checkpoint's trained value": the request is not the run, and
     # without the resolved value a later checkpoint silently reinterprets historical rows.
-    manifest = load_experiment_manifest(vs_ext)
+    manifest = load_experiment_manifest(vs_ext, dataset)
     cfg = (manifest or {}).get("experiment", {}) or {}
     eff = (manifest or {}).get("decoder_effective", {}) or {}
     manifest_stats = (manifest or {}).get("stats", {}) or {}
@@ -1398,14 +1442,14 @@ def score_one(vs_ext, method, dataset, paths_list_path, csv_path, *, limit_clips
 
 if __name__ == "__main__":
     method    = "BFA"      # BFA or MFA
-    # "timit" | "buckeye". Batch mode (SCORE_ALL) takes each extension's dataset from its own
-    # manifest, so this only decides the single-`vs_ext` and MFA runs.
+    # "timit" | "buckeye". Everything below scores this corpus and no other: batch mode
+    # (SCORE_ALL) reads the manifests in tmp/manifests/<dataset>/.
     dataset   = "buckeye"
     limit_clips = -1       # -1 = all clips
 
     # ---- batch mode ------------------------------------------------------------------
-    # Score every `.bfN.json` that `process_alignments.py` has written a manifest for, in N
-    # order, appending one self-describing CSV row each. Set SCORE_ALL = False to fall back to
+    # Score every `.bfN.json` that `process_alignments.py` has written a manifest for on
+    # `dataset`, in N order, appending one self-describing CSV row each. Set SCORE_ALL = False to fall back to
     # the single `vs_ext` below.
     #
     # `limit_clips` is left at -1 even for subset runs: the scorer walks the whole paths list
@@ -1415,7 +1459,7 @@ if __name__ == "__main__":
     SCORE_ALL = True
     # e.g. range(1, 3) to score just those; None = every manifest. bf1 - bf36 are the September
     # sweeps over training-run checkpoints; the released-model suite starts at bf37.
-    VS_RANGE  = range(37, 1000)
+    VS_RANGE  = range(0, 5)
 
     # Time frame of the predicted phoneme timestamps:
     #   MFA aligns the extracted segment audio -> segment-relative  -> True
@@ -1453,27 +1497,25 @@ if __name__ == "__main__":
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(PLOTS_DIR, exist_ok=True)
 
+    
+
     if SCORE_ALL and method == "BFA":
-        extensions = discover_vs_extensions(vs_range=VS_RANGE)
+        extensions = discover_vs_extensions(dataset, vs_range=VS_RANGE)
         if not extensions:
-            print(f"No manifests found in {MANIFEST_DIR}. Run process_alignments.py first, "
-                  f"or set SCORE_ALL = False to score a single vs_ext.")
-        print(f"\nScoring {len(extensions)} extension(s): {', '.join(extensions)}\n")
+            print(f"No manifests in {manifest_dir(dataset)} for VS_RANGE={VS_RANGE}. Run "
+                  f"process_alignments.py on {dataset} first, or set SCORE_ALL = False to "
+                  f"score a single vs_ext.")
+        print(f"\nScoring {len(extensions)} {dataset} extension(s): {', '.join(extensions)}\n")
 
         summary = []
         for ext in extensions:
-            manifest = load_experiment_manifest(ext)
-            label = (manifest or {}).get("label", ext)
-            # One sweep can cover both corpora, and scoring an extension against the other
-            # corpus's paths list finds none of its files.
-            ext_dataset = ((manifest or {}).get("experiment") or {}).get("dataset", dataset)
-            label = f"{ext_dataset}: {label}"
+            manifest = load_experiment_manifest(ext, dataset)
+            label = f"{dataset}: {(manifest or {}).get('label', ext)}"
             print("\n" + "#" * 78)
             print(f"# {ext}   {label}")
             print("#" * 78)
 
-            data = score_one(ext, method, ext_dataset, PATHS_LISTS[ext_dataset],
-                             os.path.join(RESULTS_DIR, f"results_{ext_dataset}.csv"),
+            data = score_one(ext, method, dataset, paths_list_path, csv_path,
                              limit_clips=limit_clips, tolerance_ms_list=tolerance_ms_list,
                              offset_start=offset_start, offset_end=offset_end,
                              use_end_boundaries=use_end_boundaries,

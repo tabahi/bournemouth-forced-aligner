@@ -67,7 +67,7 @@ DEFAULT_N = 400
 # another repository, so it stores real, absolute audio paths.
 DATASET_AUDIO_ROOTS = {
     "timit": "/mnt/intelpa-2/rehman/speech_data_small/timit/raw/TIMIT",
-    "buckeye": "/mnt/intelpa-3/rehman/speech_data/buckeye_corpus",
+    "buckeye": "/mnt/intelpa-2/rehman/speech_data_small/buckeye_corpus",
 }
 
 # Buckeye segment filters. The duration ceiling is p4mbfa's `duration_max` (the probe pads to

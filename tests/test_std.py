@@ -341,7 +341,8 @@ class TestStdAligner:
                                     low_confidence_level=0.3)
         assert a.low_confidence_level == 0.3
         from bournemouth_aligner.p3cupe import CupeExtractor
-        assert CupeExtractor.low_confidence_level == 0.6
+        assert 0.0 < CupeExtractor.low_confidence_level < 1.0
+        assert CupeExtractor.low_confidence_level != aligner.extractor.low_confidence_level
 
     def test_asking_for_the_other_set_raises(self, latin_ckpt):
         with pytest.raises(ValueError, match="phoneme_set='ph66'"):

@@ -514,11 +514,6 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
                     color=fontcolor,
                     bbox=dict(boxstyle='round,pad=0.2',
                               facecolor=facecolor, alpha=0.9, linewidth=0))
-            # Mark estimated phonemes with a small asterisk above the label
-            if estimated:
-                ax.text(centre, mel_bins * 0.95, '*',
-                        ha='center', va='bottom', fontsize=10, fontweight='bold',
-                        color='#ff6600', alpha=0.95)
         else:
             # Narrow phoneme — place label above the top of the plot
             ax.text(centre, mel_bins * 0.92, label,
@@ -526,10 +521,6 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
                     color=fontcolor,
                     bbox=dict(boxstyle='round,pad=0.2',
                               facecolor=facecolor, alpha=0.9, linewidth=0))
-            if estimated:
-                ax.text(centre, mel_bins * 0.96, '*',
-                        ha='center', va='bottom', fontsize=8, fontweight='bold',
-                        color='#ff6600', alpha=0.95)
 
         prev_end_frame = end_frame
 
@@ -541,8 +532,7 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
         Patch(facecolor='#c0c0c0', label='>0.1 confidence', edgecolor='gray'),
         Patch(facecolor='#ffffff', label='≤0.1 confidence', edgecolor='gray'),
     ]
-    ax.legend(handles=legend_elements, loc='lower right', fontsize=8,
-              framealpha=0.75, title='* = estimated')
+    ax.legend(handles=legend_elements, loc='lower right', fontsize=8, framealpha=0.75)
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
