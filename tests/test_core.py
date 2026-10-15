@@ -12,12 +12,12 @@ import os
 
 import sys
 sys.path.append('.')
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 SAMPLE_AUDIO = "examples/samples/audio/109867__timkahn__butterfly.wav"
 
-class TestPhonemeTimestampAligner:
-    """Test cases for PhonemeTimestampAligner."""
+class TestBFA:
+    """Test cases for BFA."""
 
     @pytest.fixture(scope="class", params=["std", "ph66"])
     def aligner(self, request):
@@ -27,7 +27,7 @@ class TestPhonemeTimestampAligner:
         checkpoint, G2P model or espeak-ng is not available on this machine is skipped.
         """
         try:
-            return PhonemeTimestampAligner(
+            return BFA(
                 preset="en-us",
                 phoneme_set=request.param,
                 duration_max=10,
@@ -324,9 +324,9 @@ class TestPhonemeTimestampAligner:
         with tempfile.TemporaryDirectory() as tmp:
             # Create dummy audio
             audio_path = os.path.join(tmp, "test.wav")
-            import torchaudio
+            import soundfile as sf
             dummy = torch.randn(1, 16000)
-            torchaudio.save(audio_path, dummy, 16000)
+            sf.write(audio_path, dummy.T.numpy(), 16000)
 
             # Create SRT JSON
             srt_path = os.path.join(tmp, "test.srt.json")

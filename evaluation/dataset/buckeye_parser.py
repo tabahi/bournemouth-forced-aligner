@@ -40,7 +40,7 @@ if REPO_ROOT not in sys.path:
 from evaluation.dataset.std_labels import (BUCKEYE_MARKERS, BUCKEYE_TO_STD,     # noqa: E402
                                            StdLabels, clean_buckeye_label)
 
-buckeye_base_dir =  '/mnt/intelpa-2/rehman/speech_data_small/buckeye_corpus'  # expect s01, s02, ... s40 subdirs, each with sXXXXa/b/*.wav, *.phones, *.words
+buckeye_base_dir =  '/my_datasets/speech_data_small/buckeye_corpus'  # expect s01, s02, ... s40 subdirs, each with sXXXXa/b/*.wav, *.phones, *.words
 
 transcription_dir = 'tmp/data/buckeye_data'
 

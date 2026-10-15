@@ -9,10 +9,10 @@ URL: https://github.com/tabahi/bournemouth-forced-aligner
 
 __version__ = "2.0.0"
 
-from .core import PhonemeTimestampAligner
+from .core import BFA
 
 __all__ = [
-    "PhonemeTimestampAligner",
+    "BFA",
     "Phonemizer_ph66",
     "__version__"
 ]

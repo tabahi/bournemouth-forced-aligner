@@ -27,7 +27,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-from bournemouth_aligner import PhonemeTimestampAligner, hub, presets
+from bournemouth_aligner import BFA, hub, presets
 from bournemouth_aligner.extractors import load_extractor
 from bournemouth_aligner.p4mbfa import MbfaCNN
 from bournemouth_aligner.phonemizers.std import StdPhonemizer, std_inventory
@@ -115,7 +115,7 @@ def latin_ckpt(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def aligner(latin_ckpt):
-    return PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="en", device="cpu",
+    return BFA(ckpt_path=latin_ckpt, lang="en", device="cpu",
                                    duration_max=5)
 
 
@@ -173,7 +173,7 @@ class TestStdPresets:
         with pytest.raises(ValueError):
             presets.resolve_phoneme_set("ph67")
         with pytest.raises(TypeError):
-            PhonemeTimestampAligner(preset=None, mapper="ph66")
+            BFA(preset=None, mapper="ph66")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -337,7 +337,7 @@ class TestStdAligner:
 
     def test_low_confidence_level_is_the_familys_unless_given(self, aligner, latin_ckpt):
         assert aligner.low_confidence_level == aligner.extractor.low_confidence_level == 0.1
-        a = PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="en", device="cpu",
+        a = BFA(ckpt_path=latin_ckpt, lang="en", device="cpu",
                                     low_confidence_level=0.3)
         assert a.low_confidence_level == 0.3
         from bournemouth_aligner.p3cupe import CupeExtractor
@@ -346,15 +346,15 @@ class TestStdAligner:
 
     def test_asking_for_the_other_set_raises(self, latin_ckpt):
         with pytest.raises(ValueError, match="phoneme_set='ph66'"):
-            PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="en", phoneme_set="ph66",
+            BFA(ckpt_path=latin_ckpt, lang="en", phoneme_set="ph66",
                                     device="cpu")
 
     def test_language_of_another_group_raises(self, latin_ckpt):
         with pytest.raises(ValueError, match="latin"):
-            PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="ru", device="cpu")
+            BFA(ckpt_path=latin_ckpt, lang="ru", device="cpu")
 
     def test_old_language_spellings_are_accepted(self, latin_ckpt):
-        a = PhonemeTimestampAligner(ckpt_path=latin_ckpt, lang="pt-br", device="cpu")
+        a = BFA(ckpt_path=latin_ckpt, lang="pt-br", device="cpu")
         assert a.lang == "pt-BR"
 
     def test_gold_segment_is_aligned_without_the_g2p(self, aligner):
@@ -468,7 +468,7 @@ class TestHub:
     def test_model_name_loads_from_the_model_dir(self, tmp_path, monkeypatch):
         monkeypatch.setenv("BFA_MODEL_DIR", str(tmp_path))
         make_release(str(tmp_path / "mbfa-latin"))
-        aligner = PhonemeTimestampAligner(model_name="mbfa-latin", device="cpu")
+        aligner = BFA(model_name="mbfa-latin", device="cpu")
         assert (aligner.phoneme_set, aligner.inventory.lang_group) == ("std", "latin")
 
     def test_g2p_dir_must_already_hold_the_model(self, tmp_path, monkeypatch):

@@ -2,10 +2,10 @@
 import json
 import time
 
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 #import sys
 #sys.path.append('.')
-#from bournemouth_aligner.core import PhonemeTimestampAligner
+#from bournemouth_aligner.core import BFA
 
 
 
@@ -14,7 +14,7 @@ def example_batch_sentence_processing():
     Processes multiple text-audio pairs in a single batch call.
     All audio clips must fit within duration_max seconds."""
 
-    bfa_aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='auto')
+    bfa_aligner = BFA(preset='en-us', duration_max=10, device='auto')
 
     # Load audio files
     texts = [
@@ -55,7 +55,7 @@ def example_batch_SRT_processing():
     Uses whisper-style SRT json files with pre-segmented audio.
     Each segment gets its own audio tensor (chopped from the full audio)."""
 
-    bfa_aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='cpu')
+    bfa_aligner = BFA(preset='en-us', duration_max=10, device='cpu')
 
     srt_paths = [
         "examples/samples/LJSpeech/LJ001-0001.srt.json",

@@ -2,7 +2,7 @@
 import torch
 import time
 
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 def example_simplified_pipeline():
     """
@@ -13,7 +13,7 @@ def example_simplified_pipeline():
     text = "butterfly"
     audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 
-    aligner = PhonemeTimestampAligner(preset="en-us", duration_max=10, device="cpu")
+    aligner = BFA(preset="en-us", duration_max=10, device="cpu")
 
     # 1. Load and preprocess audio
     audio_wav = aligner.load_audio(audio_path)
@@ -60,7 +60,7 @@ def example_simplified_batch():
     Batch version: multiple sentences aligned in one call.
     """
 
-    aligner = PhonemeTimestampAligner(preset="en-us", duration_max=10, device="cpu")
+    aligner = BFA(preset="en-us", duration_max=10, device="cpu")
 
     texts = [
         "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition",

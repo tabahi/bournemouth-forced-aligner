@@ -21,7 +21,7 @@ import tempfile
 
 import pytest
 import torch
-import torchaudio
+import soundfile as sf
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ def dummy_audio_path(temp_dir):
     """2-second 16 kHz mono WAV."""
     path = os.path.join(temp_dir, "test_audio.wav")
     audio = torch.randn(1, 32000) * 0.1
-    torchaudio.save(path, audio, 16000)
+    sf.write(path, audio.T.numpy(), 16000)
     return path
 
 
@@ -258,9 +258,8 @@ class TestCLIProcessing:
 
     def test_text_mode_auto_output(self, temp_dir):
         """When OUTPUT_PATH is omitted the result is saved as <audio>.vs.json."""
-        import torchaudio, torch
         wav_path = os.path.join(temp_dir, "sample.wav")
-        torchaudio.save(wav_path, torch.randn(1, 32000) * 0.1, 16000)
+        sf.write(wav_path, (torch.randn(1, 32000) * 0.1).T.numpy(), 16000)
         expected_out = os.path.join(temp_dir, "sample.vs.json")
 
         r = _run(wav_path, "hello world", "--preset=en-us", timeout=120)

@@ -1,44 +1,42 @@
 """
-Where the scoring pipeline puts its files.
+Where the evaluation pipeline puts its files.
 
 ONE definition, imported by both `process_alignments.py` (which writes the alignments) and
 `compute_metrics.py` (which reads them back). The two agreeing by coincidence is exactly how a
-sweep ends up scoring an empty set and reporting every extension as "never aligned".
+sweep ends up scoring an empty set and reporting every run as "never aligned".
 
-    tmp/alignments/<dataset>/<bfN>/<clip>.json    every BFA alignment, and nothing else
-    tmp/manifests/<dataset>/bf<N>.json            what configuration produced each <bfN>
-    tmp/manifests/logs/…                          per-experiment logs
-    tmp/manifests/notes_<dataset>.txt             the running notes
-    tmp/plots/                                    error histograms
-    evaluation/results/*.csv                      the scores themselves - IN the repository,
-                                                  and committed, because a score is a result
-                                                  and the rest of this is scratch
-    tmp/data/<dataset>_data/…                     THE CORPUS: SRT transcripts and MFA's own
-                                                  `.mfa.json` alignments. Nothing this
-                                                  pipeline writes ever lands here.
+    tmp/alignments/<experiment>/<clip>.json       one alignment per clip - BFA and MFA alike
+    tmp/alignments/<experiment>/_manifest.json    the configuration that produced them
+    tmp/alignments/<experiment>/_log.txt          that run's log
+    tmp/mfa/                                      MFA's scratch corpus, removed after a run
+    tmp/plots/<experiment>.json / .png            the scorer's detail and error histogram
+    evaluation/results/results_<dataset>.csv      the scores, one row per experiment (the
+                                                  path is `paths.results_csv` in the yaml)
+    tmp/data/<dataset>_data/…                     THE CORPUS: the SRT transcripts. Nothing
+                                                  this pipeline writes ever lands here.
 
-The split exists so a sweep is disposable: `rm -rf tmp/alignments` throws away every BFA
-alignment ever produced without touching the corpus or the record of what was run, and
-`rm -rf tmp/alignments/timit/bf3` throws away exactly one experiment.
+`<experiment>` names the run by what it is - `<dataset>__<model>__<key settings>`, built by
+`process_alignments.experiment_id` - so the directory is the cache key: the same configuration
+always lands in the same place, and `rm -rf tmp/alignments/<experiment>` drops exactly one run
+together with its record.
 """
 
 import os
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Every `.bfN` alignment file, one directory per (dataset, experiment).
+# Every alignment file, one directory per experiment.
 OUTPUT_DIR = os.path.join(REPO_ROOT, "tmp", "alignments")
 
-# Manifests, logs and notes - the record of what was run, which outlives the alignments.
-MANIFESTS = os.path.join(REPO_ROOT, "tmp", "manifests")
-LOG_DIR = os.path.join(MANIFESTS, "logs")
+# The record of one run, kept INSIDE its directory so the two cannot come apart: a manifest
+# that outlives its alignments describes files that are not there.
+MANIFEST_NAME = "_manifest.json"
+LOG_NAME = "_log.txt"
 
-# The scored CSV rows. Inside the package and version-controlled: everything else here is
-# regenerable scratch, but a score is the output of a run that may not be repeatable (a
-# checkpoint gets replaced, a corpus moves), so it belongs in the history.
-RESULTS_DIR = os.path.join(REPO_ROOT, "evaluation", "results")
+# Where the segment audio and TextGrids of an MFA run sit while MFA works on them.
+MFA_WORK_DIR = os.path.join(REPO_ROOT, "tmp", "mfa")
 
-# Per-extension error histograms. Images, so they stay out of the repository.
+# Per-experiment scoring detail and error histograms.
 PLOTS_DIR = os.path.join(REPO_ROOT, "tmp", "plots")
 
 # The corpus trees the parsers wrote. Read-only as far as this pipeline is concerned.
@@ -69,30 +67,32 @@ def resolve_srt(srt_path):
     return os.path.join(REPO_ROOT, srt_path)
 
 
-def vs_tag(vs_ext):
-    """`.bf3.json` -> `bf3`, `.mfa.json` -> `mfa`."""
-    return str(vs_ext).replace(".json", "").lstrip(".")
+def resolve_repo_path(path):
+    """A path from `evaluate.yaml` as an absolute one; relative paths start at the repo root."""
+    path = os.path.expanduser(str(path))
+    return path if os.path.isabs(path) else os.path.join(REPO_ROOT, path)
 
 
-def manifest_dir(dataset):
-    """
-    The directory holding one corpus's manifests.
-
-    One per corpus, like the alignments: `bf3` on TIMIT and `bf3` on Buckeye are two
-    experiments with two sets of files, and in one shared directory the second sweep's
-    manifest replaced the first's, leaving alignments on disk that nothing described.
-    """
-    return os.path.join(MANIFESTS, dataset)
-
-
-def manifest_path(dataset, vs_ext):
-    """Where the manifest of one experiment lives: `tmp/manifests/<dataset>/<bfN>.json`."""
-    return os.path.join(manifest_dir(dataset), f"{vs_tag(vs_ext)}.json")
-
-
-def experiment_dir(dataset, vs_ext):
+def experiment_dir(experiment):
     """The directory holding one experiment's alignments. Deleting it deletes that run."""
-    return os.path.join(OUTPUT_DIR, dataset, vs_tag(vs_ext))
+    return os.path.join(OUTPUT_DIR, experiment)
+
+
+def manifest_path(experiment):
+    """Where the manifest of one experiment lives: `tmp/alignments/<experiment>/_manifest.json`."""
+    return os.path.join(experiment_dir(experiment), MANIFEST_NAME)
+
+
+def log_path(experiment):
+    return os.path.join(experiment_dir(experiment), LOG_NAME)
+
+
+def list_experiments():
+    """Every experiment on disk that has a manifest, by name."""
+    if not os.path.isdir(OUTPUT_DIR):
+        return []
+    return sorted(name for name in os.listdir(OUTPUT_DIR)
+                  if os.path.isfile(manifest_path(name)))
 
 
 def clip_stem(dataset, srt_path):
@@ -126,25 +126,12 @@ def clip_stem(dataset, srt_path):
     return "_".join(parts)
 
 
-def alignment_path(dataset, srt_path, vs_ext):
+def alignment_path(experiment, dataset, srt_path):
     """
-    Where one experiment's alignment for `srt_path` lives.
-
-    BFA runs go under `OUTPUT_DIR`. MFA alignments stay beside the SRT as `<id>.mfa.json`,
-    because that is where MFA itself wrote them and the corpus is not ours to reorganise.
+    Where one experiment's alignment for `srt_path` lives. The extension is always `.json`;
+    which run a file belongs to is said by its directory.
     """
-    tag = vs_tag(vs_ext)
-    if tag.startswith("bf"):
-        return os.path.join(experiment_dir(dataset, vs_ext),
-                            clip_stem(dataset, srt_path) + ".json")
-
-    # Beside the SRT. `srt_path.replace('.srt', vs_ext)` would give `<id>.mfa.json.json`,
-    # since the stored name is `<id>.srt.json`.
-    path = resolve_srt(srt_path)
-    for suffix in ('.srt.json', '.srt'):
-        if path.endswith(suffix):
-            return path[:-len(suffix)] + vs_ext
-    return path + vs_ext
+    return os.path.join(experiment_dir(experiment), clip_stem(dataset, srt_path) + ".json")
 
 
 def assert_unique_stems(dataset, paths_list):

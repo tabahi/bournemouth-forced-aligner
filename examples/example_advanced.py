@@ -3,13 +3,13 @@
 import torch
 import os
 
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 
 def example_audio_file_processing():
     """Example of single file processing usage.
     Use whisper style .json files for loading transcription.
-    For batch processing, it's better to create a single Instance of PhonemeTimestampAligner, and use its `process_srt_file` method for each file. 
+    For batch processing, it's better to create a single Instance of BFA, and use its `process_srt_file` method for each file. 
     Using this method is not recommended for batch processing since it will create a new instance of the extractor for each file, which is inefficient."""
 
     model_name = "CUPE-3-en"  # a published model by name; a model on disk goes in ckpt_path="..."
@@ -32,7 +32,7 @@ def example_audio_file_processing():
     ]
 
 
-    extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
+    extractor = BFA(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
 
 
 

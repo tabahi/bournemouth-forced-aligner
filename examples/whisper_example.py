@@ -2,7 +2,7 @@ import whisper
 import torch
 import os
 import json
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 
 model = whisper.load_model("turbo")
@@ -22,10 +22,10 @@ with open(srt_path, "w") as srt_file:
     json.dump(result, srt_file)
 
 # Using language preset (recommended) - automatically selects best English model
-extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
+extractor = BFA(preset="en-us", duration_max=10, device='cpu')
 
 # Alternative: explicit model selection
-# extractor = PhonemeTimestampAligner(model_name="CUPE-3-en", lang='en-us', duration_max=10, device='cpu')
+# extractor = BFA(model_name="CUPE-3-en", lang='en-us', duration_max=10, device='cpu')
 timestamps_dict = extractor.process_srt_file(srt_path, audio_path, ts_out_path, extract_embeddings=False, vspt_path=None, debug=False)
 
 print(timestamps_dict)  

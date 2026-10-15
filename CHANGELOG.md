@@ -5,7 +5,17 @@
 A new major version: v2 does not load v1 checkpoints, and BFA's model, decoder and boundary
 readout are all different. v1.x is the model2i/model3a line and ends at 1.1.5.
 
-### Added — a second phoneme set and model family, now the default
+### Added - documentation
+
+The README is now a short introduction. The details moved to `docs/`:
+[developer guide](docs/README.md) (layout, data flow, API, CLI, output format, testing),
+[about the models](docs/about-models.md) (architecture, the peak loss, the decoder, the
+releases), [evaluation](docs/evaluation.md) (full-corpus results against MFA) and
+[language support](docs/language-support.md) (every language and code, tone, segmentation).
+`evaluation/plot_summary.py` draws the comparison figures; the results CSVs and figures are
+now committed.
+
+### Added - a second phoneme set and model family, now the default
 
 BFA has two stacks behind one aligner, chosen by `phoneme_set`:
 
@@ -14,30 +24,30 @@ BFA has two stacks behind one aligner, chosen by `phoneme_set`:
 | `"std"` (**new default**) | standard_g2p (ByT5 G2P, vendored) | **p4mbfa** | one token list per language group |
 | `"ph66"` | espeak-ng + ph66 mapper | p3cupe | 66 phonemes, every language |
 
-p4mbfa is p3cupe's trunk with three heads: `ph_head` (one LANGUAGE GROUP's tokens — 208 for
+p4mbfa is p3cupe's trunk with three heads: `ph_head` (one LANGUAGE GROUP's tokens - 208 for
 `latin`, 127 `cyrillic`, 48 `cjk`, 28 `japanese`), `phg_head` (15 phoneme groups, shared) and
 `tone_head` (22 tones, shared). Its training decoder is the one BFA already had, with silence
 at index 1 instead of 0, so the aligner itself did not change.
 
 **New packages**
 
-- `bournemouth_aligner/standard_g2p/` — the runtime of
+- `bournemouth_aligner/standard_g2p/` - the runtime of
   [tabahi/CharsiuG2P](https://github.com/tabahi/CharsiuG2P)'s `standard_g2p`, vendored
   verbatim (MIT). `tools/sync_standard_g2p.py` is its only writer and `VENDORED.md` records
   the commit. Only the Mandarin dictionary *keys* are shipped (600 KB instead of 196 MB).
-- `bournemouth_aligner/p4mbfa/` — `model.py` (inference port of `MbfaCNN`) and `extractor.py`.
-- `bournemouth_aligner/segmental/` — `aligner.py` and `windowing.py` moved here from `p3cupe/`
-  (which still re-exports them), plus the clip-level forward pass both families share.
+- `bournemouth_aligner/p4mbfa/` - `model.py` (inference port of `MbfaCNN`) and `extractor.py`.
+- `bournemouth_aligner/segmental/` - `aligner.py` and `windowing.py` moved here from `p3cupe/`,
+  plus the clip-level forward pass both families share.
   `encode_clip` now returns a dict (`ph`, `group`, `tone`, `emb`, `flux`), not a tuple.
-- `bournemouth_aligner/phonemizers/` — `std.py`, `ph66.py`, and the `Inventory` that `core.py`
+- `bournemouth_aligner/phonemizers/` - `std.py`, `ph66.py`, and the `Inventory` that `core.py`
   reads label ids from instead of the ph66 phonemizer's attributes.
-- `bournemouth_aligner/hub.py` — every download. Models and the G2P come from the Hugging
+- `bournemouth_aligner/hub.py` - every download. Models and the G2P come from the Hugging
   Face Hub through `huggingface_hub`'s own cache; nothing is written inside the installed
   package.
 
 **New constructor parameters:** `phoneme_set`, `ckpt_path`, `g2p_model_dir`, `g2p_device`,
 `g2p_cache_size`, `punctuation_sil`. They replace `mapper` and `cupe_ckpt_path`, which are
-removed (see "Removed — everything kept for older versions"). CLI: `--phoneme-set`, `--ckpt-path`, `--g2p-device`,
+removed (see "Removed - everything kept for older versions"). CLI: `--phoneme-set`, `--ckpt-path`, `--g2p-device`,
 `--punctuation-sil`; `--list-presets` prints both tables.
 
 **Published models.** Every model is a Hugging Face repository of two files, `config.json` +
@@ -68,7 +78,7 @@ checkpoint file. `$BFA_MODEL_DIR/<name>/` and `./models/<name>/` are looked in b
 **How a model is chosen.** A model decides the phoneme set by itself (p3cupe is ph66, p4mbfa
 is std); naming one set and passing a model of the other raises. In the std set the language
 picks its language group and the group picks the model. A language whose group has no model,
-or that standard_g2p does not cover, **raises with a message naming `phoneme_set="ph66"`** —
+or that standard_g2p does not cover, **raises with a message naming `phoneme_set="ph66"`** -
 there is no silent fallback, because the two sets' ids and output keys differ.
 
 **Label check.** `ph_head` emits indices into a token list that lives in standard_g2p, not in
@@ -82,9 +92,9 @@ p3cupe model's phoneme list is checked against the ph66 mapper the same way.
 (~1.2 GB) with the tokenizer of `google/byt5-small`, downloaded by `huggingface_hub` on the
 first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an existing copy.
 
-### Changed — defaults, output and dependencies (breaking)
+### Changed - defaults, output and dependencies (breaking)
 
-- **`PhonemeTimestampAligner(preset="en-us")` is now the std set.** Pass `phoneme_set="ph66"`
+- **`BFA(preset="en-us")` is now the std set.** Pass `phoneme_set="ph66"`
   for the previous behaviour. Alignments from an explicit p3cupe `ckpt_path` are
   unchanged: verified identical (timestamps, confidences, pooled embeddings, TextGrid) on the
   LJSpeech samples before and after the refactor.
@@ -99,19 +109,20 @@ first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an e
   the set's phoneme key (`local_ph` in std; still `ph66` in ph66). Groups are the 15 gold
   groups, not pg16.
 - **No silence at punctuation in the std set** unless `punctuation_sil=True`, and **no
-  number/abbreviation expansion** — the G2P reads dictionary words. Spell numbers out.
+  number/abbreviation expansion** - the G2P reads dictionary words. Spell numbers out.
 - **Padding id.** Ragged batches are padded with the inventory's `pad_id` (`<blank>` in std,
   the unused `noise` slot in ph66). `aligner.noise_class` / `noise_group` are replaced by
   `pad_class` / `pad_group`; in std `noise` is a real label.
+- **Audio is read with soundfile, not torchcodec.** `load_audio` (and `balign`) read WAV, FLAC, OGG and MP3 through soundfile, whose wheels bundle libsndfile on every platform, so neither FFmpeg nor a torchcodec build matching the installed torch is needed any more. torchcodec (with FFmpeg) is the fallback for other formats and moved to the `[audio]` extra, which no longer lists librosa, soundfile or the unused pydub. `bournemouth_aligner.utils.read_audio` is the reader.
 - **Dependencies.** `transformers` and `safetensors` are now required. `phonemizer` moved to the `[ph66]` extra
   and is imported lazily, so the default install needs no espeak-ng. Word segmenters are
   extras: `[th]`, `[ja]`, `[yue]`. `bournemouth_aligner.Phonemizer_ph66` is imported on first
   access.
 - **`load_model(preset=...)`** now changes the language too when none was given explicitly;
-  before, `PhonemeTimestampAligner(preset="de").load_model(preset="fr")` loaded the French
+  before, `BFA(preset="de").load_model(preset="fr")` loaded the French
   preset's model and kept phonemizing German.
 
-### Changed — evaluation
+### Changed - evaluation
 
 - Scoring was already inventory-free (SRT `boundaries` against predicted onsets). What tied it
   to ph66 is fixed: silence was `phoneme_id == 0`, which is `<blank>` in std; the scorer now
@@ -119,15 +130,23 @@ first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an e
 - Per-group errors are reported in each set's own groups (`err_*` for ph66's 16, `std_*` for
   std's 15) and in **manner classes both can fill** (`mn_*`), which is what a ph66 row and a
   std row are compared on. The CSV gains a `phoneme_set` column.
-- `process_alignments.py`: `MODELS` lists the eight released models and nothing else, each
-  twice — by `model_name` (downloaded from the Hub) and as `<name>-local`, the release
-  directory `export_hf.py` builds before a push. The manifest records family, phoneme set,
-  language group, gold fingerprint and the training run a model is, read from the model. A
-  p4mbfa model of another language group than the corpus is refused before the sweep starts
-  instead of failing once per file. `process_alignments.py N K` runs every N-th experiment of
-  the grid starting at the K-th, so N shells cover it in parallel.
-- `compute_metrics.py` scores each `.bfN` on the corpus its own manifest names, so one sweep
-  over TIMIT and Buckeye is scored in one pass.
+- **`evaluation/evaluate.yaml` configures the whole evaluation**; nothing is set in the
+  scripts. It lists the models (the eight released ones by Hub name, their local release
+  directories, and MFA), the BFA settings, and `experiments`: a list of grids in which any key
+  can be a list. [`evaluation/README.md`](evaluation/README.md) explains how to run it.
+- **A run is named by what it is**, `<dataset>__<model>__<settings>` (for example
+  `timit__CUPE-3-en__b30_d6_s10_grid`), and its alignments live in the directory of that name
+  with their manifest and log. The numbered `.bfN` extensions are gone. An experiment already
+  on disk is skipped, an interrupted one resumes, and `process_alignments.py N K` still splits
+  the list over N shells.
+- **MFA is one of the models.** `process_alignments.py` cuts the segments, calls `mfa align`
+  in MFA's own conda environment and writes the result where a BFA run would go.
+- `compute_metrics.py` scores every finished run under `tmp/alignments/` into
+  `evaluation/results/results_<dataset>.csv`, keyed by the run's name. Runs that already have a row are
+  skipped; replacing a row (`--rescore`, or a run aligned again since) asks first.
+- The manifest records family, phoneme set, language group, gold fingerprint and the training
+  run a model is, read from the model. A p4mbfa model of another language group than the
+  corpus is refused before the sweep starts instead of failing once per file.
 - **The corpus parsers write the hand labels in the std phoneme set.** `timit_parser.py` and
   `buckeye_parser.py` used to index TIMIT's and Buckeye's phone labels in ph66. They now write
   latin local ids - the label space of `mbfa-latin` / `mbfa-latin-benchmark`, the only mbfa
@@ -150,45 +169,29 @@ first call that phonemizes text. `$BFA_G2P_DIR` / `g2p_model_dir=` point at an e
 - The parsers list the corpus in sorted order and number TIMIT's speakers in sorted order.
   Both depended on directory order or on Python's per-process set order before, so a
   regenerated paths list drew a different `subset` and carried different speaker ids.
-- Paths lists are named `<dataset>_paths_all.json`; the old `*_ph66.json` names are still read.
+- Paths lists are named `<dataset>_paths_all.json`.
 - **New `evaluation/dataset/probe_cache.py`** builds the boundary-probe cache the p4mbfa
   training repository reads, for TIMIT and now Buckeye, from this repository's SRT trees.
   Its TIMIT output is identical, clip for clip, to `bfa_models/tmp/data/timit_probe_400_latin.json`.
   Buckeye entries are segments of long files (`start` / `end`), which the training probe now
   cuts out before aligning.
 
-### Measured — std / p4mbfa
+### Measured - std / p4mbfa
 
 **Parity with training.** BFA with the `ma04a` epoch-6 weights (now `mbfa-latin`) on the
 training repository's 400 TIMIT probe clips, in the probe's own batches of 16, frame-grid
 onsets: f1@10/25/50 = 52.79 / 71.22 / 82.91 on the tune half and 54.00 / 71.70 / 83.41 on the
-held-out half — identical to the training probe run in fp32 on the same checkpoint. The
+held-out half - identical to the training probe run in fp32 on the same checkpoint. The
 vendored phonemizer reproduces the cache's target sequence for all 400 clips.
 
-**The score depends on batch composition.** `class_prior_normalise` takes the class prior over
-the batch's frames, so the same clips aligned one at a time score 71.76 / 72.55 at f1@25
-instead of 71.22 / 71.70. This is the decoder as trained and applies to both families; it
-means two runs are only comparable at the same batch size.
 
-**The five English-capable models side by side**, same files and scorer
-(`evaluation/process_alignments.py` + `compute_metrics.py`), frame-grid onsets, batch size 16,
-with the onset bonus off and at its published weight of 30. Small samples, to show the
-pipeline end to end — the model cards carry the 400-clip TIMIT probe numbers:
+**The five English-capable models and MFA on the full corpora** (TIMIT 6,300 clips, Buckeye
+255 recordings), published decoder settings, frame-grid onsets, batch size 16. The analysis
+is in [docs/evaluation.md](docs/evaluation.md):
 
-| f1@10 / 25 / 50 | TIMIT, 100 files, bonus 0 | bonus 30 | Buckeye, 3 interviews, bonus 0 | bonus 30 |
-|---|---|---|---|---|
-| ph66, `CUPE-3-en` | 54.3 / 74.8 / 85.8 | 57.3 / **75.8** / 85.7 | 46.0 / **72.0** / 83.9 | 43.2 / 68.9 / 82.6 |
-| ph66, `CUPE-3-en-base` | 47.4 / 74.1 / 86.1 | 58.0 / **76.7** / 86.3 | 44.5 / **72.4** / 83.8 | 42.2 / 67.8 / 81.9 |
-| ph66, `CUPE-3-mls7` | 49.7 / 72.1 / 85.0 | 56.7 / **74.9** / 85.1 | 42.2 / **67.3** / 80.7 | 40.6 / 65.2 / 80.0 |
-| std, `mbfa-latin` | 40.0 / 67.2 / 83.9 | 54.1 / **73.1** / 84.1 | 37.3 / 63.2 / 77.1 | 39.3 / **63.6** / 77.5 |
-| std, `mbfa-latin-benchmark` | 40.7 / 71.0 / 84.8 | 56.2 / **74.1** / 85.1 | 38.8 / **64.1** / 77.7 | 38.8 / 63.2 / 76.9 |
-
-The bonus helps every model on TIMIT (read speech, where a stop's closure and burst are
-labelled as two boundaries) and costs the three p3cupe models 2 - 4.6 points of f1@25 on
-Buckeye (conversational); the mbfa models are indifferent there. The published default stays
 30; `boundary_bonus_weight=0` is the setting to try on spontaneous speech with a ph66 model.
 
-### Changed — the ph66 stack runs on p3cupe, and only on p3cupe
+### Changed - the ph66 stack runs on p3cupe, and only on p3cupe
 
 The acoustic model, the decoder and the boundary readout have all been replaced. p3cupe is a
 CNN-only phoneme model whose output **is** the boundary detector: each phone's posterior is
@@ -198,20 +201,21 @@ two posteriors rather than something to be recovered afterwards. The training pa
 ported from is `p3cupe/` in [bfa_models](https://github.com/tabahi/bfa_models), whose
 `README.md` and `memory.md` are the design record.
 
-**New package `bournemouth_aligner/p3cupe/`** — inference only:
+**New package `bournemouth_aligner/p3cupe/`** - inference only:
 
-- `model.py` — the trunk. 13.5M params, 38.9 ms receptive field, **5 ms frames** (down from
+- `model.py` - the trunk. 13.5M params, 38.9 ms receptive field, **5 ms frames** (down from
   13.125 ms), no transformer, no boundary head, no blank class.
-- `extractor.py` — checkpoint loading and the windowed forward pass over a whole clip. The
+- `extractor.py` - checkpoint loading and the windowed forward pass over a whole clip. The
   checkpoint is the source of truth for both the tensor shapes and the frame geometry.
-- `aligner.py` — the segmental Viterbi, ported from the training package so that what is
-  decoded at inference is the same decoder that built the training targets.
-- `windowing.py` — 120 ms windows at an 80 ms stride, which is a whole 16 output frames, so
-  the stitched grid is the model's own conv grid and `time_ms(frame f) = f * 5.0` exactly.
+- The segmental Viterbi (ported from the training package, so that what is decoded at
+  inference is the same decoder that built the training targets) and the windowing (120 ms
+  windows at an 80 ms stride, a whole 16 output frames, so `time_ms(frame f) = f * 5.0`
+  exactly) were written here and now live in `bournemouth_aligner/segmental/`, shared with
+  p4mbfa.
 
 **Removed.** `bournemouth_aligner/cupe2i/` (model2i, model2j, model3a), `forced_alignment.py`
 (the CTC lattice) and `segmental.py` (the blank-based segmental decoder). The model2i and
-model3a checkpoints no longer load — `CupeExtractor` raises with a message saying so.
+model3a checkpoints no longer load - `CupeExtractor` raises with a message saying so.
 
 **Removed constructor parameters**, all of which only had meaning for the CTC lattice or the
 onset snapper: `boost_targets`, `enforce_minimum`, `silence_anchors`, `ignore_noise`,
@@ -220,8 +224,8 @@ onset snapper: `boost_targets`, `enforce_minimum`, `silence_anchors`, `ignore_no
 `boundary_snap_offset`. `segmental_max_seconds` is renamed `segment_max_seconds`.
 `set_boundary_snap()` and `extract_timestamps_from_segment_simplified()` are gone.
 
-**Note on `enforce_all_targets=False`.** The old non-forced mode — skipping up to 3 whole
-words the audio did not contain — belonged to the blank-based decoder and has no counterpart
+**Note on `enforce_all_targets=False`.** The old non-forced mode - skipping up to 3 whole
+words the audio did not contain - belonged to the blank-based decoder and has no counterpart
 in the p3cupe aligner. BFA >= 2.0 always performs forced alignment. Unreliable transcripts are
 now *reported* (`coverage_analysis["bad_alignment"]`) rather than absorbed.
 
@@ -232,12 +236,12 @@ shaped by targets this same decoder built.
 
 ### Measured
 
-Every number for the released models is in "Measured — std / p4mbfa" above; the onset bonus
+Every number for the released models is in "Measured - std / p4mbfa" above; the onset bonus
 defaults to the value a model is published with (30 for all eight). The earlier comparisons
 in this section were made on a v1 checkpoint and on training runs that are not released, and
 have been removed with them.
 
-### Changed — confidence
+### Changed - confidence
 
 A phoneme's `confidence` is now **the peak posterior the model puts on it inside its own
 segment**, not an average seeded from the segment's first frame. The hat-shaped target makes
@@ -260,11 +264,11 @@ saturate (its target distribution has entropy), so a well-aligned phone reads fa
 
 **The released models are not on one confidence scale**, so `low_confidence_level` defaults to
 `None` = the loaded model family's own level: **0.2 for the CUPE-3 (p3cupe) models, 0.1 for
-the mbfa (p4mbfa) ones**. Mean confidence on the samples above (TIMIT / Buckeye, published
-settings): `CUPE-3-en` 0.53 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 0.26 / 0.21,
-`mbfa-latin` 0.25 / 0.20, `mbfa-latin-benchmark` 0.17 / 0.15.
+the mbfa (p4mbfa) ones**. Mean confidence on the full corpora (TIMIT / Buckeye, published
+settings): `CUPE-3-en` 0.54 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 0.25 / 0.21,
+`mbfa-latin` 0.25 / 0.19, `mbfa-latin-benchmark` 0.16 / 0.15.
 
-### Removed — everything kept for older versions
+### Removed - everything kept for older versions
 
 2.0 is a clean break, so nothing is carried for code written against 1.x or the 2.0 nightlies:
 
@@ -282,7 +286,7 @@ settings): `CUPE-3-en` 0.53 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 
   `MODELS` and manifests, `drop_estimated`, and the duplicate `detected_*` / `predicted_*`
   result keys.
 
-### Changed — downloads and console output
+### Changed - downloads and console output
 
 - **The cache comes first.** A model or the G2P that is already in the huggingface_hub cache
   is used without contacting the Hub at all. Before, every load asked the Hub whether the
@@ -299,16 +303,16 @@ settings): `CUPE-3-en` 0.53 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 
 ### Fixed
 
 - **Word timestamps were paired positionally with the phonemizer's `word_num`.** They are now
-  matched by `target_seq_idx`. Any phoneme the aligner declined — a `SIL` written for a comma
-  the speaker did not pause at is the normal case — used to shift every later word onto the
+  matched by `target_seq_idx`. Any phoneme the aligner declined - a `SIL` written for a comma
+  the speaker did not pause at is the normal case - used to shift every later word onto the
   wrong phonemes.
 - **A batch died as a whole when one segment's text outran its audio.** The batch is now
   retried one segment at a time, so only the segment that genuinely cannot fit is dropped, with
   a warning naming it.
 - **The chunker ran ahead of its audio.** A window is now trusted only as far into its own
   audio as `TRUST_WINDOW_FRACTION` (75%), as a cap on top of the derailment detector rather
-  than a fallback when it finds nothing. This decoder cannot cram — it enforces a minimum phone
-  duration and reports infeasibility instead — so an over-budgeted window places its surplus
+  than a fallback when it finds nothing. This decoder cannot cram - it enforces a minimum phone
+  duration and reports infeasibility instead - so an over-budgeted window places its surplus
   phonemes early rather than announcing itself, and a count-based trim kept almost all of them.
   Measured on `30s.wav` forced through the chunker at 10 s windows:
 
@@ -325,10 +329,10 @@ settings): `CUPE-3-en` 0.53 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 
   intra-op pool to one thread for the duration of the DP: the per-frame tensors are far below
   the size that pays for a thread fan-out, so the threads only contended. Measured on a 32 s
   clip with 358 phones: 1.70 s at one thread against 34-117 s on the first call at 32.
-- The DP runs on CPU even when the model is on a GPU — 1.8 s against 5.0 s for the same clip,
+- The DP runs on CPU even when the model is on a GPU - 1.8 s against 5.0 s for the same clip,
   bit-identical, because a python loop over frames on small tensors is launch-bound.
 
-### Changed — chunking
+### Changed - chunking
 
 Chunking is now a **resource guard only**. The segmental decoder does not collapse on long
 audio, so `_needs_chunking` triggers on length alone (`segment_max_seconds`, 120 s) and no
@@ -337,7 +341,7 @@ derivation from the CTC lattice are gone; the bound that actually keeps a window
 now applied in `core.align_segment_chunked` and depends on the loaded checkpoint's duration
 floor.
 
-### Changed — presets and model discovery
+### Changed - presets and model discovery
 
 `presets.py` holds the model names, and is the only place one appears. In the ph66 set the
 language picks between two p3cupe models: an English preset resolves to `CUPE-3-en`, every
@@ -352,27 +356,26 @@ loads with `ckpt_path=`.
 then `./models/<name>/`, then the model's Hugging Face repository, with an error that names
 all three when they fail.
 
-### Added — the evaluation harness (`evaluation/`, was `scoring/`)
+### Added - the evaluation harness (`evaluation/`, was `scoring/`)
 
-Sweep a corpus once per configuration, then score every run into a labelled CSV row.
+Align a corpus once per configuration, then score every run into a labelled CSV row.
 
 ```bash
-python evaluation/process_alignments.py     # align, once per grid point
-python evaluation/compute_metrics.py        # score into evaluation/results/*.csv
+python evaluation/process_alignments.py     # align every experiment of evaluate.yaml
+python evaluation/compute_metrics.py        # score into evaluation/results/results_<dataset>.csv
 ```
 
 `evaluation/layout.py` defines where everything goes, and BOTH scripts import it - the writer
 and the reader agreeing by coincidence is how a sweep ends up scoring an empty set and
 reporting every run as "never aligned":
 
-    tmp/alignments/<dataset>/<bfN>/<clip>.json   alignments, and nothing else
-    tmp/manifests/                               what produced each run, plus logs
-    tmp/plots/                                   error histograms
-    evaluation/results/*.csv                     the scores - committed, unlike the rest
-    tmp/data/<dataset>_data/                     the corpus: SRTs and MFA's .mfa.json only
+    tmp/alignments/<experiment>/<clip>.json      alignments, with _manifest.json and _log.txt
+    tmp/plots/                                   scoring detail and error histograms
+    evaluation/results/results_<dataset>.csv     the scores
+    tmp/data/<dataset>_data/                     the corpus: the SRTs only
 
-Alignments moved out of the corpus tree so a sweep is disposable: `rm -rf tmp/alignments`
-drops every run without touching the corpus, and `rm -rf tmp/alignments/timit/bf3` drops one.
+Alignments are outside the corpus tree so a run is disposable: `rm -rf tmp/alignments`
+drops every run without touching the corpus, and `rm -rf tmp/alignments/<experiment>` drops one.
 Clip files are keyed by `layout.clip_stem` (the SRT path relative to the corpus root:
 `all_MABC0_SX61`, `s01_s0103a`), because TIMIT basenames are not unique across speakers and
 Buckeye's `clip_id` is a positional index that would rename every clip when the paths list is
@@ -380,20 +383,20 @@ regenerated. `assert_unique_stems` checks the whole list on load rather than tru
 
 The sweep grid is now the p3cupe decoder axes - `boundary_bonus_weight`, `min_phone_frames`,
 `soft_phone_frames`, `sub_frame_onsets` - each accepting `None` for "the checkpoint's trained
-value". `_check_for_duplicates` resolves those against the checkpoint's own hyperparameters and
-REFUSES a grid whose rows collapse to one run, which `[None, 30.0]` on a checkpoint trained at
-30 does. Manifests record `decoder_effective` so a row says what ran, not what was requested.
+value". Those are resolved against the checkpoint's own hyperparameters before a run is named,
+so `[None, 30.0]` on a checkpoint trained at 30 is one run, not two rows under different
+labels. Manifests record `decoder_effective` so a row says what ran, not what was requested.
 
 
 
-## [1.2.0] — never released, superseded by 2.0.0
+## [1.2.0] - never released, superseded by 2.0.0
 
 > The work below targeted the model2i/model3a checkpoints and the blank-based
 > `segmental.py` decoder, both removed in 2.0.0. Kept as the record of why the segmental
 > topology (minimum phone duration, skippable silences, an onset bonus from acoustic change)
-> was adopted — p3cupe's aligner inherits all three.
+> was adopted - p3cupe's aligner inherits all three.
 
-### Added — segmental decoder (`decoder="segmental"`, now the default)
+### Added - segmental decoder (`decoder="segmental"`, now the default)
 
 New module `bournemouth_aligner/segmental.py`. Every frame is assigned to a phoneme or a
 pause, each phoneme lasts at least 2 frames (a 3rd is skippable at a small cost), and every
@@ -474,7 +477,7 @@ forced default is unchanged in meaning: every target is aligned.
 
 ## [1.1.5] - 2026-06-05
 - Default `boundary_softness=3` is changed from 7 to 3 because at 3 it performs the best on TIMIT and buckeye dataset. 
-- Added warnings and parameter `self.warn_level` for verbose level. Use `PhonemeTimestampAligner.warn_level=3` for high verbosity.
+- Added warnings and parameter `self.warn_level` for verbose level. Use `BFA.warn_level=3` for high verbosity.
 - Fixed small segments alignment. Previously one-word or half-words ("umm or oh") raised error of not enough phonemes for the given duration. That is patched up here: https://github.com/tabahi/bournemouth-forced-aligner/commit/e58757b5ff9c3cb71303067a8050b06d01f80097#diff-c530cc1a536c371d38e233b3192f5f7935f97342d6460e039edc8107fbdf0348
 
 
@@ -488,7 +491,7 @@ forced default is unchanged in meaning: every target is aligned.
 - [torchcodec](https://github.com/meta-pytorch/torchcodec) dependency.  
 
 ## [1.1.2] - 2026-02-23
-- Added `load_model()` so that the models can be loaded after `__init__`, while the class `PhonemeTimestampAligner(lang ='en-us') can be initialized without specifying a model.`
+- Added `load_model()` so that the models can be loaded after `__init__`, while the class `BFA(lang ='en-us') can be initialized without specifying a model.`
 - Added more CLI functionality. Direct text input. Generate mel-spectrum directly from blaign cli command.
 - Readme reorganization.
 - ONNX porting still in progress.
@@ -504,8 +507,8 @@ This version breaks compatibility with the previous versions (<=0.1.7)
 - `output_frames_key` parameter options updated: `phoneme_idx` → `phoneme_id`, `group_idx` → `group_id`.
 
 ### Added
-- `ipa_label` field in `phoneme_ts` and `group_ts` output entries — contains the original espeak-ng IPA phoneme, before mapping to the reduced 66-class set. Useful when you need the full espeak IPA dictionary after alignment.
-- `is_estimated` field in `phoneme_ts` and `group_ts` entries — indicates whether a phoneme was directly aligned by Viterbi (`false`) or inserted by the coverage enforcement post-processing (`true`). Downstream tasks can use this to filter out forced insertions.
+- `ipa_label` field in `phoneme_ts` and `group_ts` output entries - contains the original espeak-ng IPA phoneme, before mapping to the reduced 66-class set. Useful when you need the full espeak IPA dictionary after alignment.
+- `is_estimated` field in `phoneme_ts` and `group_ts` entries - indicates whether a phoneme was directly aligned by Viterbi (`false`) or inserted by the coverage enforcement post-processing (`true`). Downstream tasks can use this to filter out forced insertions.
 - `coverage_analysis` per-segment output with `target_count`, `aligned_count`, `missing_count`, `extra_count`, `coverage_ratio`, `missing_phonemes`, and `extra_phonemes`.
 - `process_segments()` now supports true batch processing: accepts a list of clips (each with multiple segments) and their corresponding audio waveforms. Embeddings are returned as nested lists `[clip][segment]`.
 - Enabled MPS device support for Apple Silicon.
@@ -564,7 +567,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Planned support for multiple languages via phonemizer), currently available pretrained CUPE model is only for English.
 
 ### Features
-- **Core Alignment**: PhonemeTimestampAligner class for programmatic use
+- **Core Alignment**: BFA class for programmatic use
 - **CLI Tool**: `balign` command for batch processing
 - **Embeddings**: Extract phoneme embeddings for downstream tasks
 - **Confidence Scores**: Alignment quality metrics

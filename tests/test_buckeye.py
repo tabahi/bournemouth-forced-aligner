@@ -44,7 +44,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-PATHS_LIST = "/mnt/intelpa-2/rehman/codes/speech_data_manager/paths_cache/paths_list_buckeye_all.json"
+PATHS_LIST = "/my_datasets/codes/speech_data_manager/paths_cache/paths_list_buckeye_all.json"
 TOLERANCES = (10, 25, 50)
 MAX_DIST = 100.0
 NON_SPEECH_LABELS = {
@@ -224,7 +224,7 @@ def corrupt_text(segs, i, mode, rng):
 
 def run(args):
     import torch
-    from bournemouth_aligner import PhonemeTimestampAligner
+    from bournemouth_aligner import BFA
 
     cfg = dict(preset="en-us", duration_max=30, device="cuda" if torch.cuda.is_available() else "cpu")
     cfg.update(json.loads(args.cfg))
@@ -232,7 +232,7 @@ def run(args):
     # one itself, in which case the model decides the set.
     if not any(k in cfg for k in ("model_name", "ckpt_path")):
         cfg["phoneme_set"] = args.phoneme_set
-    aligner = PhonemeTimestampAligner(**cfg)
+    aligner = BFA(**cfg)
     aligner.warn_level = 0
 
     by_clip = sample_segments(args.n, args.seed, args.min_dur, args.max_dur, args.clip, args.paths)
@@ -291,7 +291,7 @@ if __name__ == "__main__":
     ap.add_argument("--phoneme-set", choices=["std", "ph66"], default="std",
                     help="std = standard_g2p + the latin p4mbfa checkpoint, ph66 = espeak-ng + "
                          "p3cupe. Both are scored against the same boundaries.")
-    ap.add_argument("--cfg", default="{}", help="JSON kwargs for PhonemeTimestampAligner")
+    ap.add_argument("--cfg", default="{}", help="JSON kwargs for BFA")
     ap.add_argument("--corrupt", choices=["extra_ends", "missing"], default=None,
                     help="make the transcript unreliable; scoring still uses the true boundaries")
     ap.add_argument("--worst", type=int, default=0)

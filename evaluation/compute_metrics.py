@@ -11,9 +11,20 @@ two boundary lists are aligned once per segment with a Levenshtein DP (monotonic
 one-to-one, see levenshtein_align) and that single alignment is thresholded at
 each tolerance to give recall (known -> predicted), precision (predicted ->
 known), F1 and the R-value.
+
+    python evaluation/compute_metrics.py                    # score what is not in the CSV yet
+    python evaluation/compute_metrics.py --list             # what is on disk, and what is scored
+    python evaluation/compute_metrics.py --only 'timit__*'
+    python evaluation/compute_metrics.py --rescore          # recompute rows that already exist
+
+It scores the experiments `process_alignments.py` left under `tmp/alignments/`, whatever
+produced them, and keeps one row each in the results CSV of their dataset. Its settings are
+the `scoring:` section of `evaluate.yaml`.
 """
 
+import argparse
 import csv
+import fnmatch
 import json
 import math
 import os
@@ -38,8 +49,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Where the alignments, manifests and results live - the SAME definitions the sweep writes
 # under. See evaluation/layout.py.
-from evaluation.layout import (PATHS_LISTS, PLOTS_DIR, RESULTS_DIR, alignment_path,
-                               manifest_dir, manifest_path, resolve_srt)
+from evaluation.config import load_config, results_csv_path
+from evaluation.layout import (OUTPUT_DIR, PATHS_LISTS, PLOTS_DIR, alignment_path,
+                               list_experiments, manifest_path, resolve_srt)
 from evaluation.dataset.std_labels import TWO_TOKEN_PHONES
 
 from bournemouth_aligner.standard_g2p.phoneme_features import (
@@ -483,7 +495,7 @@ def check_method_alignment(
     paths_list_path,
     output_json_path,
     dataset,
-    vs_ext=".bfa1.json",
+    experiment,
     limit_clips=-1,
     relative_boundaries=True,
     tolerance_ms_list=None,
@@ -520,7 +532,7 @@ def check_method_alignment(
     Args:
         paths_list_path: JSON file listing {srt, vs} path pairs
         output_json_path: Path to write the results JSON
-        vs_ext: File extension identifying the alignment method (e.g. ".mfa1.json", ".bf0.json")
+        experiment: The run to score: its directory name under tmp/alignments/
         limit_clips: Maximum number of files to process (-1 = all)
         relative_boundaries: Time frame of the predicted timestamps.
             True   — segment-relative (MFA);
@@ -592,7 +604,7 @@ def check_method_alignment(
         raise ValueError("relative_boundaries must be True, False or 'auto'")
 
     boundary_mode = "onsets+ends" if use_end_boundaries else "onsets"
-    print(f"[INFO] scoring {vs_ext}: boundary_mode={boundary_mode}, relative_boundaries={relative_boundaries}, "
+    print(f"[INFO] scoring {experiment}: boundary_mode={boundary_mode}, relative_boundaries={relative_boundaries}, "
           f"offset_start={offset_start}, offset_end={offset_end}, align_max_dist={align_max_dist}")
 
     with open(paths_list_path, "r") as f:
@@ -643,7 +655,7 @@ def check_method_alignment(
         # `evaluation/layout.py`, the same definition the sweep writes under - a second copy here
         # would be free to drift, and the symptom of drift is "every extension reports as
         # never aligned".
-        vs_path  = alignment_path(dataset, srt_path, vs_ext)
+        vs_path  = alignment_path(experiment, dataset, srt_path)
 
         if not os.path.exists(srt_path):
             missing_SRT_files += 1
@@ -798,7 +810,7 @@ def check_method_alignment(
     if processed_files == 0:
         raise ValueError(
             f"No valid files found (missing SRT: {missing_SRT_files}, missing VS: {missing_VS_files} "
-            f"of {len(paths_list)}). Check paths_list, vs_ext and file existence."
+            f"of {len(paths_list)}). Check the paths list and {experiment}."
         )
     if total_known == 0:
         raise ValueError("No boundaries were scored — every segment was empty or unmatched.")
@@ -823,7 +835,7 @@ def check_method_alignment(
         np.asarray(end_signed_errors, dtype=np.float64), min(tolerance_ms_list), shift_limit)
 
     alignment_data = {
-        "vs_ext":                    vs_ext,
+        "experiment":                experiment,
         "boundary_mode":             boundary_mode,
         "merge_two_token_phones":    merge_two_token_phones,
         "relative_boundaries":       relative_boundaries,
@@ -970,17 +982,14 @@ def check_method_alignment(
 
 # ─── Experiment manifests ────────────────────────────────────────────────────
 #
-# `process_alignments.py` writes one manifest per `vs_ext` at alignment time, recording the
-# checkpoint, snap source/radius, subset and the rest. Reading it back here is what lets a CSV
-# row describe itself instead of relying on someone remembering what `.bf12` was.
-#
-# Manifests are kept per corpus (`tmp/manifests/<dataset>/`, see layout.manifest_path), so a
-# `vs_ext` only means something together with its dataset.
+# `process_alignments.py` writes a `_manifest.json` into every experiment's directory, recording
+# the method, the model, the decoder settings as they ran, the subset and the rest. Reading it
+# back here is what lets a CSV row describe itself.
 
 
-def load_experiment_manifest(vs_ext, dataset):
-    """One corpus's manifest for `vs_ext`, or None (MFA rows and pre-manifest runs have none)."""
-    path = manifest_path(dataset, vs_ext)
+def load_experiment_manifest(experiment):
+    """One experiment's manifest, or None."""
+    path = manifest_path(experiment)
     if not os.path.exists(path):
         return None
     try:
@@ -991,70 +1000,54 @@ def load_experiment_manifest(vs_ext, dataset):
         return None
 
 
-def discover_vs_extensions(dataset, vs_range=None):
-    """
-    Every `.bfN.json` that has a manifest for `dataset`, in N order.
-
-    `vs_range` optionally restricts it (e.g. `range(0, 14)`); without it, everything found is
-    scored. Extensions with a manifest but no alignment files on disk are still returned - the
-    caller reports them as skipped, which is more useful than silently omitting a run you
-    thought you had.
-    """
-    directory = manifest_dir(dataset)
-    if not os.path.isdir(directory):
-        return []
-
-    found = []
-    for name in os.listdir(directory):
-        m = re.fullmatch(r"bf(\d+)\.json", name)
-        if not m:
-            continue
-        n = int(m.group(1))
-        if vs_range is not None and n not in vs_range:
-            continue
-        found.append((n, f".bf{n}.json"))
-    return [ext for _, ext in sorted(found)]
-
-
 # ─── Output / reporting ──────────────────────────────────────────────────────
 
-def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
+# The column a row is found by: the experiment's name, which is its directory.
+CSV_KEY = "experiment"
+
+
+def read_results_csv(csv_path):
+    """The rows already scored, `{experiment: row}`. Empty when there is no file yet."""
+    if not os.path.exists(csv_path):
+        return {}
+    with open(csv_path, 'r', newline='') as f:
+        return {row[CSV_KEY]: row for row in csv.DictReader(f) if row.get(CSV_KEY)}
+
+
+def write_result_to_csv(csv_path, manifest, alignment_data):
     """
-    Append one row of alignment results to a CSV file.
+    Put one experiment's row in the results CSV: appended, or in place of the row that
+    experiment already has.
 
-    Creates the file with a header row if it does not exist.
-    Prints a warning if the existing header does not match the expected columns
-    (which happens when tolerance_ms_list changes between runs).
+    Creates the file with a header row if it does not exist, and brings an older file up to
+    the current columns (which change with `scoring.tolerance_ms`).
 
-    Columns: method, dataset, vs_ext, boundary_mode, files, boundary counts,
-             detection_ratio, recall/precision/F1/R-value @ each tolerance,
-             matched-pair error statistics, and the mean error of each phoneme
-             group (blank for methods without phoneme ids, e.g. MFA).
+    Columns: what the run was, F1 / R-value / recall / precision at each tolerance, counts,
+             matched-pair error statistics, and the mean error of each phoneme group.
     """
     tolerance_ms_list = alignment_data.get("tolerance_ms_list", [20, 40, 60])
 
-    # `notes` and the `cfg_*` columns identify a row: which checkpoint, which decoder
-    # settings, how many files. They used to be a hand-typed "-", which is how a 100-file row
-    # and a full-corpus row ended up side by side looking comparable. They are read from the
-    # manifest `process_alignments.py` wrote AT ALIGNMENT TIME - the only place that actually
-    # knows - and fall back to "" for rows produced before manifests existed.
+    # `notes` and the `cfg_*` columns identify a row: which model, which decoder settings, how
+    # many files. They are read from the manifest written AT ALIGNMENT TIME - the only place
+    # that actually knows.
     #
-    # `decoder_effective` is preferred over `experiment` for the decoder axes, because those
-    # accept None meaning "the checkpoint's trained value": the request is not the run, and
+    # `decoder_effective` is preferred over `config` for the decoder axes, because those
+    # accept null meaning "the checkpoint's trained value": the request is not the run, and
     # without the resolved value a later checkpoint silently reinterprets historical rows.
-    manifest = load_experiment_manifest(vs_ext, dataset)
-    cfg = (manifest or {}).get("experiment", {}) or {}
-    eff = (manifest or {}).get("decoder_effective", {}) or {}
-    manifest_stats = (manifest or {}).get("stats", {}) or {}
-    notes = (manifest or {}).get("label", "-") or "-"
+    experiment = manifest["experiment"]
+    method = manifest["method"]
+    cfg = manifest.get("config", {}) or {}
+    eff = manifest.get("decoder_effective", {}) or {}
+    manifest_stats = manifest.get("stats", {}) or {}
+    notes = manifest.get("label", "-") or "-"
 
     # Column order is the reading order: identify the run first, then headline scores, then
     # supporting diagnostics. Group errors stay last because they are a detailed breakdown,
     # not the primary comparison columns.
-    id_cols    = ["method", "cfg_ckpt", "cfg_model", "phoneme_set", "dataset", "vs_ext", "notes"]
+    id_cols    = [CSV_KEY, "method", "dataset", "cfg_model", "cfg_ckpt", "phoneme_set", "notes"]
     cfg_cols   = ["cfg_subset", "cfg_bonus_weight",
                   "cfg_min_phone_frames", "cfg_soft_phone_frames", "cfg_sub_frame_onsets",
-                  "cfg_run_at"]
+                  "cfg_duration_max", "cfg_batch_size", "cfg_run_at"]
     # `files` sits with the scores, not with the config: two rows are comparable only at the
     # same file count, and a 100-file row reads several f1 points high against a full corpus.
     scale_cols = ["files", "total_known", "total_pred", "detection_ratio",
@@ -1085,44 +1078,35 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
                   + scale_cols + err_cols + ex_cols + diag_cols + manner_cols + group_cols
                   + std_group_cols)
 
-    model_cfg = (manifest or {}).get("model", {}) or {}
+    def blank(value):
+        return "" if value is None else value
+
+    model_cfg = manifest.get("model", {}) or {}
     ckpt = model_cfg.get("ckpt_path")
     row = {
+        CSV_KEY:            experiment,
         "method":           method,
         "notes":            notes,
         "cfg_model":        cfg.get("model", ""),
-        # What the alignment files themselves say, falling back to the manifest for files
-        # written before BFA stamped its output. Blank for MFA, which has no phoneme set here.
-        "phoneme_set":      (alignment_data.get("phoneme_set")
-                             or (manifest or {}).get("phoneme_set", "")),
-        "cfg_ckpt":         os.path.basename(ckpt) if ckpt else model_cfg.get("model_name", ""),
+        # What the alignment files themselves say. Blank for MFA, which has no phoneme set here.
+        "phoneme_set":      alignment_data.get("phoneme_set") or manifest.get("phoneme_set", ""),
+        "cfg_ckpt":         (os.path.basename(ckpt) if ckpt else
+                             model_cfg.get("model_name") or model_cfg.get("acoustic_model", "")),
         "cfg_subset":       cfg.get("subset", ""),
-        "cfg_bonus_weight":      eff.get("boundary_bonus_weight",
-                                         cfg.get("boundary_bonus_weight", "")),
-        "cfg_min_phone_frames":  eff.get("min_phone_frames", cfg.get("min_phone_frames", "")),
-        "cfg_soft_phone_frames": eff.get("soft_phone_frames", cfg.get("soft_phone_frames", "")),
-        "cfg_sub_frame_onsets":  eff.get("sub_frame_onsets", cfg.get("sub_frame_onsets", "")),
-        "cfg_run_at":       (manifest or {}).get("timestamp", ""),
-        "dataset":          dataset,
-        "vs_ext":           vs_ext,
+        "cfg_bonus_weight":      eff.get("boundary_bonus_weight", ""),
+        "cfg_min_phone_frames":  eff.get("min_phone_frames", ""),
+        "cfg_soft_phone_frames": eff.get("soft_phone_frames", ""),
+        "cfg_sub_frame_onsets":  eff.get("sub_frame_onsets", ""),
+        "cfg_duration_max": cfg.get("duration_max", ""),
+        "cfg_batch_size":   cfg.get("batch_size", ""),
+        # When the alignment finished. Also what tells a row is older than its alignments.
+        "cfg_run_at":       manifest.get("timestamp", ""),
+        "dataset":          manifest["dataset"],
         "boundary_mode":    alignment_data.get("boundary_mode", "onsets"),
         "files":            alignment_data["processed_files"],
         "total_known":      alignment_data["total_known_boundaries"],
         "total_pred":       alignment_data["total_pred_boundaries"],
         "detection_ratio":  round(alignment_data["detection_ratio"], 4),
-        "mean_confidence": alignment_data.get("mean_confidence",
-                                              manifest_stats.get("mean_confidence", "")),
-        "bad_confidence_segments": alignment_data.get(
-            "bad_confidence_segments", manifest_stats.get("bad_confidence_segments", "")),
-        "bad_confidence_segment_fraction": alignment_data.get(
-            "bad_confidence_segment_fraction",
-            manifest_stats.get("bad_confidence_segment_fraction", "")),
-        "segment_duration_avg_s": alignment_data.get(
-            "segment_duration_avg_s", manifest_stats.get("segment_duration_avg_s", "")),
-        "segment_duration_min_s": alignment_data.get(
-            "segment_duration_min_s", manifest_stats.get("segment_duration_min_s", "")),
-        "segment_duration_max_s": alignment_data.get(
-            "segment_duration_max_s", manifest_stats.get("segment_duration_max_s", "")),
         "abs_err_mean":     round(alignment_data.get("abs_error_mean",      0), 2),
         "abs_err_median":   round(alignment_data.get("abs_error_median",    0), 2),
         "signed_err_median": round(alignment_data.get("signed_error_median", 0), 2),
@@ -1131,6 +1115,9 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
         "offset_start":     alignment_data.get("offset_start", 0),
         "suggested_offset_start": alignment_data.get("suggested_offset_start", 0),
     }
+    for col in ("mean_confidence", "bad_confidence_segments", "bad_confidence_segment_fraction",
+                "segment_duration_avg_s", "segment_duration_min_s", "segment_duration_max_s"):
+        row[col] = blank(manifest_stats.get(col))
     for t in tolerance_ms_list:
         row[f"recall_{t}ms"]    = round(alignment_data.get(f"recall_{t}ms",    0), 2)
         row[f"precision_{t}ms"] = round(alignment_data.get(f"precision_{t}ms", 0), 2)
@@ -1154,16 +1141,29 @@ def append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data):
         mean = manner_errors.get(name, {}).get("error_mean")
         row[f"mn_{name}"] = round(mean, 2) if mean is not None else ""
 
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     if os.path.exists(csv_path):
         _migrate_csv_header(csv_path, all_cols)
     else:
         with open(csv_path, 'w', newline='') as f:
             csv.DictWriter(f, fieldnames=all_cols).writeheader()
 
-    with open(csv_path, 'a', newline='') as f:
-        csv.DictWriter(f, fieldnames=all_cols).writerow(row)
-
-    print(f"Results appended to {csv_path}  [{notes}]")
+    existing = read_results_csv(csv_path)
+    if experiment in existing:
+        # In place, so the file keeps its order. Written beside the file and swapped in, so
+        # an interrupted write cannot leave half a CSV.
+        existing[experiment] = row
+        with open(csv_path + ".tmp", 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=all_cols)
+            writer.writeheader()
+            for old in existing.values():
+                writer.writerow({c: old.get(c, "") for c in all_cols})
+        os.replace(csv_path + ".tmp", csv_path)
+        print(f"Row replaced in {csv_path}  [{experiment}]")
+    else:
+        with open(csv_path, 'a', newline='') as f:
+            csv.DictWriter(f, fieldnames=all_cols).writerow(row)
+        print(f"Row added to {csv_path}  [{experiment}]")
 
 
 def _migrate_csv_header(csv_path, all_cols):
@@ -1202,10 +1202,10 @@ def _migrate_csv_header(csv_path, all_cols):
     all_cols[:] = merged
 
 
-def show_alignment_stats(output_json_path, method, dataset, vs_ext, csv_path=None):
+def show_alignment_stats(output_json_path, manifest, csv_path=None):
     """
     Print alignment metrics from a results JSON produced by check_method_alignment.
-    If csv_path is provided, also appends the results to a CSV via append_results_to_csv.
+    If csv_path is provided, also puts the row in that CSV via write_result_to_csv.
     """
     with open(output_json_path, 'r') as f:
         alignment_data = json.load(f)
@@ -1219,7 +1219,7 @@ def show_alignment_stats(output_json_path, method, dataset, vs_ext, csv_path=Non
     boundary_mode        = alignment_data.get("boundary_mode", "onsets")
 
     print("\n" + "=" * 72)
-    print(f"Method: {method}, Dataset: {dataset}, Method version: {vs_ext}")
+    print(f"Experiment: {manifest['experiment']}  ({manifest['method']}, {manifest['dataset']})")
     print(f"\n=== ALIGNMENT METRICS SUMMARY FOR {processed_files} FILES ===")
     print(f"Scored boundaries:            {boundary_mode}"
           f"{'  (phoneme ends ignored)' if boundary_mode == 'onsets' else ''}")
@@ -1323,7 +1323,7 @@ def show_alignment_stats(output_json_path, method, dataset, vs_ext, csv_path=Non
     print("\n" + "=" * 72)
 
     if csv_path is not None:
-        append_results_to_csv(csv_path, method, dataset, vs_ext, alignment_data)
+        write_result_to_csv(csv_path, manifest, alignment_data)
 
 
 def plot_alignment_histogram(
@@ -1398,153 +1398,162 @@ def plot_alignment_histogram(
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
-def score_one(vs_ext, method, dataset, paths_list_path, csv_path, *, limit_clips=-1,
-              tolerance_ms_list=(10, 25, 50), offset_start=0, offset_end=0,
-              use_end_boundaries=False, measure_group_errors=True, make_plot=True):
+def score_one(manifest, scoring, csv_path):
     """
-    Score one `vs_ext` end to end: metrics -> JSON -> histogram -> printed summary -> CSV row.
+    Score one experiment end to end: metrics -> JSON -> histogram -> printed summary -> CSV row.
 
-    Returns the alignment_data dict, or None when there was nothing to score (no alignment
-    files for this extension yet).
+    `scoring` is the `scoring:` section of evaluate.yaml. Returns the alignment_data dict, or
+    None when there was nothing to score (no alignment files in the directory).
     """
-    predicted_timestamps_are_relative = True if method == "MFA" else False
-    output_json_path = os.path.join(PLOTS_DIR, f"{dataset}_{limit_clips}_align{vs_ext}")
+    experiment, dataset = manifest["experiment"], manifest["dataset"]
+    output_json_path = os.path.join(PLOTS_DIR, f"{experiment}.json")
+    tolerance_ms_list = list(scoring["tolerance_ms"])
 
     try:
         check_method_alignment(
-            paths_list_path, output_json_path, dataset,
-            vs_ext=vs_ext,
-            limit_clips=limit_clips,
-            relative_boundaries=predicted_timestamps_are_relative,
-            tolerance_ms_list=list(tolerance_ms_list),
-            offset_start=offset_start,
-            offset_end=offset_end,
-            use_end_boundaries=use_end_boundaries,
-            measure_group_errors=measure_group_errors,
-            align_max_dist=100.0,
+            # The SAME paths list the experiment was aligned from: the alignments are keyed
+            # by each entry's `srt`. A subset run is scored on the whole list too, and simply
+            # has no file for the clips it did not align.
+            PATHS_LISTS[dataset], output_json_path, dataset, experiment,
+            limit_clips=scoring["limit_clips"],
+            # MFA aligns the extracted segment audio, so its times are segment-relative;
+            # BFA's are clip-absolute.
+            relative_boundaries=(manifest["method"] == "MFA"),
+            tolerance_ms_list=tolerance_ms_list,
+            offset_start=scoring["offset_start"],
+            offset_end=scoring["offset_end"],
+            use_end_boundaries=scoring["use_end_boundaries"],
+            measure_group_errors=scoring["measure_group_errors"],
+            merge_two_token_phones=scoring["merge_two_token_phones"],
+            align_max_dist=float(scoring["align_max_dist"]),
         )
     except ValueError as exc:
-        # raised when every file is missing - i.e. this extension was never aligned
-        print(f"[SKIP] {vs_ext}: {exc}")
+        # raised when every file is missing or nothing could be scored
+        print(f"[SKIP] {experiment}: {exc}")
         return None
 
-    if make_plot:
+    if scoring["plots"]:
         plot_alignment_histogram(
-            output_json_path, max_distance=500, thresholds_ms_list=list(tolerance_ms_list),
-            title_suffix=f"{method.upper()} - {dataset.capitalize()} {vs_ext}",
-            plot_output_path=output_json_path + ".png",
+            output_json_path, max_distance=500, thresholds_ms_list=tolerance_ms_list,
+            title_suffix=f"{manifest['method']} - {experiment}",
+            plot_output_path=output_json_path[:-len(".json")] + ".png",
         )
 
-    show_alignment_stats(output_json_path, method, dataset, vs_ext, csv_path=csv_path)
+    show_alignment_stats(output_json_path, manifest, csv_path=csv_path)
     with open(output_json_path) as f:
         return json.load(f)
 
 
+def plan_scoring(experiments, scored, rescore=False):
+    """
+    Sort the experiments on disk into what to do with each.
+
+    Returns `(new, stale, kept, unfinished)`, the first three as lists of manifests:
+      new         finished, and not in the CSV
+      stale       in the CSV, but aligned again since that row was written (or every scored
+                  one, with `rescore`) - scoring these REPLACES a row
+      kept        in the CSV and up to date
+      unfinished  names whose alignment is still running or was interrupted
+    """
+    new, stale, kept, unfinished = [], [], [], []
+    for experiment in experiments:
+        manifest = load_experiment_manifest(experiment)
+        if manifest is None or manifest.get("status") != "done":
+            unfinished.append(experiment)
+        elif experiment not in scored:
+            new.append(manifest)
+        elif rescore or scored[experiment].get("cfg_run_at") != manifest.get("timestamp"):
+            stale.append(manifest)
+        else:
+            kept.append(manifest)
+    return new, stale, kept, unfinished
+
+
+def confirm(question, assume_yes=False):
+    """Ask before replacing rows. Without a terminal to ask on, the answer is no."""
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        print(f"{question} -> not asked (no terminal); pass --yes to allow it.")
+        return False
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
 if __name__ == "__main__":
-    method    = "BFA"      # BFA or MFA
-    # "timit" | "buckeye". Everything below scores this corpus and no other: batch mode
-    # (SCORE_ALL) reads the manifests in tmp/manifests/<dataset>/.
-    dataset   = "buckeye"
-    limit_clips = -1       # -1 = all clips
+    parser = argparse.ArgumentParser(
+        description="Score the experiments under tmp/alignments/ into the results CSV.")
+    parser.add_argument("--config", default=None, help="default: evaluation/evaluate.yaml")
+    parser.add_argument("--only", default=None, metavar="GLOB",
+                        help="only the experiments whose name matches, e.g. 'timit__*'")
+    parser.add_argument("--rescore", action="store_true",
+                        help="recompute experiments that already have a row (asks first)")
+    parser.add_argument("--yes", action="store_true",
+                        help="replace existing rows without asking")
+    parser.add_argument("--list", action="store_true",
+                        help="print what is on disk and what is scored, then stop")
+    args = parser.parse_args()
 
-    # ---- batch mode ------------------------------------------------------------------
-    # Score every `.bfN.json` that `process_alignments.py` has written a manifest for on
-    # `dataset`, in N order, appending one self-describing CSV row each. Set SCORE_ALL = False to fall back to
-    # the single `vs_ext` below.
-    #
-    # `limit_clips` is left at -1 even for subset runs: the scorer walks the whole paths list
-    # and simply finds no alignment file for the files that were not aligned, so a subset run
-    # scores exactly its own files. The subset size is recorded in `cfg_subset`/`notes`, which
-    # is what stops a 100-file row being read against a 6300-file one.
-    SCORE_ALL = True
-    # e.g. range(1, 3) to score just those; None = every manifest. bf1 - bf36 are the September
-    # sweeps over training-run checkpoints; the released-model suite starts at bf37.
-    VS_RANGE  = range(0, 5)
+    cfg = load_config(args.config)
+    scoring = cfg["scoring"]
+    # One CSV per dataset. An experiment's name starts with its dataset, so the rows of all
+    # of them can be looked up in one table.
+    csv_paths = {dataset: results_csv_path(cfg, dataset)
+                 for dataset in cfg["paths"]["audio_roots"]}
 
-    # Time frame of the predicted phoneme timestamps:
-    #   MFA aligns the extracted segment audio -> segment-relative  -> True
-    #   BFA timestamps are clip-absolute                            -> False
-    #   "auto" lets each segment be detected from the data.
-    predicted_timestamps_are_relative = True if method == "MFA" else False
-    # Per-phoneme-group mean error: BFA resolves groups from 'phoneme_id',
-    # MFA from its ARPABET labels, so both are comparable.
-    measure_group_errors = True
+    experiments = list_experiments()
+    if args.only:
+        experiments = [name for name in experiments if fnmatch.fnmatch(name, args.only)]
+    if not experiments:
+        raise SystemExit(f"No experiments in {OUTPUT_DIR}"
+                         + (f" matching {args.only!r}" if args.only else "")
+                         + ". Run process_alignments.py first.")
 
-    tolerance_ms_list = [10, 25, 50]  # Adjust tolerance thresholds here (e.g. [25, 50, 75])
+    scored = {}
+    for path in csv_paths.values():
+        scored.update(read_results_csv(path))
+    new, stale, kept, unfinished = plan_scoring(experiments, scored, rescore=args.rescore)
 
-    # BFA phoneme end boundaries are not segmentation points and only add false
-    # alarms, so onsets alone are scored. Set True to score ends as well.
-    use_end_boundaries = False
+    print(f"{len(experiments)} experiment(s) in {OUTPUT_DIR}, {len(scored)} row(s) in "
+          f"{cfg['paths']['results_csv']}")
+    for title, names in (("to score", [m["experiment"] for m in new]),
+                         ("to score again, replacing a row", [m["experiment"] for m in stale]),
+                         ("already scored", [m["experiment"] for m in kept]),
+                         ("alignment not finished, left out", unfinished)):
+        if names:
+            print(f"  {title}:")
+            for name in names:
+                print(f"    {name}")
+    if args.list:
+        raise SystemExit(0)
 
-    vs_ext = ".bf1.json" if method == "BFA" else ".mfa.json"
+    if stale and not confirm(f"Replace {len(stale)} existing row(s)?", args.yes):
+        print("Existing rows are kept.")
+        stale = []
+    for dataset in sorted({manifest["dataset"] for manifest in stale}):
+        shutil.copy2(csv_paths[dataset], csv_paths[dataset] + ".bak")
 
-    # The SAME paths list `process_alignments.py` aligns from. They have to match: the
-    # alignments are keyed by each list's `srt` entry, so scoring a different list finds no
-    # files at all and reports the extension as never aligned.
-    paths_list_path  = PATHS_LISTS[dataset]
-    output_json_path = os.path.join(PLOTS_DIR, f"{dataset}_{limit_clips}", f"align{vs_ext}")
-    csv_path         = os.path.join(RESULTS_DIR, f"results_{dataset}.csv")
-
-
-    #align_with_mfa(paths_list_path,vs_ext=".mfa1.json")
-
-    # offset_start is subtracted from every predicted onset, offset_end is added to
-    # every predicted end boundary. Use the suggested_offset_start printed in the
-    # summary (a positive value means the predictions are systematically late).
-    offset_start = 0
-    offset_end   = 0
-
-    os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(PLOTS_DIR, exist_ok=True)
+    summary = []
+    for manifest in new + stale:
+        print("\n" + "#" * 78)
+        print(f"# {manifest['experiment']}")
+        print("#" * 78)
+        data = score_one(manifest, scoring, csv_paths[manifest["dataset"]])
+        summary.append((manifest["experiment"], data))
 
-    
-
-    if SCORE_ALL and method == "BFA":
-        extensions = discover_vs_extensions(dataset, vs_range=VS_RANGE)
-        if not extensions:
-            print(f"No manifests in {manifest_dir(dataset)} for VS_RANGE={VS_RANGE}. Run "
-                  f"process_alignments.py on {dataset} first, or set SCORE_ALL = False to "
-                  f"score a single vs_ext.")
-        print(f"\nScoring {len(extensions)} {dataset} extension(s): {', '.join(extensions)}\n")
-
-        summary = []
-        for ext in extensions:
-            manifest = load_experiment_manifest(ext, dataset)
-            label = f"{dataset}: {(manifest or {}).get('label', ext)}"
-            print("\n" + "#" * 78)
-            print(f"# {ext}   {label}")
-            print("#" * 78)
-
-            data = score_one(ext, method, dataset, paths_list_path, csv_path,
-                             limit_clips=limit_clips, tolerance_ms_list=tolerance_ms_list,
-                             offset_start=offset_start, offset_end=offset_end,
-                             use_end_boundaries=use_end_boundaries,
-                             measure_group_errors=measure_group_errors)
+    if summary:
+        mid = sorted(scoring["tolerance_ms"])[len(scoring["tolerance_ms"]) // 2]
+        print("\n" + "=" * 92)
+        print(f"{'experiment':<58} {'files':>7} {f'f1@{mid}':>8} {'abs_err':>9}")
+        print("-" * 92)
+        for experiment, data in summary:
             if data is None:
-                summary.append((ext, label, None, None, None))
+                print(f"{experiment:<58} {'-':>7}   skipped (nothing to score)")
             else:
-                summary.append((ext, label, data["processed_files"],
-                                data.get("f1_25ms", data.get(f"f1_{tolerance_ms_list[1]}ms")),
-                                data.get("abs_error_mean")))
-
-        print("\n" + "=" * 88)
-        print(f"{'vs_ext':<12} {'label':<46} {'files':>7} {'f1@25':>8} {'abs_err':>9}")
-        print("-" * 88)
-        for ext, label, files, f1, err in summary:
-            if files is None:
-                print(f"{ext:<12} {label:<46} {'-':>7} {'skipped (no alignments)':>19}")
-            else:
-                print(f"{ext:<12} {label:<46} {files:>7} {f1:>8.2f} {err:>9.2f}")
-        print("=" * 88)
+                print(f"{experiment:<58} {data['processed_files']:>7} "
+                      f"{data[f'f1_{mid}ms']:>8.2f} {data['abs_error_mean']:>9.2f}")
+        print("=" * 92)
         print("Rows are only comparable at the SAME `files` count - a 100-file row reads "
               "several f1 points high.")
-
     else:
-        score_one(vs_ext, method, dataset, paths_list_path, csv_path,
-                  limit_clips=limit_clips, tolerance_ms_list=tolerance_ms_list,
-                  offset_start=offset_start, offset_end=offset_end,
-                  use_end_boundaries=use_end_boundaries,
-                  measure_group_errors=measure_group_errors, make_plot=True)
-
-
-#  python evaluation/compute_metrics.py        # run from the repository root
+        print("Nothing to score.")

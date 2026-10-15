@@ -97,8 +97,8 @@ class TestKeepCount:
 
     @staticmethod
     def _keeper():
-        from bournemouth_aligner.core import PhonemeTimestampAligner
-        obj = PhonemeTimestampAligner.__new__(PhonemeTimestampAligner)
+        from bournemouth_aligner.core import BFA
+        obj = BFA.__new__(BFA)
         obj.chunk_derail_frames = chunking.DEFAULT_DERAIL_FRAMES
         obj.chunk_derail_run = chunking.DEFAULT_DERAIL_RUN
         obj.chunk_backoff = chunking.DEFAULT_BACKOFF
@@ -183,8 +183,8 @@ class TestNeedsChunking:
 
     @staticmethod
     def _aligner(**kw):
-        from bournemouth_aligner.core import PhonemeTimestampAligner
-        obj = PhonemeTimestampAligner.__new__(PhonemeTimestampAligner)
+        from bournemouth_aligner.core import BFA
+        obj = BFA.__new__(BFA)
         obj.chunk_audio = kw.get('chunk_audio', True)
         obj.chunk_seconds = kw.get('chunk_seconds', 10.0)
         obj.chunk_max_phonemes = kw.get('chunk_max_phonemes', 200)
@@ -225,8 +225,8 @@ class TestWindowTrustCap:
 
     @staticmethod
     def _aligner():
-        from bournemouth_aligner.core import PhonemeTimestampAligner
-        obj = PhonemeTimestampAligner.__new__(PhonemeTimestampAligner)
+        from bournemouth_aligner.core import BFA
+        obj = BFA.__new__(BFA)
         obj.chunk_derail_frames = chunking.DEFAULT_DERAIL_FRAMES
         obj.chunk_derail_run = chunking.DEFAULT_DERAIL_RUN
         obj.chunk_conf_floor = chunking.DEFAULT_CONF_FLOOR

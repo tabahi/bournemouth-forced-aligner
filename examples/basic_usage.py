@@ -2,7 +2,7 @@
 import torch
 import time
 import json
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 def example_audio_timestamps():
 
@@ -12,19 +12,19 @@ def example_audio_timestamps():
     # Using language preset (recommended) - picks the model for the language. This is the
     # default "std" phoneme set (standard_g2p phonemes, the mbfa-latin model); the first run
     # downloads the model (~55 MB) and the G2P model (~1.2 GB) from Hugging Face, once.
-    extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
+    extractor = BFA(preset="en-us", duration_max=10, device='cpu')
 
     # Alternative: the espeak-ng + ph66 phoneme set (needs espeak-ng installed; uses the
     # CUPE-3-en model for English and CUPE-3-mls7 for other languages, no G2P download)
-    # extractor = PhonemeTimestampAligner(preset="en-us", phoneme_set="ph66", duration_max=10, device='cpu')
+    # extractor = BFA(preset="en-us", phoneme_set="ph66", duration_max=10, device='cpu')
 
     # Alternative: a published model by name - the model decides the phoneme set
-    # extractor = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark", duration_max=10, device='cpu')
-    # extractor = PhonemeTimestampAligner(model_name="CUPE-3-en", duration_max=10, device='cpu')
-    # extractor = PhonemeTimestampAligner(model_name="CUPE-3-mls7", lang="de", duration_max=10, device='cpu')
+    # extractor = BFA(model_name="mbfa-latin-benchmark", duration_max=10, device='cpu')
+    # extractor = BFA(model_name="CUPE-3-en", duration_max=10, device='cpu')
+    # extractor = BFA(model_name="CUPE-3-mls7", lang="de", duration_max=10, device='cpu')
 
     # Alternative: a model on disk - a release directory or a training checkpoint file
-    # extractor = PhonemeTimestampAligner(ckpt_path="path/to/model", lang='en-us', duration_max=10, device='cpu')
+    # extractor = BFA(ckpt_path="path/to/model", lang='en-us', duration_max=10, device='cpu')
 
     audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 

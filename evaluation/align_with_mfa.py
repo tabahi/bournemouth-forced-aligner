@@ -1,14 +1,21 @@
-
 """
+The Montreal Forced Aligner as one more model of the sweep.
 
-Usage (conda env: mfa):
-    python3 modules/mfa/align_with_mfa.py
+Not run directly: `process_alignments.py` calls `run_mfa` for every experiment whose model is
+an `method: mfa` entry of `evaluate.yaml`, and the result is written in the same place and
+shape as a BFA run, so `compute_metrics.py` scores both alike.
 
-Setup:
-    conda activate aligner
-    conda install -c conda-forge mamba
-    pip install torchaudio
-    mamba run -n aligner aligner
+MFA lives in its own conda environment (`mfa.conda_env` in the yaml, `mfa` here) and is only
+ever reached through its command line, `conda run -n <env> mfa ...`. Everything else - cutting
+the segment audio, parsing the TextGrids - runs in the environment the sweep runs in, so the
+MFA environment needs nothing but MFA:
+
+    conda create -n mfa -c conda-forge montreal-forced-aligner
+
+Every segment of the corpus becomes one utterance (`<clip>__seg<N>.wav` + `.txt`) of a
+scratch corpus under `tmp/mfa/`, MFA aligns that corpus in ONE call, and the TextGrids are
+read back into one `<clip>.json` per clip. Timestamps are therefore relative to the segment,
+not the clip; the manifest's `method: MFA` is what tells the scorer.
 """
 
 import json
@@ -16,361 +23,195 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import time
 from collections import defaultdict
+
+import soundfile as sf
 from tqdm import tqdm
 
-try:
-    # Only the MFA alignment helpers need audio I/O; scoring must stay usable even
-    # when the torch/torchaudio install in the active env is broken.
-    import torchaudio
-except Exception as _torchaudio_error:      # ImportError, or OSError from a torch ABI mismatch
-    torchaudio = None
-    _TORCHAUDIO_ERROR = _torchaudio_error
-else:
-    _TORCHAUDIO_ERROR = None
+from evaluation.layout import MFA_WORK_DIR
 
 
+def mfa_command(conda_env):
+    """The prefix that runs `mfa` inside its conda environment."""
+    conda = os.environ.get("CONDA_EXE") or shutil.which("conda") or shutil.which("mamba")
+    if not conda:
+        raise RuntimeError("neither conda nor mamba is on PATH, so the MFA environment "
+                           f"{conda_env!r} cannot be reached")
+    return [conda, "run", "--no-capture-output", "-n", conda_env, "mfa"]
 
-def mfa_align_segment(audio_path, segment_start, segment_end, segment_text, temp_dir=None):
+
+def _run(command, log):
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        log("MFA command failed: " + " ".join(command))
+        log("STDOUT: " + (result.stdout or "")[-2000:])
+        log("STDERR: " + (result.stderr or "")[-2000:])
+        raise RuntimeError(f"`{' '.join(command[-6:])}` exited with {result.returncode}")
+    return result.stdout
+
+
+def ensure_mfa_model(mfa, kind, name, log):
+    """Download a pretrained `acoustic` model or `dictionary` unless MFA already has it."""
+    if os.path.exists(name):          # a local model file or dictionary
+        return
+    # MFA prints the list as `['english_us_arpa', ...]`
+    if name in re.findall(r"[\w.-]+", _run(mfa + ["model", "list", kind], log)):
+        return
+    log(f"Downloading MFA {kind} model {name!r}...")
+    _run(mfa + ["model", "download", kind, name], log)
+
+
+def clean_text(text):
     """
-    Align a single audio segment with MFA.
+    A segment's text as MFA is given it: punctuation replaced by spaces, apostrophes kept.
 
-    Args:
-        audio_path: Path to the full audio file
-        segment_start: Segment start in seconds
-        segment_end: Segment end in seconds
-        segment_text: Transcript for the segment
-        temp_dir: Temporary directory (created automatically if None)
-
-    Returns:
-        List of phoneme dicts, or None on failure
+    The apostrophe is part of the word in MFA's dictionaries (`don't`, `it's`); without it
+    the word is looked up as `dont`, is not found, and is aligned as an unknown word.
     """
-    if temp_dir is None:
-        temp_dir = tempfile.mkdtemp()
-
-    try:
-        segment_audio_path = os.path.join(temp_dir, "segment.wav")
-        extract_audio_segment(audio_path, segment_start, segment_end, segment_audio_path)
-
-        textgrid_path = mfa_align_single_file(
-            segment_audio_path,
-            segment_text,
-            output_dir=os.path.join(temp_dir, "mfa_output"),
-            corpus_dir=os.path.join(temp_dir, "mfa_corpus"),
-        )
-
-        if textgrid_path and os.path.exists(textgrid_path):
-            return parse_textgrid_to_json(textgrid_path)
-        return None
-
-    except Exception as e:
-        print(f"Error in MFA alignment: {e}")
-        return None
-    finally:
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
+    text = text.replace("\u2019", "'")
+    return " ".join(re.sub(r"[^\w\s']", " ", text).split())
 
 
-def process_segments_with_mfa(audio_path, srt_path, output_path, temp_dir):
+def build_corpus(jobs, corpus_dir):
     """
-    Align every segment in an SRT JSON file with MFA (one segment at a time).
+    Write one wav + txt per segment of every job that has no output yet.
 
-    Returns:
-        Dict with aligned segments
+    `jobs` is a list of `(audio_path, srt_path, out_path)`. Returns
+    `{utterance name: {out_path, seg_idx, start, end, text}}`.
     """
-    with open(srt_path, 'r') as f:
-        srt_data = json.load(f)
-
-    mfa_results = {"segments": []}
-
-    for seg_idx, segment in tqdm(
-        enumerate(srt_data["segments"]),
-        total=len(srt_data["segments"]),
-        desc="Processing segments with MFA",
-        leave=False,
-    ):
-        text = segment["text"]
-        if not text.strip():
+    utterances = {}
+    for audio_path, srt_path, out_path in tqdm(jobs, desc="Building MFA corpus"):
+        if os.path.exists(out_path):
             continue
-        cleaned_text = re.sub(r'[^\w\s]', '', text).strip()
-        if not cleaned_text:
-            continue
-
-        phonemes = mfa_align_segment(
-            audio_path, segment["start"], segment["end"], cleaned_text, temp_dir
-        )
-
-        if phonemes:
-            mfa_results["segments"].append({
-                "start": segment["start"],
-                "end":   segment["end"],
-                "text":  text,
-                "phoneme_ts": phonemes,
-            })
-        else:
-            print(f"Failed to align segment {seg_idx}: {text[:50]}...")
-
-    with open(output_path, 'w') as f:
-        json.dump(mfa_results, f, indent=2)
-
-    return mfa_results
-
-
-def align_with_mfa(paths_list_path, vs_ext=".mfa.json"):
-    """
-    Batch MFA alignment: prepare the full corpus once, run MFA once, parse all TextGrids.
-
-    Args:
-        paths_list_path: JSON file listing {audio, srt, vs} path triplets
-        vs_ext: Extension for the output alignment JSON files
-    """
-    # clean up old MFA outputs
-    for d in ("tmp/data/mfa_corpus/", "tmp/data/collect/alignment/"):
-        if os.path.exists(d):
-            shutil.rmtree(d)
-        os.makedirs(d, exist_ok=True)
-
-
-    print("Checking MFA models...")
-    subprocess.run(
-        ["mamba", "run", "-n", "aligner", "mfa", "model", "download", "dictionary", "english_us_arpa"],
-        capture_output=True, text=True,
-    )
-    subprocess.run(
-        ["mamba", "run", "-n", "aligner", "mfa", "model", "download", "acoustic", "english_us_arpa"],
-        capture_output=True, text=True,
-    )
-
-    with open(paths_list_path, "r") as f:
-        paths_list = json.load(f)
-
-
-    corpus_dir   = os.path.join("tmp/data/mfa_corpus/", "mfa_corpus_batch")
-    textgrid_dir = os.path.join("tmp/data/mfa_corpus/", "mfa_textgrids_batch")
-
-    for d in (corpus_dir, textgrid_dir):
-        if os.path.exists(d):
-            shutil.rmtree(d)
-        os.makedirs(d, exist_ok=True)
-
-    corpus_file_map = {}
-
-    print("Preparing corpus for MFA batch alignment...")
-    for i in tqdm(range(len(paths_list)), desc="Building corpus"):
-        audio_path = paths_list[i]['audio']
-        srt_path   = paths_list[i]['srt']
-        vs_path    = paths_list[i]['vs'].replace('.vs.*', vs_ext)
-
-        if srt_path.startswith('$/'): srt_path = os.path.join(COMMON_DIR, srt_path[2:])
-        if vs_path.startswith('$/'):  vs_path  = os.path.join(COMMON_DIR, vs_path[2:])
-
-        if os.path.exists(vs_path):
-            os.remove(vs_path)
         if not os.path.exists(srt_path) or not os.path.exists(audio_path):
             continue
-
         with open(srt_path, "r") as f:
-            srt_data = json.load(f)
+            segments = json.load(f)["segments"]
 
-        for seg_idx, segment in enumerate(srt_data["segments"]):
+        # Read once per clip: a Buckeye interview holds over a hundred segments.
+        audio, sample_rate = sf.read(audio_path, dtype="int16", always_2d=True)
+        audio = audio[:, 0]
+        stem = os.path.basename(out_path)[:-len(".json")]
+
+        for seg_idx, segment in enumerate(segments):
             text = segment.get("text", "").strip()
-            if not text:
+            cleaned = clean_text(text)
+            if not cleaned:
                 continue
-            cleaned_text = re.sub(r'[^\w\s]', '', text).strip()
-            if not cleaned_text:
+            piece = audio[int(segment["start"] * sample_rate):int(segment["end"] * sample_rate)]
+            if len(piece) == 0:
                 continue
-
-            seg_name = f"file{i:05d}_seg{seg_idx:04d}"
-            extract_audio_segment(
-                audio_path,
-                segment["start"],
-                segment["end"],
-                os.path.join(corpus_dir, f"{seg_name}.wav"),
-            )
-            with open(os.path.join(corpus_dir, f"{seg_name}.txt"), "w") as f:
-                f.write(cleaned_text)
-
-            corpus_file_map[seg_name] = {
-                "file_idx": i,
-                "seg_idx":  seg_idx,
-                "vs_path":  vs_path,
-                "srt_path": srt_path,
-                "start":    segment["start"],
-                "end":      segment["end"],
-                "text":     text,
-            }
-
-    if not corpus_file_map:
-        print("No files to align.")
-        return
-
-    print(f"Corpus prepared: {len(corpus_file_map)} segments.")
-
-    print("Running MFA alignment on entire corpus (single call)...")
-    t0 = time.time()
-    result = subprocess.run([
-        "mamba", "run", "-n", "aligner",
-        "mfa", "align",
-        corpus_dir,
-        "english_us_arpa",
-        "english_us_arpa",
-        textgrid_dir,
-        "--clean",
-        "--num_jobs", "1",
-    ], capture_output=True, text=True)
-    elapsed = time.time() - t0
-
-    if result.returncode != 0:
-        print("MFA Error:")
-        print("STDOUT:", result.stdout[-2000:] if result.stdout else "")
-        print("STDERR:", result.stderr[-2000:] if result.stderr else "")
-        return
-
-    print(
-        f"MFA completed in {elapsed:.1f}s for {len(corpus_file_map)} segments "
-        f"({elapsed / len(corpus_file_map) * 1000:.0f}ms per segment)"
-    )
-
-    vs_path_groups = defaultdict(list)
-    for seg_name, info in corpus_file_map.items():
-        vs_path_groups[info["vs_path"]].append((seg_name, info))
-
-    saved = 0
-    for vs_path, segments in tqdm(vs_path_groups.items(), desc="Parsing TextGrids"):
-        mfa_results = {"segments": []}
-        segments.sort(key=lambda x: x[1]["seg_idx"])
-
-        for seg_name, info in segments:
-            textgrid_path = os.path.join(textgrid_dir, f"{seg_name}.TextGrid")
-            if os.path.exists(textgrid_path):
-                phonemes = parse_textgrid_to_json(textgrid_path)
-                if phonemes:
-                    mfa_results["segments"].append({
-                        "start": info["start"],
-                        "end":   info["end"],
-                        "text":  info["text"],
-                        "phoneme_ts": phonemes,
-                    })
-                else:
-                    print(f"Empty TextGrid for {seg_name}")
-            else:
-                print(f"TextGrid not found for {seg_name}")
-
-        if mfa_results["segments"]:
-            os.makedirs(os.path.dirname(vs_path), exist_ok=True)
-            with open(vs_path, 'w') as f:
-                json.dump(mfa_results, f, indent=2)
-            saved += 1
-
-    print(f"Saved {saved} MFA alignment files.")
-    exit()
+            name = f"{stem}__seg{seg_idx:04d}"
+            sf.write(os.path.join(corpus_dir, f"{name}.wav"), piece, sample_rate,
+                     subtype="PCM_16")
+            with open(os.path.join(corpus_dir, f"{name}.txt"), "w") as f:
+                f.write(cleaned)
+            utterances[name] = {"out_path": out_path, "seg_idx": seg_idx,
+                                "start": segment["start"], "end": segment["end"],
+                                "text": text}
+    return utterances
 
 
-
-def parse_textgrid_to_json(textgrid_path):
+def parse_textgrid(textgrid_path):
     """
-    Parse a TextGrid file and return phoneme intervals from the phones tier.
-
-    Returns:
-        List of dicts with keys: start_ms, end_ms, phone
+    The intervals of a TextGrid's `phones` tier, as `{start_ms, end_ms, phone}`. Empty
+    intervals (MFA's silences) are left out.
     """
     phonemes = []
-    if not os.path.exists(textgrid_path):
-        return phonemes
-
     with open(textgrid_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
     in_phones_tier = False
-    current_interval = {}
-
+    current = {}
     for line in lines:
         line = line.strip()
         if 'name = "phones"' in line:
             in_phones_tier = True
             continue
-        elif 'name = "words"' in line and in_phones_tier:
-            break
-
-        if in_phones_tier:
-            if line.startswith('intervals ['):
-                current_interval = {}
-            elif line.startswith('xmin ='):
-                current_interval['start_ms'] = int(float(line.split('=')[1].strip()) * 1000)
-            elif line.startswith('xmax ='):
-                current_interval['end_ms'] = int(float(line.split('=')[1].strip()) * 1000)
-            elif line.startswith('text ='):
-                phone = line.split('=')[1].strip().strip('"')
-                if phone:
-                    current_interval['phone'] = phone
-                    phonemes.append(current_interval.copy())
-
+        if in_phones_tier and line.startswith('name = '):
+            break                                      # the next tier
+        if not in_phones_tier:
+            continue
+        if line.startswith('intervals ['):
+            current = {}
+        elif line.startswith('xmin ='):
+            # round, not int: 0.29 s is 289.99999999999994 ms as a float
+            current['start_ms'] = int(round(float(line.split('=')[1]) * 1000))
+        elif line.startswith('xmax ='):
+            current['end_ms'] = int(round(float(line.split('=')[1]) * 1000))
+        elif line.startswith('text ='):
+            phone = line.split('=', 1)[1].strip().strip('"')
+            if phone:
+                phonemes.append({**current, 'phone': phone})
     return phonemes
 
 
-def extract_audio_segment(audio_path, start_time, end_time, output_path):
+def run_mfa(exp, jobs, mfa_cfg, log):
     """
-    Extract [start_time, end_time] (seconds) from audio_path and save to output_path.
-    """
-    if torchaudio is None:
-        raise RuntimeError(
-            "torchaudio is required to extract audio segments for MFA, but it failed "
-            f"to import: {_TORCHAUDIO_ERROR}"
-        )
-    waveform, sample_rate = torchaudio.load(audio_path)
-    start_sample = int(start_time * sample_rate)
-    end_sample   = int(end_time   * sample_rate)
-    torchaudio.save(output_path, waveform[:, start_sample:end_sample], sample_rate)
-
-
-def mfa_align_single_file(audio_path, transcription, output_dir="mfa_output", corpus_dir="mfa_corpus"):
-    """
-    Run MFA alignment on a single audio file.
+    Align every job's segments with MFA and write one `<clip>.json` each.
 
     Args:
-        audio_path: Path to audio file
-        transcription: Text content of the audio
-        output_dir: Directory for MFA outputs
-        corpus_dir: Temporary corpus directory
-
-    Returns:
-        Path to the output TextGrid, or None on failure
+        exp: the experiment; `id`, `acoustic_model` and `dictionary` are read
+        jobs: `(audio_path, srt_path, out_path)` per clip. A clip whose `out_path` exists
+            is left alone, which is what resuming an interrupted run means here.
+        mfa_cfg: the `mfa:` section of evaluate.yaml
+        log: called with each line worth keeping
+    Returns the run's statistics for the manifest.
     """
-    textgrid_dir = f"{output_dir}/mfa_textgrids"
+    mfa = mfa_command(mfa_cfg["conda_env"])
+    ensure_mfa_model(mfa, "acoustic", exp["acoustic_model"], log)
+    ensure_mfa_model(mfa, "dictionary", exp["dictionary"], log)
 
-    if os.path.exists(corpus_dir):
+    # MFA keeps its working database under the corpus directory's NAME, so two runs must not
+    # share one.
+    corpus_dir = os.path.join(MFA_WORK_DIR, f"{exp['id']}_corpus")
+    textgrid_dir = os.path.join(MFA_WORK_DIR, f"{exp['id']}_textgrids")
+    for d in (corpus_dir, textgrid_dir):
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+
+    utterances = build_corpus(jobs, corpus_dir)
+    stats = {"total_segments": len(utterances), "failed_segments": 0, "failed_files": 0,
+             "mfa_seconds": None}
+    if not utterances:
+        log("Nothing left to align.")
+        return stats
+
+    log(f"Running MFA on {len(utterances)} segments (one call)...")
+    t0 = time.time()
+    _run(mfa + ["align", corpus_dir, exp["dictionary"], exp["acoustic_model"], textgrid_dir,
+                "--clean", "--num_jobs", str(mfa_cfg["num_jobs"])]
+         + [str(a) for a in mfa_cfg["extra_args"] or []], log)
+    stats["mfa_seconds"] = time.time() - t0
+    log(f"MFA finished in {stats['mfa_seconds']:.1f} s "
+        f"({stats['mfa_seconds'] / len(utterances) * 1000:.0f} ms per segment)")
+
+    by_clip = defaultdict(list)
+    for name, info in utterances.items():
+        by_clip[info["out_path"]].append((name, info))
+
+    for out_path, clip_utterances in tqdm(by_clip.items(), desc="Parsing TextGrids"):
+        segments = []
+        for name, info in sorted(clip_utterances, key=lambda item: item[1]["seg_idx"]):
+            # MFA mirrors the corpus tree, and puts a flat corpus's files at the top.
+            textgrid_path = os.path.join(textgrid_dir, f"{name}.TextGrid")
+            phonemes = parse_textgrid(textgrid_path) if os.path.exists(textgrid_path) else []
+            if not phonemes:
+                stats["failed_segments"] += 1
+                continue
+            segments.append({"start": info["start"], "end": info["end"],
+                             "text": info["text"], "phoneme_ts": phonemes})
+        if not segments:
+            stats["failed_files"] += 1
+            continue
+        with open(out_path, 'w') as f:
+            json.dump({"segments": segments}, f)
+
+    if stats["failed_segments"]:
+        log(f"{stats['failed_segments']} segment(s) came back from MFA without phones.")
+    if not mfa_cfg["keep_workdir"]:
         shutil.rmtree(corpus_dir)
-    if os.path.exists(textgrid_dir):
         shutil.rmtree(textgrid_dir)
-    os.makedirs(corpus_dir, exist_ok=True)
-    os.makedirs(output_dir,  exist_ok=True)
-
-    audio_name = Path(audio_path).stem
-    shutil.copy(audio_path, f"{corpus_dir}/{audio_name}.wav")
-    with open(f"{corpus_dir}/{audio_name}.txt", "w") as f:
-        f.write(transcription)
-
-    result = subprocess.run([
-        "mamba", "run", "-n", "aligner",
-        "mfa", "align",
-        corpus_dir,
-        "english_us_arpa",
-        "english_us_arpa",
-        textgrid_dir,
-        "--clean",
-    ], capture_output=True, text=True)
-
-    if result.returncode != 0:
-        print("MFA Error:")
-        print("STDOUT:", result.stdout)
-        print("STDERR:", result.stderr)
-        return None
-
-    textgrid_path = f"{textgrid_dir}/{audio_name}.TextGrid"
-    if os.path.exists(textgrid_path):
-        return textgrid_path
-
-    print("TextGrid not found")
-    return None
+    return stats

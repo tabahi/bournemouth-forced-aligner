@@ -1,28 +1,29 @@
 import torch
 import torchaudio
-#from bournemouth_aligner import PhonemeTimestampAligner
+#from bournemouth_aligner import BFA
 import sys
 sys.path.append('.')
-from bournemouth_aligner.core import PhonemeTimestampAligner
+from bournemouth_aligner.core import BFA
+from bournemouth_aligner.utils import read_audio
 
 
 
-# Step1: Initialize PhonemeTimestampAligner
+# Step1: Initialize BFA
 device = 'cpu' # CPU is faster for single file processing
 duration_max = 10 # it's only for padding and clipping. Set it more than your expected duration
 
 # Using language preset (recommended) - automatically selects best English model
-extractor = PhonemeTimestampAligner(duration_max=duration_max, device=device) # initialize without loading a model
+extractor = BFA(duration_max=duration_max, device=device) # initialize without loading a model
 
 # Alternative: explicit model selection
 # model_name = "CUPE-3-en"  # a published model; a release directory or checkpoint on disk goes in ckpt_path="..."
 # lang = 'en-us' # Each model is trained on a specific language(s)
-# extractor = PhonemeTimestampAligner(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
+# extractor = BFA(model_name=model_name, lang=lang, duration_max=duration_max, device=device)
 
 # Step 2a: Load and preprocess audio - manually
 
 audio_path = "examples/samples/audio/Schwa-What.wav"
-audio_wav, sr = torchaudio.load(audio_path, normalize=True) #  normalize=True is for torch dtype normalization, not for amplitude
+audio_wav, sr = read_audio(audio_path)  # float32 [channels, samples], via soundfile
 
 # Stick with the CUPE's sample rate of 16000. For consistency, use the same audio loading and resampling pipeline same as the CUPE's training preprocessing:
 resampler = torchaudio.transforms.Resample(

@@ -6,5 +6,6 @@ transformers>=4.30.0
 safetensors>=0.3.0
 # phonemizer>=3.3.0   # only for phoneme_set="ph66" (also needs the espeak-ng system package)
 librosa>=0.8.0
-torchcodec>=0.9.1
+soundfile>=0.12.1
+# torchcodec>=0.9.1   # only for audio formats soundfile cannot read (also needs FFmpeg)
 matplotlib>=3.10.0

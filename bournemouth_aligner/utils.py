@@ -7,6 +7,32 @@ import math
 
 import torch
 
+
+def read_audio(path):
+    """
+    Read an audio file as a float32 `[channels, samples]` tensor and its sample rate.
+
+    soundfile comes first: its wheels bundle libsndfile on every platform, so WAV, FLAC, OGG
+    and MP3 load with no system packages and no GPU-specific build. torchaudio.load is the
+    fallback for anything else (m4a, aac, video containers); it needs torchcodec and the FFmpeg
+    shared libraries, which is why it is not the first choice.
+    """
+    import soundfile as sf
+    try:
+        data, sr = sf.read(path, dtype="float32", always_2d=True)
+        return torch.from_numpy(data.T.copy()), sr
+    except sf.LibsndfileError as sf_error:
+        try:
+            import torchaudio
+            return torchaudio.load(path)
+        except Exception as ta_error:
+            raise RuntimeError(
+                f"cannot read {path}: soundfile reads WAV, FLAC, OGG and MP3 ({sf_error}); "
+                f"other formats need torchcodec and FFmpeg ({ta_error}). Convert the file to "
+                f"WAV, or `pip install \"bournemouth-forced-aligner[audio]\"` and install "
+                f"FFmpeg.") from ta_error
+
+
 def weighted_pool_embeddings(embeddings, log_probs, framestamps):
     """
     Average Weighted by confidence embeddings over frame ranges for each phoneme timestamp.

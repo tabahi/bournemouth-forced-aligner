@@ -62,7 +62,7 @@ from . import presets as _presets
 from .extractors import load_extractor
 from .phonemizers import make_phonemizer
 from .segmental import align_batch
-from .utils import (dict_to_textgrid, weighted_pool_embeddings, _calculate_confidences,
+from .utils import (dict_to_textgrid, read_audio, weighted_pool_embeddings, _calculate_confidences,
                     convert_to_ms, detect_device_automatically,
                     plot_mel_alignment as _plot_mel_alignment)
 
@@ -73,7 +73,7 @@ from .utils import (dict_to_textgrid, weighted_pool_embeddings, _calculate_confi
 DEFAULT_SEGMENT_MAX_SECONDS = 120.0
 
 
-class PhonemeTimestampAligner:
+class BFA:
     """
     Align phoneme-level timestamps from audio and text.
     URL: https://github.com/tabahi/bournemouth-forced-aligner
@@ -100,7 +100,6 @@ class PhonemeTimestampAligner:
                 "mbfa-japanese" (std) or "CUPE-3-en", "CUPE-3-en-base", "CUPE-3-mls7" (ph66),
                 or any Hugging Face repository id in the same layout. Downloaded on first use
                 (`hub.resolve_model`).
-            local_ckpt_path (str, optional): .
             lang (str): Language code for phonemization. Only overridden by `preset` while it
                 is still the default. For the std phoneme set any BCP 47 code standard_g2p
                 covers, in any case ("en", "en-GB", "pt-br", "zh-Hant", "ja"); for ph66 an
@@ -194,10 +193,10 @@ class PhonemeTimestampAligner:
         Parameter priority (highest to lowest): `ckpt_path`, `model_name`, `preset`.
 
         Examples:
-            aligner = PhonemeTimestampAligner(preset="de")
-            aligner = PhonemeTimestampAligner(preset="de", phoneme_set="ph66")
-            aligner = PhonemeTimestampAligner(model_name="mbfa-latin-benchmark")
-            aligner = PhonemeTimestampAligner(ckpt_path="path/to/mbfa-cjk", lang="zh")
+            aligner = BFA(preset="de")
+            aligner = BFA(preset="de", phoneme_set="ph66")
+            aligner = BFA(model_name="mbfa-latin-benchmark")
+            aligner = BFA(ckpt_path="path/to/mbfa-cjk", lang="zh")
         """
         # Set first, so load_model and the geometry resolution can report through _info/_warn.
         self.warn_level = int(warn_level)
@@ -525,7 +524,7 @@ class PhonemeTimestampAligner:
     def load_audio(self, audio, sr=None):
         """Load a file (or take a tensor) and resample it to the model's 16 kHz."""
         if isinstance(audio, str):
-            wav, sr = torchaudio.load(audio, frame_offset=0, normalize=True)
+            wav, sr = read_audio(audio)
         elif isinstance(audio, torch.Tensor):
             if sr is None:
                 raise ValueError("Sample rate 'sr' must be provided when passing a tensor.")

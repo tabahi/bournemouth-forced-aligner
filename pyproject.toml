@@ -55,7 +55,8 @@ dependencies = [
     "transformers>=4.30.0",
     "safetensors>=0.3.0",
     "librosa>=0.8.0",
-    "torchcodec>=0.9.1",
+    # Audio files are read with soundfile (bundled libsndfile: WAV, FLAC, OGG, MP3).
+    "soundfile>=0.12.1",
     "matplotlib>=3.10.0",
 ]
 
@@ -78,10 +79,9 @@ docs = [
     "sphinx-rtd-theme>=1.0.0",
     "myst-parser>=0.17.0",
 ]
+# Other audio formats (m4a, aac, video containers) through torchaudio + torchcodec. Also needs
+# the FFmpeg shared libraries, and a torchcodec build that matches the installed torch.
 audio = [
-    "librosa>=0.8.0",
-    "soundfile>=0.10.0",
-    "pydub>=0.25.0",
     "torchcodec>=0.9.1",
 ]
 # The ph66 phoneme set (espeak-ng + p3cupe). Also needs the espeak-ng system package.

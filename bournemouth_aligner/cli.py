@@ -2,7 +2,7 @@ import click
 import json
 import os
 import textwrap
-from .core import PhonemeTimestampAligner, DEFAULT_SEGMENT_MAX_SECONDS
+from .core import BFA, DEFAULT_SEGMENT_MAX_SECONDS
 from .presets import (DEFAULT_LANG, DEFAULT_PHONEME_SET, MLS7_LANGS, P3CUPE_EN, P3CUPE_MLS7,
                       P4MBFA_MODELS, PHONEME_SETS, get_preset, get_std_preset, std_languages)
 from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
@@ -222,7 +222,7 @@ def main(audio_path, text_or_srt, output_path,
         if debug:
             click.echo("Initialising aligner...")
 
-        aligner = PhonemeTimestampAligner(
+        aligner = BFA(
             preset=None,
             model_name=resolved_model,
             ckpt_path=ckpt_path,

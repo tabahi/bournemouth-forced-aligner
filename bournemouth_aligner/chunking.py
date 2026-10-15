@@ -6,7 +6,7 @@ Chunked alignment for very long segments.
 The segmental decoder in `p3cupe/aligner.py` does not collapse on long audio: it has no band
 constraint and no lattice to compress, and every phone is placed in one global search. What it
 does have is a python loop over frames, so a segment costs time and memory in proportion to its
-length. `core.PhonemeTimestampAligner` therefore decodes whole segments up to
+length. `core.BFA` therefore decodes whole segments up to
 `segment_max_seconds` and only hands longer ones to this module. Chunking is strictly worse
 when it is not needed - a cut can land mid-phone - so the threshold is a resource bound, not a
 quality one.
