@@ -3,12 +3,14 @@ tmp/
 __pycache__/
 wandb/
 models/
-mfa_corpus/
+bournemouth_aligner/cpp_onnx
+**/results/*
+**/bournemouth_forced_aligner.egg-info/
 # ONNX Runtime files
 bournemouth_aligner/cpp_onnx/*.tgz
 bournemouth_aligner/cpp_onnx/onnxruntime-*
-
-*.yaml
+*.csv
+memory.md
 *.pyc
 *.pt
 *.sh
@@ -63,6 +65,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+.vscode/
 
 # Translations
 *.mo
@@ -225,3 +228,11 @@ mel_phonemes_ref.png
 output_timestamps.TextGrid
 examples/samples/LJSpeech/batch_output.vs.json
 30s.vs.json
+ts_visualize.py
+plan-for-improvements.md
+*.code-workspace
+
+# Published with the docs: the evaluation scores and figures (docs/evaluation.md).
+# The scoring JSONs beside the figures are ~3 MB each and stay local.
+!evaluation/results/*.csv
+evaluation/plots/*.json

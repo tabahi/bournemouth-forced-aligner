@@ -1584,10 +1584,10 @@ struct PhonemeResult {
 };
 
 // ============================================================
-// PhonemeTimestampAligner — matches Python class in bfaonnx.py
+// BFA — matches Python class in bfaonnx.py
 // ============================================================
 
-class PhonemeTimestampAligner
+class BFA
 {
 private:
     std::unique_ptr<CUPEONNXPredictor> extractor_;
@@ -1633,7 +1633,7 @@ private:
     std::unique_ptr<AlignmentUtils> alignment_utils_p_;
 
 public:
-    PhonemeTimestampAligner(const std::string &cupe_ckpt_path,
+    BFA(const std::string &cupe_ckpt_path,
                             const std::string &lang = "en-us",
                             const std::string &mapper = "ph66",
                             double duration_max = 10.0,
@@ -1672,10 +1672,10 @@ private:
 };
 
 // ============================================================
-// PhonemeTimestampAligner implementation
+// BFA implementation
 // ============================================================
 
-PhonemeTimestampAligner::PhonemeTimestampAligner(
+BFA::BFA(
     const std::string &cupe_ckpt_path,
     const std::string &lang,
     const std::string &mapper,
@@ -1720,7 +1720,7 @@ PhonemeTimestampAligner::PhonemeTimestampAligner(
     _setup_decoders();
 }
 
-void PhonemeTimestampAligner::_setup_config(int window_size_ms, int stride_ms)
+void BFA::_setup_config(int window_size_ms, int stride_ms)
 {
     window_size_ms_ = window_size_ms;
     stride_ms_ = stride_ms;
@@ -1744,7 +1744,7 @@ void PhonemeTimestampAligner::_setup_config(int window_size_ms, int stride_ms)
               << ", silence_group=" << silence_group_ << std::endl;
 }
 
-void PhonemeTimestampAligner::_setup_decoders()
+void BFA::_setup_decoders()
 {
     alignment_utils_g_ = std::make_unique<AlignmentUtils>(
         blank_group_, silence_class_, silence_anchors_, ignore_noise_);
@@ -1752,7 +1752,7 @@ void PhonemeTimestampAligner::_setup_decoders()
         blank_class_, silence_group_, silence_anchors_, ignore_noise_);
 }
 
-std::vector<float> PhonemeTimestampAligner::rms_normalize(const std::vector<float>& audio) {
+std::vector<float> BFA::rms_normalize(const std::vector<float>& audio) {
     double sum_squares = 0.0;
     for (float sample : audio)
         sum_squares += sample * sample;
@@ -1769,7 +1769,7 @@ std::vector<float> PhonemeTimestampAligner::rms_normalize(const std::vector<floa
     return normalized;
 }
 
-std::pair<std::vector<float>, int> PhonemeTimestampAligner::chop_wav(
+std::pair<std::vector<float>, int> BFA::chop_wav(
     const std::vector<float>& input_wav,
     int start_frame,
     int end_frame)
@@ -1810,7 +1810,7 @@ std::pair<std::vector<float>, int> PhonemeTimestampAligner::chop_wav(
     return {wav_processed, wav_len};
 }
 
-PhonemeResult PhonemeTimestampAligner::phonemize_sentence(const std::string &text)
+PhonemeResult BFA::phonemize_sentence(const std::string &text)
 {
     // Stub — phonemization is handled externally in C++.
     // This returns a hardcoded example for testing only.
@@ -1827,7 +1827,7 @@ PhonemeResult PhonemeTimestampAligner::phonemize_sentence(const std::string &tex
     };
 }
 
-std::vector<int> PhonemeTimestampAligner::map_phonemes_to_groups(
+std::vector<int> BFA::map_phonemes_to_groups(
     const std::vector<int>& phoneme_sequence)
 {
     std::vector<int> group_sequence;
@@ -1840,7 +1840,7 @@ std::vector<int> PhonemeTimestampAligner::map_phonemes_to_groups(
 
 std::tuple<std::vector<float>, std::vector<float>, std::vector<float>,
            int, int, int, int>
-PhonemeTimestampAligner::cupe_prediction(
+BFA::cupe_prediction(
     const std::vector<std::vector<float>> &audio_batch,
     int wav_len)
 {
@@ -1906,7 +1906,7 @@ PhonemeTimestampAligner::cupe_prediction(
  * Straight CUPE -> log_softmax -> Viterbi -> timestamps.
  * No group timestamps, no boosting, no silence anchoring.
  */
-TimestampResult PhonemeTimestampAligner::extract_timestamps_from_segment_simplified(
+TimestampResult BFA::extract_timestamps_from_segment_simplified(
     const std::vector<float>& wav,
     int wav_len,
     const std::vector<int>& phoneme_sequence,
@@ -1951,7 +1951,7 @@ TimestampResult PhonemeTimestampAligner::extract_timestamps_from_segment_simplif
  * Advanced timestamp extraction — matches Python extract_timestamps_from_segment_advanced.
  * Uses full forced alignment with boosting, silence anchoring, and confidence scoring.
  */
-TimestampResult PhonemeTimestampAligner::extract_timestamps_from_segment_advanced(
+TimestampResult BFA::extract_timestamps_from_segment_advanced(
     const std::vector<float>& wav,
     int wav_len,
     const std::vector<int>& phoneme_sequence,
@@ -2029,7 +2029,7 @@ int main()
     std::cout << "Initializing CUPE Phoneme Aligner..." << std::endl;
 
     // Initialize aligner
-    PhonemeTimestampAligner extractor(onnx_path, "en-us", "ph66", 10.0);
+    BFA extractor(onnx_path, "en-us", "ph66", 10.0);
 
     // Load audio
     float original_duration = 0.0f;

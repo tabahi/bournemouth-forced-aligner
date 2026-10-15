@@ -1,26 +1,42 @@
 import click
 import json
 import os
-from .core import PhonemeTimestampAligner
-from .presets import get_preset
+import textwrap
+from .core import BFA, DEFAULT_SEGMENT_MAX_SECONDS
+from .presets import (DEFAULT_LANG, DEFAULT_PHONEME_SET, MLS7_LANGS, P3CUPE_EN, P3CUPE_MLS7,
+                      P4MBFA_MODELS, PHONEME_SETS, get_preset, get_std_preset, std_languages)
+from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
+                       DEFAULT_PHONEMES_PER_SECOND)
 
-__version__ = "1.1.4"
+__version__ = "2.0.0"
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_model_lang(preset, model, lang):
-    """Return (model_name, language) after applying preset then any explicit overrides."""
-    if preset:
-        preset_model, preset_lang = get_preset(preset, lang=lang or 'en-us')
-    else:
-        preset_model = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"
-        preset_lang = 'en-us'
+def _resolve_model_lang(preset, model, lang, phoneme_set=None):
+    """
+    Return (model_name, language) after applying preset then any explicit overrides.
 
-    resolved_model = model or preset_model
-    resolved_lang = lang or preset_lang
-    return resolved_model, resolved_lang
+    `phoneme_set` None means the default set - unless `model` is given, in which case the
+    checkpoint decides the set when it is loaded and the language is passed through as typed.
+    """
+    if phoneme_set == "ph66":
+        # The language picks the model (English, or English + 7), whichever option named it.
+        language = lang or preset or DEFAULT_LANG
+        if model:
+            return model, language
+        preset_model, language, note = get_preset(language, lang=language)
+        if note:
+            click.echo(f"Warning: {note}", err=True)
+        return preset_model, language
+
+    language = lang or preset or DEFAULT_LANG
+    if model and phoneme_set is None:
+        return model, language
+    # Raises, with the way out in the message, for a language the std set cannot serve.
+    preset_model, code, _group, _note = get_std_preset(language)
+    return model or preset_model, code
 
 
 
@@ -37,12 +53,27 @@ def _resolve_model_lang(preset, model, lang):
               help='Language preset, e.g. en-us, de, fr, hi. '
                    'Automatically picks the right model and language code. '
                    'Run `balign --list-presets` to see all options.')
+@click.option('--phoneme-set', type=click.Choice(PHONEME_SETS), default=None,
+              help=f'Phoneme set and, with it, the model family: "std" (standard_g2p '
+                   f'phonemes, p4mbfa models) or "ph66" (espeak-ng, p3cupe models). '
+                   f'Default: {DEFAULT_PHONEME_SET}, or whatever --model / --ckpt-path is.')
 @click.option('--model', default=None,
-              help='Override the CUPE model name (advanced). '
-                   'Default is chosen automatically by --preset.')
+              help='Published model to use instead of the preset\'s (advanced): mbfa-latin, '
+                   'mbfa-latin-benchmark, mbfa-cyrillic, mbfa-cjk, mbfa-japanese, CUPE-3-en, '
+                   'CUPE-3-en-base, CUPE-3-mls7, or a Hugging Face repository id. Downloaded '
+                   'on first use.')
+@click.option('--ckpt-path', type=click.Path(), default=None,
+              help='Path to a model on disk (advanced): a release directory (config.json + '
+                   'model.safetensors) or a training checkpoint file, of either family. '
+                   'Overrides --model and decides the phoneme set by itself.')
 @click.option('--lang', default=None,
-              help='espeak-ng language code, e.g. en-us, de, fr, hi. '
-                   'Overrides the language part of --preset.')
+              help='Language code, e.g. en-us, de, fr, ru, zh (espeak-ng codes with '
+                   '--phoneme-set=ph66). Overrides the language part of --preset.')
+@click.option('--g2p-device', default=None,
+              help='Device for the std set\'s G2P model. Default: same as --device.')
+@click.option('--punctuation-sil/--no-punctuation-sil', default=False,
+              help='std set only: write a silence at pause punctuation, as ph66 always '
+                   'does. Off by default, matching how the p4mbfa models were trained.')
 # ---- output options ----
 @click.option('--embeddings', type=click.Path(), default=None,
               help='Save per-phoneme embeddings to this .pt file.')
@@ -56,10 +87,34 @@ def _resolve_model_lang(preset, model, lang):
               help='Inference device: cpu, cuda, or auto.')
 @click.option('--duration-max', default=60.0, type=float, show_default=True,
               help='Maximum segment duration in seconds (for windowed processing).')
-@click.option('--boost-targets/--no-boost-targets', default=True,
-              help='Boost expected phoneme probabilities before Viterbi alignment.')
-@click.option('--silence-anchors', default=10, type=int, show_default=True,
-              help='Number of silent frames to anchor at silences (punctuations) to help break the long segments. ')
+@click.option('--boundary-bonus-weight', default=None, type=float,
+              help='Weight on the log-mel acoustic-change bonus added to every phone-onset '
+                   "transition. Default: the value the model was published with (30 for "
+                   'every released model). 0 turns it off; see the constructor docstring for '
+                   'what it is measured to cost and buy.')
+@click.option('--sub-frame-onsets/--frame-grid-onsets', default=True,
+              help='Place onsets at the interpolated crossing of two posteriors (default) '
+                   'rather than on the 5 ms frame grid.')
+@click.option('--min-phone-frames', default=None, type=int,
+              help='Shortest phone the aligner may produce, in 5 ms frames. Default: the '
+                   "checkpoint's own training value.")
+@click.option('--segment-max-seconds', default=DEFAULT_SEGMENT_MAX_SECONDS, type=float,
+              show_default=True,
+              help='Segments up to this long are decoded whole; longer ones are chunked to '
+                   'bound time and memory. Whole decoding is more accurate, so raise it if '
+                   'the hardware allows.')
+@click.option('--chunk-audio/--no-chunk-audio', default=True,
+              help='Align segments longer than --segment-max-seconds by walking overlapping '
+                   'audio windows. Shorter segments are decoded whole and are unaffected.')
+@click.option('--chunk-seconds', default=DEFAULT_CHUNK_SECONDS, type=float, show_default=True,
+              help='Audio window length for chunked alignment of very long segments.')
+@click.option('--chunk-max-phonemes', default=DEFAULT_MAX_PHONEMES, type=int, show_default=True,
+              help='Cap on the phoneme budget for one chunk window.')
+@click.option('--chunk-pps', default=DEFAULT_PHONEMES_PER_SECOND, type=float, show_default=True,
+              help='Phonemes per second of SPEECH used to size each window budget.')
+@click.option('--chunk-vad/--no-chunk-vad', default=True,
+              help='Use an energy VAD to measure speech seconds per window (so pause-heavy '
+                   'windows are not over-budgeted) and to land cuts in pauses.')
 # ---- misc ----
 @click.option('--debug/--no-debug', default=False,
               help='Print detailed progress information.')
@@ -67,10 +122,11 @@ def _resolve_model_lang(preset, model, lang):
               help='Print all supported language presets and exit.')
 @click.version_option(__version__, '--version', '-v', message='%(version)s')
 def main(audio_path, text_or_srt, output_path,
-         preset, model, lang,
+         preset, phoneme_set, model, ckpt_path, lang, g2p_device, punctuation_sil,
          embeddings, mel_path, textgrid,
-         device, duration_max, boost_targets, silence_anchors,
-         debug, list_presets):
+         device, duration_max, boundary_bonus_weight, sub_frame_onsets, min_phone_frames,
+         segment_max_seconds, chunk_audio, chunk_seconds, chunk_max_phonemes, chunk_pps,
+         chunk_vad, debug, list_presets):
     """Bournemouth Forced Aligner — extract phoneme timestamps from audio.
 
     \b
@@ -88,7 +144,7 @@ def main(audio_path, text_or_srt, output_path,
     """
 
     if list_presets:
-        click.echo(_PRESET_HELP)
+        click.echo(_preset_help())
         return
 
     # ------------------------------------------------------------------
@@ -127,16 +183,15 @@ def main(audio_path, text_or_srt, output_path,
     # ------------------------------------------------------------------
     # Resolve model + language
     # ------------------------------------------------------------------
-    resolved_model, resolved_lang = _resolve_model_lang(
-        preset or (None if lang else 'en-us'),
-        model,
-        lang
-    )
-    # If the user passed --preset AND --lang, honour --lang as override
-    if lang:
-        resolved_lang = lang
-    if model:
-        resolved_model = model
+    if ckpt_path:
+        # The path decides the model and the phoneme set; only the language is left to say.
+        resolved_model, resolved_lang = None, lang or preset or DEFAULT_LANG
+    else:
+        try:
+            resolved_model, resolved_lang = _resolve_model_lang(
+                preset or (None if lang else DEFAULT_LANG), model, lang, phoneme_set)
+        except ValueError as exc:
+            raise click.UsageError(str(exc))
 
     # ------------------------------------------------------------------
     # Debug header
@@ -146,7 +201,10 @@ def main(audio_path, text_or_srt, output_path,
         click.echo(f"  Audio    : {audio_path}")
         click.echo(f"  Input    : {'[SRT] ' + srt_path if srt_mode else '[text] ' + repr(input_text)}")
         click.echo(f"  Output   : {output_path}")
-        click.echo(f"  Model    : {resolved_model}")
+        click.echo(f"  Model    : {ckpt_path or resolved_model}")
+        shown_set = phoneme_set or ("from the model" if (ckpt_path or model)
+                                    else DEFAULT_PHONEME_SET)
+        click.echo(f"  Phonemes : {shown_set}")
         click.echo(f"  Language : {resolved_lang}")
         click.echo(f"  Device   : {device}")
         if mel_path:
@@ -164,13 +222,28 @@ def main(audio_path, text_or_srt, output_path,
         if debug:
             click.echo("Initialising aligner...")
 
-        aligner = PhonemeTimestampAligner(
+        aligner = BFA(
+            preset=None,
             model_name=resolved_model,
+            ckpt_path=ckpt_path,
             lang=resolved_lang,
+            phoneme_set=phoneme_set,
+            g2p_device=g2p_device,
+            punctuation_sil=punctuation_sil,
             duration_max=duration_max,
             device=device,
-            boost_targets=boost_targets,
-            silence_anchors=silence_anchors
+            boundary_bonus_weight=boundary_bonus_weight,
+            sub_frame_onsets=sub_frame_onsets,
+            min_phone_frames=min_phone_frames,
+            segment_max_seconds=segment_max_seconds,
+            chunk_audio=chunk_audio,
+            chunk_seconds=chunk_seconds,
+            chunk_max_phonemes=chunk_max_phonemes,
+            chunk_phonemes_per_second=chunk_pps,
+            chunk_vad=chunk_vad,
+            # --debug turns on the informational output (frame geometry, decoder settings);
+            # without it only real warnings are printed.
+            warn_level=2 if debug else 1,
         )
 
         if debug:
@@ -207,7 +280,7 @@ def main(audio_path, text_or_srt, output_path,
                 result = result_raw
 
             # Wrap in SRT-style envelope and save
-            output_data = {"segments": result.get("segments", [])}
+            output_data = dict(result)
             with open(output_path, "w", encoding="utf-8") as fout:
                 json.dump(output_data, fout, indent=2, ensure_ascii=False)
 
@@ -259,9 +332,12 @@ def main(audio_path, text_or_srt, output_path,
 # ---------------------------------------------------------------------------
 # Preset help text
 # ---------------------------------------------------------------------------
-_PRESET_HELP = """\
-Supported --preset values
-─────────────────────────
+_PRESET_HELP = f"""\
+--phoneme-set=ph66  (espeak-ng + p3cupe)
+──────────────────────────────────────────────────────────────────────────────
+{P3CUPE_EN}: English.  {P3CUPE_MLS7}: every other language - trained on
+{' '.join(sorted(MLS7_LANGS))} (and English); the rest are aligned by nearest sounds.
+
 English       en-us  en  en-gb  en-gb-x-rp  en-gb-scotland
 European      de  fr  es  it  pt  pt-br  nl  pl  da  sv  nb  fi  cs  hu  ...
 Slavic/E.Eu.  ru  uk  be  bg  ro  hr  sr  sk  sl  mk
@@ -272,6 +348,22 @@ Other         ka  eu  id  ms  el  sq  la  eo  ...
 
 For the full list see: https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
 """
+
+
+
+def _preset_help():
+    """Both preset tables: the std set's by language group, then ph66's."""
+    lines = ["Supported --preset values", "",
+             f"--phoneme-set=std  (standard_g2p + p4mbfa{', the default' if DEFAULT_PHONEME_SET == 'std' else ''})",
+             "────────────────────────────────────────"]
+    for group, codes in std_languages().items():
+        lines.append(textwrap.fill("  ".join(codes), width=78, initial_indent=f"{group:<14}",
+                                   subsequent_indent=" " * 14))
+        lines.append(f"{'':<14}model: {P4MBFA_MODELS[group]}")
+    lines += ["", "Any spelling of these works: en-us, en-GB, pt-br, cmn, zh-Hant, ...",
+              "Languages outside this table need --phoneme-set=ph66.", "", _PRESET_HELP]
+    return "\n".join(lines)
+
 
 if __name__ == '__main__':
     main()

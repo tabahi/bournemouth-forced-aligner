@@ -2,10 +2,10 @@
 import json
 import time
 
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 #import sys
 #sys.path.append('.')
-#from bournemouth_aligner.core import PhonemeTimestampAligner
+#from bournemouth_aligner.core import BFA
 
 
 
@@ -14,7 +14,7 @@ def example_batch_sentence_processing():
     Processes multiple text-audio pairs in a single batch call.
     All audio clips must fit within duration_max seconds."""
 
-    bfa_aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='auto')
+    bfa_aligner = BFA(preset='en-us', duration_max=10, device='auto')
 
     # Load audio files
     texts = [
@@ -46,16 +46,16 @@ def example_batch_sentence_processing():
 
 
     # view detailed debug info
-    print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
-            f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
-            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned easily: {bfa_aligner.total_phonemes_aligned_easily}")
+    print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tSegments bad: {bfa_aligner.total_segments_bad}",
+            f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
+            f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}")
 
 def example_batch_SRT_processing():
     """Example of batch processing with process_segments_batch.
     Uses whisper-style SRT json files with pre-segmented audio.
     Each segment gets its own audio tensor (chopped from the full audio)."""
 
-    bfa_aligner = PhonemeTimestampAligner(preset='en-us', duration_max=10, device='cpu', silence_anchors=3)
+    bfa_aligner = BFA(preset='en-us', duration_max=10, device='cpu')
 
     srt_paths = [
         "examples/samples/LJSpeech/LJ001-0001.srt.json",
@@ -104,9 +104,9 @@ def example_batch_SRT_processing():
     
 
     # view detailed debug info
-    print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
-            f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}",
-            f"\tPhonemes extra: {bfa_aligner.total_phonemes_extra}", f"\tPhonemes aligned easily: {bfa_aligner.total_phonemes_aligned_easily}")
+    print(f"Totals,  segments processed: {bfa_aligner.total_segments_processed}", f"\tSegments bad: {bfa_aligner.total_segments_bad}",
+            f"\tPhonemes aligned: {bfa_aligner.total_phonemes_aligned}",
+            f"\tTarget phonemes: {bfa_aligner.total_phonemes_target}", f"\tPhonemes missed: {bfa_aligner.total_phonemes_missed}")
     
     print ("\n\nBatch processing complete. Output saved to:", ts_out_path)
 

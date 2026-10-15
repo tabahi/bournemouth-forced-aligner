@@ -2,19 +2,29 @@
 import torch
 import time
 import json
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 def example_audio_timestamps():
 
     text_sentence = "butterfly"
     audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 
-    # Using language preset (recommended) - automatically selects best English model
-    extractor = PhonemeTimestampAligner(preset="en-us", duration_max=10, device='cpu')
+    # Using language preset (recommended) - picks the model for the language. This is the
+    # default "std" phoneme set (standard_g2p phonemes, the mbfa-latin model); the first run
+    # downloads the model (~55 MB) and the G2P model (~1.2 GB) from Hugging Face, once.
+    extractor = BFA(preset="en-us", duration_max=10, device='cpu')
 
-    # Alternative: explicit model selection
-    # model_name = "en_libri1000_ua01c_e4_val_GER=0.2186.ckpt"
-    # extractor = PhonemeTimestampAligner(model_name=model_name, lang='en-us', duration_max=10, device='cpu')
+    # Alternative: the espeak-ng + ph66 phoneme set (needs espeak-ng installed; uses the
+    # CUPE-3-en model for English and CUPE-3-mls7 for other languages, no G2P download)
+    # extractor = BFA(preset="en-us", phoneme_set="ph66", duration_max=10, device='cpu')
+
+    # Alternative: a published model by name - the model decides the phoneme set
+    # extractor = BFA(model_name="mbfa-latin-benchmark", duration_max=10, device='cpu')
+    # extractor = BFA(model_name="CUPE-3-en", duration_max=10, device='cpu')
+    # extractor = BFA(model_name="CUPE-3-mls7", lang="de", duration_max=10, device='cpu')
+
+    # Alternative: a model on disk - a release directory or a training checkpoint file
+    # extractor = BFA(ckpt_path="path/to/model", lang='en-us', duration_max=10, device='cpu')
 
     audio_wav = extractor.load_audio(audio_path) # can replace it with custom audio source
 
@@ -46,82 +56,78 @@ if __name__ == "__main__":
 
 
 '''output
-Model available at: /root/.cache/huggingface/hub/models--Tabahi--CUPE-2i/snapshots/5bb0124be864e01d12c90145863f727e490ab3fb/ckpt/en_libri1000_uj01d_e199_val_GER=0.2307.ckpt
-Setting backend for language: en-us
-Expected phonemes: ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']
-Target phonemes: 7, Expected: ['b', 'ʌ', 'ɾ', 'ɚ', 'f', 'l', 'aɪ']
-Spectral length: 75
-Forced alignment took 18.673 ms
-Aligned phonemes: 7
-Target phonemes: 7
-SUCCESS: All target phonemes were aligned!
-Predicted phonemes 7
-Predicted groups 7
-start_offset_time 0.0
- 1:   b, voiced_stops  -> (33.568 - 50.352), Confidence: 0.991
- 2:   ʌ, central_vowels  -> (100.705 - 117.489), Confidence: 0.845
- 3:   ɾ, rhotics  -> (134.273 - 151.057), Confidence: 0.285
- 4:   ɚ, central_vowels  -> (285.331 - 302.115), Confidence: 0.738
- 5:   f, voiceless_fricatives  -> (352.467 - 402.820), Confidence: 0.988
- 6:   l, laterals  -> (520.309 - 553.878), Confidence: 0.916
- 7:  aɪ, diphthongs  -> (604.230 - 621.014), Confidence: 0.412
 Alignment Coverage Analysis:
-  Target phonemes: 7
-  Aligned phonemes: 7
+  Target phonemes: 8
+  Aligned phonemes: 8
   Coverage ratio: 100.00%
+
+Segment: 'butterfly'
+0  Phoneme ID: 22, label: b, IPA: b, Start: 0 ms, End: 52 ms, Confidence: 0.887
+1  Phoneme ID: 21, label: ə, IPA: ə, Start: 52 ms, End: 167 ms, Confidence: 0.094
+2  Phoneme ID: 9, label: t, IPA: t, Start: 167 ms, End: 257 ms, Confidence: 0.054
+3  Phoneme ID: 97, label: ɝ, IPA: ɝ, Start: 257 ms, End: 350 ms, Confidence: 0.014
+4  Phoneme ID: 19, label: f, IPA: f, Start: 350 ms, End: 497 ms, Confidence: 0.277
+5  Phoneme ID: 43, label: ɫ, IPA: ɫ, Start: 497 ms, End: 572 ms, Confidence: 0.107
+6  Phoneme ID: 4, label: a, IPA: a, Start: 572 ms, End: 825 ms, Confidence: 0.943
+7  Phoneme ID: 17, label: ɪ, IPA: ɪ, Start: 825 ms, End: 982 ms, Confidence: 0.245
 
 ============================================================
 PROCESSING SUMMARY
 ============================================================
-Total segments processed: 1
-Perfect sequence matches: 1/1 (100.0%)
-Total phonemes aligned: 7
-Overall average confidence: 0.655
+Clip items: 1, Segments processed: 1
+Totals, Segments processed: 1 	Segments bad: 0 	Phonemes aligned: 8 	Target phonemes: 8 	Phonemes missed: 0
 ============================================================
 Timestamps:
 {
+    "phoneme_set": "std/latin",
+    "lang": "en",
     "segments": [
         {
             "start": 0.0,
             "end": 1.2588125,
             "text": "butterfly",
-            "ph66": [
-                29,
-                10,
-                58,
+            "local_ph": [
+                22,
+                21,
                 9,
+                97,
+                19,
                 43,
-                56,
-                23
+                4,
+                17
             ],
-            "pg16": [
+            "gold_phg": [
+                5,
+                2,
+                4,
+                1,
                 7,
-                2,
-                14,
-                2,
-                8,
-                13,
-                5
+                10,
+                3,
+                1
             ],
             "coverage_analysis": {
-                "target_count": 7,
-                "aligned_count": 7,
+                "target_count": 8,
+                "aligned_count": 8,
                 "missing_count": 0,
                 "extra_count": 0,
                 "coverage_ratio": 1.0,
                 "missing_phonemes": [],
-                "extra_phonemes": []
+                "extra_phonemes": [],
+                "bad_alignment": false
             },
             "ipa": [
                 "b",
-                "ʌ",
-                "ɾ",
-                "ɚ",
+                "ə",
+                "t",
+                "ɝ",
                 "f",
-                "l",
-                "aɪ"
+                "ɫ",
+                "a",
+                "ɪ"
             ],
             "word_num": [
+                0,
                 0,
                 0,
                 0,
@@ -135,134 +141,244 @@ Timestamps:
             ],
             "phoneme_ts": [
                 {
-                    "phoneme_id": 29,
+                    "phoneme_id": 22,
                     "phoneme_label": "b",
-                    "start_ms": 33.56833267211914,
-                    "end_ms": 50.35249710083008,
-                    "confidence": 0.9849503040313721
+                    "ipa_label": "b",
+                    "start_ms": 0.0,
+                    "end_ms": 52.5,
+                    "confidence": 0.8867923617362976,
+                    "target_seq_idx": 0,
+                    "index": 0,
+                    "tone": 0,
+                    "stress": 0,
+                    "length": 0
                 },
                 {
-                    "phoneme_id": 10,
-                    "phoneme_label": "ʌ",
-                    "start_ms": 100.70499420166016,
-                    "end_ms": 117.48916625976562,
-                    "confidence": 0.8435571193695068
-                },
-                {
-                    "phoneme_id": 58,
-                    "phoneme_label": "ɾ",
-                    "start_ms": 134.27333068847656,
-                    "end_ms": 151.0574951171875,
-                    "confidence": 0.3894280791282654
+                    "phoneme_id": 21,
+                    "phoneme_label": "ə",
+                    "ipa_label": "ə",
+                    "start_ms": 52.5,
+                    "end_ms": 167.5,
+                    "confidence": 0.09439657628536224,
+                    "target_seq_idx": 1,
+                    "index": 1,
+                    "tone": 0,
+                    "stress": 1,
+                    "length": 0
                 },
                 {
                     "phoneme_id": 9,
-                    "phoneme_label": "ɚ",
-                    "start_ms": 285.3308410644531,
-                    "end_ms": 302.114990234375,
-                    "confidence": 0.3299962282180786
+                    "phoneme_label": "t",
+                    "ipa_label": "t",
+                    "start_ms": 167.5,
+                    "end_ms": 257.5,
+                    "confidence": 0.05372203141450882,
+                    "target_seq_idx": 2,
+                    "index": 2,
+                    "tone": 0,
+                    "stress": 0,
+                    "length": 0
+                },
+                {
+                    "phoneme_id": 97,
+                    "phoneme_label": "ɝ",
+                    "ipa_label": "ɝ",
+                    "start_ms": 257.5,
+                    "end_ms": 350.8782196044922,
+                    "confidence": 0.01361100748181343,
+                    "target_seq_idx": 3,
+                    "index": 3,
+                    "tone": 0,
+                    "stress": 0,
+                    "length": 0
+                },
+                {
+                    "phoneme_id": 19,
+                    "phoneme_label": "f",
+                    "ipa_label": "f",
+                    "start_ms": 350.8782196044922,
+                    "end_ms": 497.5,
+                    "confidence": 0.2765592336654663,
+                    "target_seq_idx": 4,
+                    "index": 4,
+                    "tone": 0,
+                    "stress": 0,
+                    "length": 0
                 },
                 {
                     "phoneme_id": 43,
-                    "phoneme_label": "f",
-                    "start_ms": 369.2516784667969,
-                    "end_ms": 386.03582763671875,
-                    "confidence": 0.9150863289833069
+                    "phoneme_label": "ɫ",
+                    "ipa_label": "ɫ",
+                    "start_ms": 497.5,
+                    "end_ms": 572.5,
+                    "confidence": 0.10689622163772583,
+                    "target_seq_idx": 5,
+                    "index": 5,
+                    "tone": 0,
+                    "stress": 0,
+                    "length": 0
                 },
                 {
-                    "phoneme_id": 56,
-                    "phoneme_label": "l",
-                    "start_ms": 520.3091430664062,
-                    "end_ms": 553.8775024414062,
-                    "confidence": 0.9060741662979126
+                    "phoneme_id": 4,
+                    "phoneme_label": "a",
+                    "ipa_label": "a",
+                    "start_ms": 572.5,
+                    "end_ms": 825.9669494628906,
+                    "confidence": 0.943099856376648,
+                    "target_seq_idx": 6,
+                    "index": 6,
+                    "tone": 0,
+                    "stress": 2,
+                    "length": 0
                 },
                 {
-                    "phoneme_id": 23,
-                    "phoneme_label": "aɪ",
-                    "start_ms": 604.22998046875,
-                    "end_ms": 621.01416015625,
-                    "confidence": 0.21650740504264832
+                    "phoneme_id": 17,
+                    "phoneme_label": "ɪ",
+                    "ipa_label": "ɪ",
+                    "start_ms": 825.9669494628906,
+                    "end_ms": 982.5,
+                    "confidence": 0.24526582658290863,
+                    "target_seq_idx": 7,
+                    "index": 7,
+                    "tone": 0,
+                    "stress": 0,
+                    "length": 0
                 }
+            ],
+            "tone": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "stress": [
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                2,
+                0
+            ],
+            "length": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
             ],
             "group_ts": [
                 {
-                    "group_idx": 7,
-                    "group_label": "voiced_stops",
-                    "start_ms": 33.56833267211914,
-                    "end_ms": 50.35249710083008,
-                    "confidence": 0.9911064505577087
+                    "group_id": 5,
+                    "group_label": "stop_voiced",
+                    "start_ms": 0.0,
+                    "end_ms": 52.5,
+                    "confidence": 0.4602576494216919,
+                    "target_seq_idx": 0,
+                    "index": 0
                 },
                 {
-                    "group_idx": 2,
-                    "group_label": "central_vowels",
-                    "start_ms": 100.70499420166016,
-                    "end_ms": 117.48916625976562,
-                    "confidence": 0.8446590304374695
+                    "group_id": 2,
+                    "group_label": "vowel_mid",
+                    "start_ms": 52.5,
+                    "end_ms": 167.5,
+                    "confidence": 0.34621405601501465,
+                    "target_seq_idx": 1,
+                    "index": 1
                 },
                 {
-                    "group_idx": 14,
-                    "group_label": "rhotics",
-                    "start_ms": 134.27333068847656,
-                    "end_ms": 151.0574951171875,
-                    "confidence": 0.28526052832603455
+                    "group_id": 4,
+                    "group_label": "stop_voiceless",
+                    "start_ms": 167.5,
+                    "end_ms": 257.5,
+                    "confidence": 0.05913054198026657,
+                    "target_seq_idx": 2,
+                    "index": 2
                 },
                 {
-                    "group_idx": 2,
-                    "group_label": "central_vowels",
-                    "start_ms": 285.3308410644531,
-                    "end_ms": 302.114990234375,
-                    "confidence": 0.7377423048019409
+                    "group_id": 1,
+                    "group_label": "vowel_close",
+                    "start_ms": 257.5,
+                    "end_ms": 350.8782196044922,
+                    "confidence": 0.31947261095046997,
+                    "target_seq_idx": 3,
+                    "index": 3
                 },
                 {
-                    "group_idx": 8,
-                    "group_label": "voiceless_fricatives",
-                    "start_ms": 352.4674987792969,
-                    "end_ms": 402.8199768066406,
-                    "confidence": 0.9877637028694153
+                    "group_id": 7,
+                    "group_label": "fricative_vl",
+                    "start_ms": 350.8782196044922,
+                    "end_ms": 497.5,
+                    "confidence": 0.862213671207428,
+                    "target_seq_idx": 4,
+                    "index": 4
                 },
                 {
-                    "group_idx": 13,
-                    "group_label": "laterals",
-                    "start_ms": 520.3091430664062,
-                    "end_ms": 553.8775024414062,
-                    "confidence": 0.9163824915885925
+                    "group_id": 10,
+                    "group_label": "lateral",
+                    "start_ms": 497.5,
+                    "end_ms": 572.5,
+                    "confidence": 0.16395527124404907,
+                    "target_seq_idx": 5,
+                    "index": 5
                 },
                 {
-                    "group_idx": 5,
-                    "group_label": "diphthongs",
-                    "start_ms": 604.22998046875,
-                    "end_ms": 621.01416015625,
-                    "confidence": 0.4117060899734497
+                    "group_id": 3,
+                    "group_label": "vowel_open",
+                    "start_ms": 572.5,
+                    "end_ms": 825.9669494628906,
+                    "confidence": 0.9435704350471497,
+                    "target_seq_idx": 6,
+                    "index": 6
+                },
+                {
+                    "group_id": 1,
+                    "group_label": "vowel_close",
+                    "start_ms": 825.9669494628906,
+                    "end_ms": 982.5,
+                    "confidence": 0.5733354687690735,
+                    "target_seq_idx": 7,
+                    "index": 7
                 }
             ],
             "words_ts": [
                 {
                     "word": "butterfly",
-                    "start_ms": 33.56833267211914,
-                    "end_ms": 621.01416015625,
-                    "confidence": 0.6550856615815844,
-                    "ph66": [
-                        29,
-                        10,
-                        58,
+                    "start_ms": 0.0,
+                    "end_ms": 982.5,
+                    "confidence": 0.32754288939759135,
+                    "local_ph": [
+                        22,
+                        21,
                         9,
+                        97,
+                        19,
                         43,
-                        56,
-                        23
+                        4,
+                        17
                     ],
                     "ipa": [
                         "b",
-                        "ʌ",
-                        "ɾ",
-                        "ɚ",
+                        "ə",
+                        "t",
+                        "ɝ",
                         "f",
-                        "l",
-                        "aɪ"
+                        "ɫ",
+                        "a",
+                        "ɪ"
                     ]
                 }
             ]
         }
     ]
 }
-Processing time: 0.19 seconds
+Processing time: 18.16 seconds
 '''

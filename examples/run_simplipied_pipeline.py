@@ -2,19 +2,18 @@
 import torch
 import time
 
-from bournemouth_aligner import PhonemeTimestampAligner
+from bournemouth_aligner import BFA
 
 def example_simplified_pipeline():
     """
-    Simplified pipeline: text -> phonemize -> CUPE -> Viterbi -> timestamps.
-    No group alignment, no embeddings, no target boosting, no silence anchoring.
-    Mirrors what a C++ port would do.
+    Simplified pipeline: text -> phonemize -> CUPE -> segmental Viterbi -> timestamps.
+    No group alignment and no embeddings - the lowest-level call the library offers.
     """
 
     text = "butterfly"
     audio_path = "examples/samples/audio/109867__timkahn__butterfly.wav"
 
-    aligner = PhonemeTimestampAligner(preset="en-us", duration_max=10, device="cpu")
+    aligner = BFA(preset="en-us", duration_max=10, device="cpu")
 
     # 1. Load and preprocess audio
     audio_wav = aligner.load_audio(audio_path)
@@ -29,16 +28,18 @@ def example_simplified_pipeline():
     print(f"Phoneme indices: {phoneme_seq}")
 
     # 3. Chop/pad audio segment (full clip in this case)
-    wav, wav_len = aligner.chop_wav(audio_wav, 0, audio_wav.shape[1])
+    wav, wav_len, err = aligner.chop_wav(audio_wav, 0, audio_wav.shape[1])
+    assert err == 0, f"chop_wav failed with code {err}"
     wavs = wav.unsqueeze(0)          # [1, T]
     wav_lens = [wav_len]
 
-    # 4. Run simplified alignment
+    # 4. Run the alignment
     t0 = time.time()
-    timestamp_dicts = aligner.extract_timestamps_from_segment_simplified(
+    timestamp_dicts, _, _ = aligner.extract_timestamps_from_segment_batch(
         wavs, wav_lens,
         phoneme_sequences=[phoneme_seq],
         start_offset_times=[0.0],
+        extract_embeddings=False, do_groups=False,
         debug=False,
     )
     elapsed_ms = (time.time() - t0) * 1000
@@ -59,7 +60,7 @@ def example_simplified_batch():
     Batch version: multiple sentences aligned in one call.
     """
 
-    aligner = PhonemeTimestampAligner(preset="en-us", duration_max=10, device="cpu")
+    aligner = BFA(preset="en-us", duration_max=10, device="cpu")
 
     texts = [
         "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition",
@@ -79,7 +80,8 @@ def example_simplified_batch():
 
     for text, audio_path in zip(texts, audio_paths):
         audio_wav = aligner.load_audio(audio_path)
-        wav, wav_len = aligner.chop_wav(audio_wav, 0, audio_wav.shape[1])
+        wav, wav_len, err = aligner.chop_wav(audio_wav, 0, audio_wav.shape[1])
+        assert err == 0, f"chop_wav failed with code {err}"
         ts_out = aligner.phonemize_sentence(text)
 
         all_wavs.append(wav)
@@ -91,10 +93,11 @@ def example_simplified_batch():
     wavs = torch.stack(all_wavs, dim=0)
 
     t0 = time.time()
-    timestamp_dicts = aligner.extract_timestamps_from_segment_simplified(
+    timestamp_dicts, _, _ = aligner.extract_timestamps_from_segment_batch(
         wavs, all_wav_lens,
         phoneme_sequences=all_ph_seqs,
         start_offset_times=all_offsets,
+        extract_embeddings=False, do_groups=False,
         debug=False,
     )
     elapsed_ms = (time.time() - t0) * 1000

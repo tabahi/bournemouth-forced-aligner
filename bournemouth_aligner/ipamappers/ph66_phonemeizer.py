@@ -73,7 +73,7 @@ no_space_langs = ['zh', 'cmn', 'yue', 'hak', 'ja', 'ko', 'th', 'my']
 
 class Phonemizer:
 
-    def __init__(self, language=None, remove_noise_phonemes=True, unicode_enable=False):
+    def __init__(self, language=None, remove_noise_phonemes=True, unicode_enable=False, verbose=1):
         '''
         Initialize the phonemizer with a specific language backend and options.
         
@@ -84,7 +84,9 @@ class Phonemizer:
         - remove_noise_phonemes: remove noise phonemes from the phoneme list that includes possibly valid but unknown phonemes
         - unicode_enable: if True, words won't be seperated by spaces, useful for languages like Chinese, Hindi, etc.
           `unicode_enable` is automatically set to True for languages like Chinese, Japanese, Korean, Hindi, etc.
+        - verbose: 0 silent, 1 warns about a phoneme the mapper does not know, 2 also reports the backend
         '''
+        self.verbose = verbose
         self.unicode_enable = unicode_enable
         self.word_counts = 0
         self.phn_counts = 0 
@@ -159,7 +161,8 @@ class Phonemizer:
 
         if (language in alt_codes):
             language = alt_codes[language]
-        print(f"Setting espeak backend for language: {language}")
+        if self.verbose >= 2:
+            print(f"Setting espeak backend for language: {language}")
         self.backend = EspeakBackend(language=language, preserve_punctuation=False, tie=False, with_stress=False)
         
 
@@ -167,7 +170,8 @@ class Phonemizer:
         # Check if the language code matches any in specical_unicode_langs
         if any(lang in language for lang in specical_unicode_langs):
             self.unicode_enable = True
-            print(f"Unicode enabled for language: {language}")
+            if self.verbose >= 2:
+                print(f"Unicode enabled for language: {language}")
 
     def break_words_alpha(self, single_sentence):
         """
@@ -198,10 +202,6 @@ class Phonemizer:
         
         return words
 
-    def break_words(self, single_sentence):
-        # for backward compatibility, only latin based languages
-        return self.break_words_alpha(single_sentence)
-    
     def break_words_special(self, single_sentence):
         """
         Special word breaker for unicode-enabled languages (e.g., Hindi, Arabic, Chinese, Japanese).
@@ -429,7 +429,8 @@ class Phonemizer:
                 # Handle unmapped phonemes
                 if eph not in phoneme_mapper and eph not in compound_mapper:
                     if eph not in self.unmapped_phonemes:
-                        print(f"Warning: phoneme not found in mapper: {eph}")
+                        if self.verbose >= 1:
+                            print(f"Warning: phoneme not found in mapper: {eph}")
                         self.unmapped_phonemes.update({eph: 1})
                     else:
                         self.unmapped_phonemes[eph] += 1

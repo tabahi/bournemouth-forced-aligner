@@ -14,12 +14,14 @@ python -m pytest tests/test_cli.py
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 
 import pytest
 import torch
-import torchaudio
+import soundfile as sf
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +39,7 @@ def dummy_audio_path(temp_dir):
     """2-second 16 kHz mono WAV."""
     path = os.path.join(temp_dir, "test_audio.wav")
     audio = torch.randn(1, 32000) * 0.1
-    torchaudio.save(path, audio, 16000)
+    sf.write(path, audio.T.numpy(), 16000)
     return path
 
 
@@ -65,10 +67,25 @@ def out(temp_dir, name="output.json"):
     return os.path.join(temp_dir, name)
 
 
-def _run(*args, timeout=30):
+def _cli_command():
+    """
+    How to invoke the CLI here.
+
+    Prefer the installed `balign` entry point, but fall back to running the module directly
+    so the tests still exercise the CLI in a checkout that has not been pip-installed -
+    otherwise every test in this file fails with FileNotFoundError and says nothing about
+    the CLI at all.
+    """
+    if shutil.which("balign"):
+        return ["balign"]
+    return [sys.executable, "-m", "bournemouth_aligner.cli"]
+
+
+def _run(*args, timeout=120):
     return subprocess.run(
-        ["balign", *args],
+        [*_cli_command(), *args],
         capture_output=True, text=True, timeout=timeout,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     )
 
 
@@ -90,6 +107,8 @@ class TestCLIFlags:
         assert "AUDIO_PATH" in r.stdout
         assert "TEXT_OR_SRT" in r.stdout
         assert "--preset" in r.stdout
+        assert "--phoneme-set" in r.stdout
+        assert "--ckpt-path" in r.stdout
         assert "--mel-path" in r.stdout
         assert "--textgrid" in r.stdout
 
@@ -104,6 +123,9 @@ class TestCLIFlags:
         # Should mention a few well-known presets
         for code in ("en-us", "de", "fr", "hi", "ar"):
             assert code in r.stdout
+        # both tables, and the std one by language group
+        for word in ("--phoneme-set=std", "--phoneme-set=ph66", "latin", "cyrillic", "zh-Hant"):
+            assert word in r.stdout
 
     def test_missing_args(self):
         r = _run()
@@ -124,22 +146,40 @@ class TestPresetResolution:
     @pytest.fixture(autouse=True)
     def _import(self):
         from bournemouth_aligner.cli import _resolve_model_lang
-        self.resolve = _resolve_model_lang
+        from bournemouth_aligner import presets
+        self.presets = presets
+        self.default_model = presets.P3CUPE_EN
+        # The ph66 tests below pin the ph66 table, so they name the set; the std ones use
+        # `self.resolve_std`, which is what the CLI does when no --phoneme-set is given.
+        self.resolve = lambda preset, model, lang: _resolve_model_lang(preset, model, lang, "ph66")
+        self.resolve_std = _resolve_model_lang
+
+    # -- ph66 --------------------------------------------------------------------------------
 
     def test_en_us_preset(self):
         model, lang = self.resolve("en-us", None, None)
-        assert "ua01c" in model          # English model
+        assert model == self.default_model
         assert lang == "en-us"
 
     def test_de_preset(self):
+        # Every non-English ph66 preset resolves to the multilingual p3cupe model; the preset
+        # still carries the espeak language through.
         model, lang = self.resolve("de", None, None)
-        assert "MLS8" in model or "mls8" in model.lower()
+        assert model == self.presets.P3CUPE_MLS7
         assert lang == "de"
 
-    def test_hi_preset(self):
-        model, lang = self.resolve("hi", None, None)
-        assert "mswc" in model.lower()
-        assert lang == "hi"
+    def test_lang_alone_picks_the_model_too(self):
+        """`--lang fr` with no preset is French, so it gets the model French gets."""
+        assert self.resolve(None, None, "fr") == (self.presets.P3CUPE_MLS7, "fr")
+        assert self.resolve("en-us", None, "pt-br") == (self.presets.P3CUPE_MLS7, "pt-br")
+
+    def test_untrained_language_warns(self, capsys):
+        model, _ = self.resolve("hi", None, None)
+        assert model == self.presets.P3CUPE_MLS7
+        assert "was not trained on 'hi'" in capsys.readouterr().err
+        for code in ("en-gb", "de", "pt-br", "es-419", "fr-be"):
+            self.resolve(code, None, None)
+            assert "was not trained on" not in capsys.readouterr().err, code
 
     def test_model_override(self):
         """--model should always win over --preset."""
@@ -154,13 +194,48 @@ class TestPresetResolution:
     def test_no_preset_defaults(self):
         """With no preset and no overrides, use English defaults."""
         model, lang = self.resolve(None, None, None)
-        assert "ua01c" in model
+        assert model == self.default_model
         assert lang == "en-us"
 
-    def test_unknown_preset_fallback(self):
-        """Unknown presets should fall back to the universal model."""
+    def test_unknown_preset_still_resolves(self):
+        """An unsupported preset warns but still returns a usable model and language."""
         model, lang = self.resolve("xx-unknown", None, None)
-        assert "mswc" in model.lower()
+        assert model
+        assert lang == "xx-unknown"
+
+    def test_english_variants_all_get_the_english_model(self):
+        for code in ("en-us", "en", "en-gb", "en-gb-scotland"):
+            model, lang = self.resolve(code, None, None)
+            assert model == self.presets.P3CUPE_EN, code
+            assert lang == code
+
+    # -- std (the default set) ---------------------------------------------------------------
+
+    def test_std_default_is_the_latin_model(self):
+        model, lang = self.resolve_std(None, None, None)
+        assert model == self.presets.P4MBFA_MODELS["latin"]
+        assert lang == "en"                       # 'en-us' in standard_g2p's own spelling
+
+    def test_std_language_picks_the_language_group(self):
+        for preset, group in (("de", "latin"), ("ru", "cyrillic"), ("zh", "cjk"),
+                              ("ja", "japanese")):
+            model, lang = self.resolve_std(preset, None, None)
+            assert model == self.presets.P4MBFA_MODELS[group], preset
+            assert lang == preset
+
+    def test_std_lang_overrides_the_preset_language_and_its_group(self):
+        model, lang = self.resolve_std("en-us", None, "ru")
+        assert lang == "ru"
+        assert model == self.presets.P4MBFA_MODELS["cyrillic"]
+
+    def test_std_unservable_language_raises(self):
+        with pytest.raises(self.presets.UnsupportedLanguageError, match="ph66"):
+            self.resolve_std("bn", None, None)
+
+    def test_model_without_a_set_leaves_the_language_as_typed(self):
+        """The checkpoint decides the set when it loads, so nothing is normalised up front."""
+        model, lang = self.resolve_std("en-us", "my_custom.ckpt", None)
+        assert (model, lang) == ("my_custom.ckpt", "en-us")
 
 
 # ---------------------------------------------------------------------------
@@ -183,9 +258,8 @@ class TestCLIProcessing:
 
     def test_text_mode_auto_output(self, temp_dir):
         """When OUTPUT_PATH is omitted the result is saved as <audio>.vs.json."""
-        import torchaudio, torch
         wav_path = os.path.join(temp_dir, "sample.wav")
-        torchaudio.save(wav_path, torch.randn(1, 32000) * 0.1, 16000)
+        sf.write(wav_path, (torch.randn(1, 32000) * 0.1).T.numpy(), 16000)
         expected_out = os.path.join(temp_dir, "sample.vs.json")
 
         r = _run(wav_path, "hello world", "--preset=en-us", timeout=120)
@@ -272,7 +346,7 @@ class TestCLIProcessing:
         r = _run(dummy_audio_path, srt_path, o, "--preset=en-us", timeout=120)
         _skip_if_failed(r)
         required = {"phoneme_id", "phoneme_label", "ipa_label",
-                    "start_ms", "end_ms", "confidence", "is_estimated"}
+                    "start_ms", "end_ms", "confidence"}
         data = json.loads(open(o).read())
         for seg in data["segments"]:
             for ts in seg["phoneme_ts"]:

@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include requirements.txt
 recursive-include bournemouth_aligner *.py
+recursive-include bournemouth_aligner/standard_g2p LICENSE *.md *.json *.tsv
 recursive-include examples *.py *.png
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]

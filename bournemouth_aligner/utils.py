@@ -3,7 +3,35 @@ Convert ts output dict to textgrid that can be imported into Praat
 '''
 
 
+import math
+
 import torch
+
+
+def read_audio(path):
+    """
+    Read an audio file as a float32 `[channels, samples]` tensor and its sample rate.
+
+    soundfile comes first: its wheels bundle libsndfile on every platform, so WAV, FLAC, OGG
+    and MP3 load with no system packages and no GPU-specific build. torchaudio.load is the
+    fallback for anything else (m4a, aac, video containers); it needs torchcodec and the FFmpeg
+    shared libraries, which is why it is not the first choice.
+    """
+    import soundfile as sf
+    try:
+        data, sr = sf.read(path, dtype="float32", always_2d=True)
+        return torch.from_numpy(data.T.copy()), sr
+    except sf.LibsndfileError as sf_error:
+        try:
+            import torchaudio
+            return torchaudio.load(path)
+        except Exception as ta_error:
+            raise RuntimeError(
+                f"cannot read {path}: soundfile reads WAV, FLAC, OGG and MP3 ({sf_error}); "
+                f"other formats need torchcodec and FFmpeg ({ta_error}). Convert the file to "
+                f"WAV, or `pip install \"bournemouth-forced-aligner[audio]\"` and install "
+                f"FFmpeg.") from ta_error
+
 
 def weighted_pool_embeddings(embeddings, log_probs, framestamps):
     """
@@ -69,74 +97,70 @@ def weighted_pool_embeddings(embeddings, log_probs, framestamps):
 
 def _calculate_confidences(log_probs, framestamps):
     """
-    Calculate confidence scores for each timestamped phoneme/group.
+    Per-phone confidence: the highest posterior the model puts on that phone anywhere inside
+    its own segment.
+
+    The PEAK, not the mean, because of the shape the model is trained to produce. p3cupe holds
+    a phone's posterior at 1.0 across the interior of its segment and brings it down to exactly
+    0.5 at each of its two boundaries, where the neighbouring phone rises through 0.5 - that
+    crossing is how the boundary is represented at all. So the frames at both ends of every
+    segment are uncertain BY DESIGN, and an average over the segment measures those ramps as
+    much as it measures the phone: it reads a short phone, which is nearly all ramp, as far
+    less confident than a long one of identical quality. The peak is the quantity the training
+    target actually pins at 1.0.
+
+    Note that these numbers are NOT comparable with a CTC model's. CTC produces a near-one-hot
+    spike per phone, so its confidences sit close to 1.0; this loss deliberately does not
+    saturate (its target distribution has entropy), so a well-aligned phone can read well below
+    0.5. Compare against other segments from the same checkpoint, not against an absolute.
 
     Args:
         log_probs: Log probabilities [T, C]
-        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx) tuples
+        framestamps: List of (phoneme_id, start_frame, end_frame, target_seq_idx) tuples.
+            Frames may be fractional.
 
     Returns:
-        List of (phoneme_id, start_frame, end_frame, target_seq_idx, avg_confidence) tuples
+        The same tuples with the confidence appended.
     """
     probs = torch.exp(log_probs)
+    n_frames, n_classes = probs.shape
     updated_tuples = []
 
-    for phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated in framestamps:
-        # Clamp to valid range
-        start_frame = max(0, int(start_frame))
-        end_frame = min(log_probs.shape[0], int(end_frame))
-        if not is_estimated or (start_frame < probs.shape[0] and end_frame <= log_probs.shape[0]):
-            avg_confidence = probs[start_frame, phoneme_id]
+    for phoneme_id, start_frame, end_frame, target_seq_idx in framestamps:
+        start = max(0, min(int(start_frame), n_frames - 1))
+        end = max(start + 1, min(int(math.ceil(float(end_frame))), n_frames))
+        if phoneme_id < n_classes:
+            confidence = float(probs[start:end, phoneme_id].max())
         else:
-            raise ValueError(f"Invalid frame range for estimated timestamp: start_frame={start_frame}, end_frame={end_frame}, log_probs shape={log_probs.shape}, is_estimated={is_estimated}, phoneme_id={phoneme_id}")
-
-        if start_frame < end_frame and phoneme_id < log_probs.shape[1]:
-
-            half_confidence = avg_confidence/2
-            total_good_frames = 1
-
-            # since there can be blanks after the first one, we only take probablities if at least prob > 0.5 compared to the first frame to avoid for-sure blanks
-            for f in range(start_frame+1, end_frame):
-                frame_prob = probs[f, phoneme_id]
-                if (frame_prob > half_confidence) or (frame_prob > 0.1):
-                    avg_confidence += frame_prob
-                    total_good_frames += 1
-            if total_good_frames > 1:
-                avg_confidence /= total_good_frames
-
-                max_confidence = probs[start_frame:end_frame, phoneme_id].max()
-                if avg_confidence < max_confidence/2:
-                    avg_confidence = max_confidence
-            
-        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence.item()))
+            confidence = 0.0
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, confidence))
 
     return updated_tuples
 
-def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate):
+def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, sample_rate,
+                  frame_stride_samples=None):
     '''
     Args:
-        framestamps: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence)
+        framestamps: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, confidence)
         spectral_length: Number of spectral frames (int)
         start_time: Start time of the segment in seconds, used to offset the timestamps
         wav_len: Length of the audio segment in samples, used to estimate the duration per spectral-frame
         sample_rate: Sample rate of the audio, used to convert frames to milliseconds
     Returns:
-        updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms)
+        updated_tuples: List of tuples (phoneme_id, start_frame, end_frame, target_seq_idx, confidence, start_ms, end_ms)
     '''
-    duration_in_seconds = wav_len / sample_rate
-    duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
+    # Frames advance at a FIXED rate: the feature extractor's total conv stride (80 samples
+    # = 5 ms for p3cupe). Dividing the clip duration by the frame count is not the same
+    # thing - the windows cover slightly less than the whole clip, so that form drifts by
+    # tens of ms over a 10 s clip. Pass `frame_stride_samples` to get the exact mapping.
+    if frame_stride_samples:
+        duration_per_frame = frame_stride_samples / sample_rate
+    else:
+        duration_in_seconds = wav_len / sample_rate
+        duration_per_frame = duration_in_seconds / spectral_length if spectral_length > 0 else 0
 
     updated_tuples = []
-    for tup in framestamps:
-        if len(tup) == 6:
-            phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence = tup
-        else:
-            # fallback for tuples with different length
-            phoneme_id, start_frame, end_frame = tup[:3]
-            target_seq_idx = tup[3] if len(tup) > 3 else -1
-            is_estimated = tup[4] if len(tup) > 4 else False
-            avg_confidence = tup[5] if len(tup) > 5 else 0.0
-
+    for phoneme_id, start_frame, end_frame, target_seq_idx, confidence in framestamps:
         # Calculate start and end times in seconds
         start_sec = start_offset_time + (start_frame * duration_per_frame)
         end_sec = start_offset_time + (end_frame * duration_per_frame)
@@ -144,7 +168,7 @@ def convert_to_ms(framestamps, spectral_length, start_offset_time, wav_len, samp
         start_ms = start_sec * 1000
         end_ms = end_sec * 1000
 
-        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, is_estimated, avg_confidence, start_ms, end_ms))
+        updated_tuples.append((phoneme_id, start_frame, end_frame, target_seq_idx, confidence, start_ms, end_ms))
 
     return updated_tuples
     
@@ -486,7 +510,6 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
         end_frame   = ms_to_frame(ph['end_ms'])
         label       = ph.get('ipa_label') or ph.get('phoneme_label', '?')
         confidence  = ph.get('confidence', 1.0)
-        estimated   = ph.get('is_estimated', False)
 
         # Boundary line at phoneme start (skip very first)
         if prev_end_frame is not None:
@@ -517,11 +540,6 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
                     color=fontcolor,
                     bbox=dict(boxstyle='round,pad=0.2',
                               facecolor=facecolor, alpha=0.9, linewidth=0))
-            # Mark estimated phonemes with a small asterisk above the label
-            if estimated:
-                ax.text(centre, mel_bins * 0.95, '*',
-                        ha='center', va='bottom', fontsize=10, fontweight='bold',
-                        color='#ff6600', alpha=0.95)
         else:
             # Narrow phoneme — place label above the top of the plot
             ax.text(centre, mel_bins * 0.92, label,
@@ -529,10 +547,6 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
                     color=fontcolor,
                     bbox=dict(boxstyle='round,pad=0.2',
                               facecolor=facecolor, alpha=0.9, linewidth=0))
-            if estimated:
-                ax.text(centre, mel_bins * 0.96, '*',
-                        ha='center', va='bottom', fontsize=8, fontweight='bold',
-                        color='#ff6600', alpha=0.95)
 
         prev_end_frame = end_frame
 
@@ -544,8 +558,7 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
         Patch(facecolor='#c0c0c0', label='>0.1 confidence', edgecolor='gray'),
         Patch(facecolor='#ffffff', label='≤0.1 confidence', edgecolor='gray'),
     ]
-    ax.legend(handles=legend_elements, loc='lower right', fontsize=8,
-              framealpha=0.75, title='* = estimated')
+    ax.legend(handles=legend_elements, loc='lower right', fontsize=8, framealpha=0.75)
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')

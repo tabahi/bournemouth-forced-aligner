@@ -1,0 +1,185 @@
+# The whole configuration of the evaluation. Nothing is set in the scripts.
+#
+#   python evaluation/process_alignments.py     # align every experiment below (cached ones are skipped)
+#   python evaluation/compute_metrics.py        # score what is not in the CSV yet
+#
+# Every key here is required, and an unknown key is an error. See README.md beside this file.
+
+
+# ---------------------------------------------------------------------------------------------
+# Where things are
+# ---------------------------------------------------------------------------------------------
+paths:
+  # Corpus audio. The paths lists (tmp/paths/<dataset>_paths_all.json, written by
+  # evaluation/dataset/<dataset>_parser.py) store audio as `~/...`, with `~` standing for
+  # these directories. The datasets are: timit | buckeye
+  audio_roots:
+    # expects TRAIN/ and TEST/, each DR1 .. DR8 / <speaker> / *.WAV, *.PHN, *.WRD
+    timit: /my_datasets/speech_data_small/timit/raw/TIMIT
+    # expects s01 .. s40 / sXXXXa|b / *.wav, *.phones, *.words
+    buckeye: /my_datasets/speech_data_small/buckeye_corpus
+
+  # Where `export_hf.py release` builds a release before it is pushed. `{releases_dir}` in a
+  # model's ckpt_path below is replaced by this.
+  releases_dir: /my_datasets/codes/bfa_models/tmp/training/selected_models_for_hf
+
+  # The scores: one file per dataset, one row per experiment. `{dataset}` is replaced by the
+  # dataset's name and has to be in the path. Relative paths start at the repository root.
+  results_csv: evaluation/results/results_{dataset}.csv
+
+
+# ---------------------------------------------------------------------------------------------
+# Models: everything an experiment's `model:` may name
+# ---------------------------------------------------------------------------------------------
+# The name is used in directory names, so no '/', no '__', no leading '.' or '_'.
+# One of three kinds per entry:
+#   model_name: <name>         a published BFA model, downloaded from huggingface.co/Tabahi/<name>
+#   ckpt_path:  <path>         a local BFA model: a release directory or a training checkpoint
+#   method: mfa                the Montreal Forced Aligner, with `acoustic_model` and `dictionary`
+#                              (pretrained names, downloaded on first use, or local paths)
+# The phoneme set is not declared: the model decides it (p3cupe is ph66, p4mbfa is std).
+models:
+  # ---- p3cupe (ph66 phoneme set)
+  CUPE-3-en:            {model_name: CUPE-3-en}             # English, LibriSpeech 500 h: the English ph66 preset
+  CUPE-3-en-base:       {model_name: CUPE-3-en-base}        # English, the root of the lineage
+  CUPE-3-mls7:          {model_name: CUPE-3-mls7}           # CUPE-3-en-base + 7 MLS languages
+  # ---- p4mbfa (std phoneme set), one per language group
+  mbfa-latin:           {model_name: mbfa-latin}            # the std default
+  mbfa-latin-benchmark: {model_name: mbfa-latin-benchmark}  # best latin model on TIMIT
+  # TIMIT and Buckeye are English, so the next three cannot be scored on them: a model whose
+  # language group is not the corpus's is refused before anything runs.
+  mbfa-cyrillic:        {model_name: mbfa-cyrillic}
+  mbfa-cjk:             {model_name: mbfa-cjk}
+  mbfa-japanese:        {model_name: mbfa-japanese}
+
+  # ---- the same releases from the local build, for checking one BEFORE it is pushed.
+  # Identical weights once pushed, so run one source or the other, not both.
+  CUPE-3-en-local:            {ckpt_path: "{releases_dir}/CUPE-3-en"}
+  CUPE-3-en-base-local:       {ckpt_path: "{releases_dir}/CUPE-3-en-base"}
+  CUPE-3-mls7-local:          {ckpt_path: "{releases_dir}/CUPE-3-mls7"}
+  mbfa-latin-local:           {ckpt_path: "{releases_dir}/mbfa-latin"}
+  mbfa-latin-benchmark-local: {ckpt_path: "{releases_dir}/mbfa-latin-benchmark"}
+
+  # ---- Montreal Forced Aligner
+  mfa-english_us_arpa:
+    method: mfa
+    acoustic_model: english_us_arpa     # e.g. english_us_arpa | english_mfa
+    dictionary: english_us_arpa         # e.g. english_us_arpa | english_us_mfa | english_mfa
+
+
+# ---------------------------------------------------------------------------------------------
+# How the sweep behaves
+# ---------------------------------------------------------------------------------------------
+run:
+  # What to do with an experiment that is already under tmp/alignments/:
+  #   skip   a finished one is left alone; an interrupted one continues where it stopped
+  #   redo   its directory is DELETED and it is aligned again
+  existing: skip
+  # true: log the espeak phoneme vocabulary of each BFA run's text (slow, and the same for
+  # every model). true | false
+  vocab_analysis: false
+  # BFA's own warnings. 0 = none | 1 = critical only | 2 = all
+  warn_level: 1
+  # torch CPU threads. null = torch's default, or an even share of the cores when the sweep
+  # is split over parallel shells (`process_alignments.py N K`).
+  torch_threads: 16
+
+
+# ---------------------------------------------------------------------------------------------
+# BFA settings: the value of each for every experiment that does not set it itself
+# ---------------------------------------------------------------------------------------------
+# Any of these can be overridden, or swept as a list, inside an `experiments:` entry.
+bfa:
+  # ---- the decoder. null = the value the model was released/trained with
+  boundary_bonus_weight: null       # null | a number >= 0   (0 switches the boundary bonus off)
+  min_phone_frames: null            # null | an integer >= 1, in 5 ms frames
+  soft_phone_frames: null           # null | an integer >= 0, in 5 ms frames
+  sub_frame_onsets: false           # false = onsets on the 5 ms frame grid | true = refined within the frame
+
+  # ---- the aligner
+  lang: en-us                       # the language the text is phonemized in; both corpora are English
+  device: cpu                       # cpu | cuda | cuda:N   (the Viterbi runs on the CPU either way)
+  bad_confidence_threshold: 0.6     # a segment with more than this share of low-confidence phonemes is flagged
+  low_confidence_level: null        # null = the model family's own level (0.2 CUPE-3, 0.1 mbfa) | a number
+  chunk_audio: true                 # true | false: split segments longer than segment_max_seconds
+  segment_max_seconds: 120          # corpus segments are far shorter, so nothing is split
+
+  # ---- the sweep
+  duration_max: 30                  # seconds every segment is padded to; a longer segment is cut
+  batch_size: 16                    # segments per forward pass. Scores move slightly with it
+  coverage_min: 0.6                 # segments aligned on less than this share of their phonemes are dropped
+
+
+# ---------------------------------------------------------------------------------------------
+# MFA
+# ---------------------------------------------------------------------------------------------
+mfa:
+  conda_env: mfa                    # the conda environment `mfa` is installed in
+  num_jobs: 8                       # MFA's own --num_jobs
+  extra_args: []                    # appended to `mfa align`, e.g. ["--beam", "100", "--retry_beam", "400"]
+  keep_workdir: false               # true keeps tmp/mfa/<experiment>_corpus and _textgrids. true | false
+
+
+# ---------------------------------------------------------------------------------------------
+# Experiments: what process_alignments.py runs
+# ---------------------------------------------------------------------------------------------
+# A list of grids. In each entry every key takes ONE value or a LIST, and the entry stands for
+# every combination. The entries are run one after another; a run that two of them describe
+# is done once.
+#
+#   name:     free text, shown in the listing                              (optional)
+#   enabled:  false keeps the entry in the file without running it         (optional, true)
+#   dataset:  timit | buckeye
+#   model:    names from `models:` above
+#   subset:   -1 = every clip | N = a seeded random N clips, the same N for every model
+#             (optional, -1). A Buckeye clip is a whole interview of about 130 segments, so
+#             a handful is already thousands of boundaries; a TIMIT clip is one 3 s sentence
+#             and it takes 100 or more to rank anything.
+#   ...and any key of `bfa:` above, to override it or sweep it.
+#
+# Each run goes to tmp/alignments/<dataset>__<model>__<settings>/, for example
+#   timit__CUPE-3-en__b30_d6_s10_grid          bonus 30, min 6 frames, soft 10, frame-grid onsets
+#   buckeye__mbfa-latin__b0_d6_s10_grid_n10    bonus 0, on 10 interviews
+#   timit__mfa-english_us_arpa                 MFA takes none of the BFA settings
+# The decoder values in the name are the ones that ran, so `null` and the model's own value
+# written out are the same run.
+experiments:
+  - name: released models and MFA, full corpora
+    dataset: [buckeye]
+    subset: -1
+    model:
+      #- CUPE-3-en
+      #- CUPE-3-en-base
+      #- CUPE-3-mls7
+      - mbfa-latin
+      - mbfa-latin-benchmark
+      - mfa-english_us_arpa
+
+  - name: boundary bonus off and on
+    enabled: false
+    dataset: [timit, buckeye]
+    model: [CUPE-3-en, CUPE-3-en-base, CUPE-3-mls7, mbfa-latin, mbfa-latin-benchmark]
+    boundary_bonus_weight: [0, 30]
+
+  - name: quick check
+    enabled: false
+    dataset: timit
+    subset: 100
+    model: [mbfa-latin, mfa-english_us_arpa]
+
+
+# ---------------------------------------------------------------------------------------------
+# Scoring: what compute_metrics.py does with the alignments
+# ---------------------------------------------------------------------------------------------
+# A row already in the CSV is not recomputed, so after changing anything here run
+# `compute_metrics.py --rescore`.
+scoring:
+  tolerance_ms: [10, 25, 50]        # the tolerances of the f1/recall/precision columns
+  align_max_dist: 100               # ms: the farthest a predicted boundary may be matched to a known one
+  offset_start: 0                   # ms subtracted from every predicted onset (see suggested_offset_start in the output)
+  offset_end: 0                     # ms added to every predicted end; only with use_end_boundaries
+  use_end_boundaries: false         # false = onsets only | true = phoneme ends are scored as boundaries too
+  measure_group_errors: true        # true | false: mean error per phoneme group and manner class
+  merge_two_token_phones: false     # true scores a std diphthong/affricate as the one phone the corpus labels
+  limit_clips: -1                   # -1 = every clip | N = the first N of the paths list
+  plots: true                       # true | false: an error histogram per experiment in tmp/plots/

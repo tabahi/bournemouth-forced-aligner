@@ -1208,7 +1208,7 @@ class AlignmentUtils: # 2025-09-10
             return assorted
 
 
-class PhonemeTimestampAligner:
+class BFA:
 
     def __init__(self, preset="en-us", model_name=None, cupe_ckpt_path=None, lang='en-us', mapper="ph66", duration_max=10, output_frames_key="phoneme_idx", device="cpu", silence_anchors=10, boost_targets=True, enforce_minimum=True, enforce_all_targets=True, ignore_noise=True):
         self.device = device
@@ -1702,7 +1702,7 @@ if __name__ == "__main__":
     text_sentence = "butterfly"
 
     # Initialize aligner
-    extractor = PhonemeTimestampAligner(
+    extractor = BFA(
         cupe_ckpt_path=onnx_path,
         lang="en-us",
         duration_max=10,

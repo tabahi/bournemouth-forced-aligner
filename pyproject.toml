@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bournemouth-forced-aligner"
-version = "1.1.5"
+version = "2.0.0"
 description = "Bournemouth Forced Aligner - Phoneme-level timestamp extraction"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -52,9 +52,11 @@ dependencies = [
     "huggingface_hub>=0.8.0",
     "numpy>=1.19.0",
     "click>=8.0.0",
-    "phonemizer>=3.3.0",
+    "transformers>=4.30.0",
+    "safetensors>=0.3.0",
     "librosa>=0.8.0",
-    "torchcodec>=0.9.1",
+    # Audio files are read with soundfile (bundled libsndfile: WAV, FLAC, OGG, MP3).
+    "soundfile>=0.12.1",
     "matplotlib>=3.10.0",
 ]
 
@@ -77,14 +79,21 @@ docs = [
     "sphinx-rtd-theme>=1.0.0",
     "myst-parser>=0.17.0",
 ]
+# Other audio formats (m4a, aac, video containers) through torchaudio + torchcodec. Also needs
+# the FFmpeg shared libraries, and a torchcodec build that matches the installed torch.
 audio = [
-    "librosa>=0.8.0",
-    "soundfile>=0.10.0",
-    "pydub>=0.25.0",
     "torchcodec>=0.9.1",
 ]
+# The ph66 phoneme set (espeak-ng + p3cupe). Also needs the espeak-ng system package.
+ph66 = [
+    "phonemizer>=3.3.0",
+]
+# Word segmenters for the std phoneme set's unspaced scripts. Mandarin needs none.
+th = ["pythainlp"]
+ja = ["fugashi", "unidic-lite"]
+yue = ["pycantonese"]
 all = [
-    "bournemouth-forced-aligner[dev,test,docs,audio]"
+    "bournemouth-forced-aligner[dev,test,docs,audio,ph66,th,ja,yue]"
 ]
 
 [project.urls]
@@ -93,7 +102,7 @@ Documentation = "https://github.com/tabahi/bournemouth-forced-aligner#readme"
 Repository = "https://github.com/tabahi/bournemouth-forced-aligner"
 "Bug Tracker" = "https://github.com/tabahi/bournemouth-forced-aligner/issues"
 Changelog = "https://github.com/tabahi/bournemouth-forced-aligner/blob/main/CHANGELOG.md"
-"CUPE Models" = "https://huggingface.co/Tabahi/CUPE-2i"
+"Models" = "https://huggingface.co/Tabahi"
 
 [project.scripts]
 balign = "bournemouth_aligner.cli:main"
@@ -105,6 +114,8 @@ exclude = ["tests*", "docs*", "examples*"]
 
 [tool.setuptools.package-data]
 "bournemouth_aligner" = ["py.typed", "*.txt", "*.md"]
+# The vendored G2P tables: the language-group token lists, and the Mandarin dictionary keys.
+"bournemouth_aligner.standard_g2p" = ["LICENSE", "VENDORED.md", "mappings/*.json", "dicts/*.tsv"]
 
 # Development tools configuration
 [tool.black]

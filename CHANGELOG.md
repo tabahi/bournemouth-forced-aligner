@@ -1,9 +1,65 @@
 # Changelog
 
+## [2.0.0] - 2026-10-15
+
+**Not compatible with 1.x.** New acoustic models and a different alignment method. v1
+checkpoints do not load, and the output format and constructor arguments have changed. Details are in
+[docs/](docs/README.md).
+
+### Added
+- **`std` phoneme set, now the default.** It phonemizes with a ByT5 G2P (vendored standard_g2p) and aligns with
+  p4mbfa models, one per language group: `mbfa-latin`, `mbfa-latin-benchmark`,
+  `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`. It covers 63 languages, including Mandarin, Cantonese and
+  Japanese, with per-phone tone, stress and length.
+- **New ph66 models**: `CUPE-3-en`, `CUPE-3-en-base`, `CUPE-3-mls7`.
+- Models download from the Hugging Face Hub (`Tabahi/`), cache first. Local models load with
+  `ckpt_path=`, `$BFA_MODEL_DIR` or `./models/`.
+- New arguments: `phoneme_set`, `ckpt_path`, `g2p_model_dir`, `g2p_device`, `g2p_cache_size`,
+  `punctuation_sil`, `boundary_bonus_weight`, `sub_frame_onsets`, `min_phone_frames`,
+  `soft_phone_frames`, `low_confidence_level`.
+- Install extras: `[ja]`, `[yue]`, `[th]` (word segmenters), `[ph66]` (espeak-ng), `[audio]`
+  (formats other than WAV/FLAC/OGG/MP3).
+- An evaluation harness (`evaluation/`, configured by `evaluate.yaml`), with MFA as a baseline. Full TIMIT
+  and Buckeye results are in [docs/evaluation.md](docs/evaluation.md).
+- Documentation in `docs/`.
+
+### Changed
+- Acoustic models with no CTC and no blank class, at 5 ms frames (was 13.125 ms). A boundary is read where two
+  phone posteriors cross, interpolated between frames.
+- One decoder: a segmental Viterbi, the same one that built the models' training targets.
+- Decoder settings default to the values each model was published with.
+- Results carry a `phoneme_set` / `lang` header. std segments use `local_ph` / `gold_phg` and
+  add `tone`, `stress`, `length`.
+- `confidence` is the peak posterior inside each phone. Its scale differs per model, so
+  `low_confidence_level` defaults to each model family's own level.
+- Audio is read with soundfile, so WAV, FLAC, OGG and MP3 need no FFmpeg and no matching torchcodec build.
+- Long audio is decoded in one pass up to 120 s (`segment_max_seconds`, renamed from
+  `segmental_max_seconds`), and chunked beyond that.
+- `warn_level=0` prints nothing, downloads included.
+
+### Removed
+- v1 models (model2i, model3a) and the CTC decoder.
+- Arguments `mapper`, `cupe_ckpt_path`, `decoder`, `silence_anchors`, `boost_targets`,
+  `enforce_minimum`, `enforce_all_targets`, `ensure_completeness`, `ignore_noise`,
+  `extend_soft_boundaries`, `boundary_softness`, `boundary_snap_*`.
+- `is_estimated` in the output, `extract_timestamps_from_segment_simplified()`, and `set_boundary_snap()`.
+- Non-forced alignment. Every phone of the transcript is placed, and doubtful segments are
+  flagged in `coverage_analysis["bad_alignment"]`.
+
+### Fixed
+- Word timestamps are matched to phones by `target_seq_idx`, so a skipped pause no longer shifts the words after it.
+- One segment whose text cannot fit its audio no longer fails the whole batch.
+- The long-audio chunker no longer runs ahead of the audio.
+- The first alignment no longer stalls for tens of seconds on many-core machines.
+- `load_model(preset=...)` switches the language too.
+
+## [1.2.0] - never released
+
+Development of the segmental decoder on the v1 models. That work became the basis of 2.0.0.
 
 ## [1.1.5] - 2026-06-05
 - Default `boundary_softness=3` is changed from 7 to 3 because at 3 it performs the best on TIMIT and buckeye dataset. 
-- Added warnings and parameter `self.warn_level` for verbose level. Use `PhonemeTimestampAligner.warn_level=3` for high verbosity.
+- Added warnings and parameter `self.warn_level` for verbose level. Use `BFA.warn_level=3` for high verbosity.
 - Fixed small segments alignment. Previously one-word or half-words ("umm or oh") raised error of not enough phonemes for the given duration. That is patched up here: https://github.com/tabahi/bournemouth-forced-aligner/commit/e58757b5ff9c3cb71303067a8050b06d01f80097#diff-c530cc1a536c371d38e233b3192f5f7935f97342d6460e039edc8107fbdf0348
 
 
@@ -17,7 +73,7 @@
 - [torchcodec](https://github.com/meta-pytorch/torchcodec) dependency.  
 
 ## [1.1.2] - 2026-02-23
-- Added `load_model()` so that the models can be loaded after `__init__`, while the class `PhonemeTimestampAligner(lang ='en-us') can be initialized without specifying a model.`
+- Added `load_model()` so that the models can be loaded after `__init__`, while the class `BFA(lang ='en-us') can be initialized without specifying a model.`
 - Added more CLI functionality. Direct text input. Generate mel-spectrum directly from blaign cli command.
 - Readme reorganization.
 - ONNX porting still in progress.
@@ -33,8 +89,8 @@ This version breaks compatibility with the previous versions (<=0.1.7)
 - `output_frames_key` parameter options updated: `phoneme_idx` → `phoneme_id`, `group_idx` → `group_id`.
 
 ### Added
-- `ipa_label` field in `phoneme_ts` and `group_ts` output entries — contains the original espeak-ng IPA phoneme, before mapping to the reduced 66-class set. Useful when you need the full espeak IPA dictionary after alignment.
-- `is_estimated` field in `phoneme_ts` and `group_ts` entries — indicates whether a phoneme was directly aligned by Viterbi (`false`) or inserted by the coverage enforcement post-processing (`true`). Downstream tasks can use this to filter out forced insertions.
+- `ipa_label` field in `phoneme_ts` and `group_ts` output entries - contains the original espeak-ng IPA phoneme, before mapping to the reduced 66-class set. Useful when you need the full espeak IPA dictionary after alignment.
+- `is_estimated` field in `phoneme_ts` and `group_ts` entries - indicates whether a phoneme was directly aligned by Viterbi (`false`) or inserted by the coverage enforcement post-processing (`true`). Downstream tasks can use this to filter out forced insertions.
 - `coverage_analysis` per-segment output with `target_count`, `aligned_count`, `missing_count`, `extra_count`, `coverage_ratio`, `missing_phonemes`, and `extra_phonemes`.
 - `process_segments()` now supports true batch processing: accepts a list of clips (each with multiple segments) and their corresponding audio waveforms. Embeddings are returned as nested lists `[clip][segment]`.
 - Enabled MPS device support for Apple Silicon.
@@ -93,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Planned support for multiple languages via phonemizer), currently available pretrained CUPE model is only for English.
 
 ### Features
-- **Core Alignment**: PhonemeTimestampAligner class for programmatic use
+- **Core Alignment**: BFA class for programmatic use
 - **CLI Tool**: `balign` command for batch processing
 - **Embeddings**: Extract phoneme embeddings for downstream tasks
 - **Confidence Scores**: Alignment quality metrics
@@ -108,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - phonemizer>=3.3.0
 
 
+[2.0.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v2.0.0
 [1.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.5
 [1.1.3]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.3
 [1.1.2]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.2

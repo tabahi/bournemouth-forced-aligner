@@ -10,7 +10,7 @@ import os
 import sys
 import tempfile
 import torch
-import torchaudio
+import soundfile as sf
 import json
 from pathlib import Path
 
@@ -19,7 +19,7 @@ TEST_CONFIG = {
     "sample_rate": 16000,
     "test_duration": 2.0,
     "device": "cpu",
-    "model_name": "en_libri1000_uj01d_e199_val_GER=0.2307.ckpt",
+    "model_name": "mbfa-latin",
     "lang": "en-us",
 }
 
@@ -44,7 +44,7 @@ def create_temp_audio_file(duration=2.0, sample_rate=16000):
     """Create temporary audio file."""
     audio = create_dummy_audio(duration, sample_rate)
     temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    torchaudio.save(temp_file.name, audio, sample_rate)
+    sf.write(temp_file.name, audio.T.numpy(), sample_rate)
     return temp_file.name
 
 def create_temp_srt_file(text="hello world", start=0.0, end=2.0):
