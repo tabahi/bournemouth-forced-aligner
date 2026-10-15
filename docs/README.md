@@ -9,7 +9,7 @@ how to test and extend the library. For using BFA, the [main README](../README.m
 > **v2 breaks compatibility with v1.** The acoustic models (p3cupe / p4mbfa instead of
 > CUPE-2i / model3a), the decoder (a segmental Viterbi instead of a CTC lattice), the default phoneme
 > set (`std`), the output format and many constructor arguments have all changed. v1 checkpoints do not
-> load. The `main` branch holds the last v1 release, and v2 is developed on `v2.0-nightly`. The
+> load. The last 1.x release is 1.1.5 (`pip install "bournemouth-forced-aligner<2"`). The
 > [CHANGELOG](../CHANGELOG.md) lists every removed and renamed name.
 
 ## Contents

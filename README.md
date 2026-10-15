@@ -18,9 +18,8 @@
 > has changed too. A segmental Viterbi, the same decoder the models were trained with, places each
 > boundary where two phone posteriors cross, instead of snapping CTC spikes onto onsets. v1
 > checkpoints do not load, and the output and constructor arguments have changed: see the
-> [CHANGELOG](CHANGELOG.md). The last 1.x release is still on old the
-> [`main`](https://github.com/tabahi/bournemouth-forced-aligner/tree/main) commits
-> (`pip install "bournemouth-forced-aligner<2"`).
+> [CHANGELOG](CHANGELOG.md). To keep using 1.x, pin it:
+> `pip install "bournemouth-forced-aligner<2"`.
 
 ## What it does
 
@@ -51,21 +50,19 @@ Output:
 
 ![Words and phonemes aligned to a mel spectrogram](examples/samples/images/LJ02_mel_words.png)
 
-## Install (WAIT for v2.0 pypi release)
+## Install
 
 ```bash
-# Install this nightly release:
-pip install git+https://github.com/tabahi/bournemouth-forced-aligner.git
+pip install bournemouth-forced-aligner
 
-# On install whatever version is currently on pypi
-#pip install bournemouth-forced-aligner
+# The latest code from GitHub instead:
+# pip install git+https://github.com/tabahi/bournemouth-forced-aligner.git
 ```
 
 That is all you need for WAV, FLAC, OGG and MP3, on Linux, macOS (Intel and Apple silicon) and Windows.
 Optional extras:
 
 ```bash
-# Not released yet
 pip install "bournemouth-forced-aligner[ja]"     # Japanese word segmentation (fugashi + unidic-lite)
 pip install "bournemouth-forced-aligner[yue]"    # Cantonese word segmentation (pycantonese)
 pip install "bournemouth-forced-aligner[ph66]"   # the espeak-ng phoneme set; also needs the espeak-ng system package

@@ -41,7 +41,7 @@ The v2 models have no blank class. Each phone's posterior is trained to have a *
 segment, and the boundary between two phones is the point where their posteriors cross. The decoder
 that places those boundaries at inference is the same decoder that built the training targets.
 
-| | v1 (`main` branch, 1.x) | v2 |
+| | v1 (1.x) | v2 |
 |---|---|---|
 | model | CUPE-2i / model3a, CTC + blank | p3cupe / p4mbfa, peak loss, no blank |
 | frame | 13.125 ms | **5 ms**, onsets read between frames |
