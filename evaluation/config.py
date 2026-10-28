@@ -17,6 +17,11 @@ DEFAULT_CONFIG = os.path.join(REPO_ROOT, "evaluation", "evaluate.yaml")
 # The decoder settings. `null` on any of them means "what the model was released/trained with".
 DECODER_AXES = ("boundary_bonus_weight", "min_phone_frames", "soft_phone_frames",
                 "sub_frame_onsets")
+# Decoder settings BFA() has no argument for: they come from the checkpoint's `decoder` record,
+# and the sweep overrides them on the built aligner's `decoder_hp`. Optional everywhere (absent
+# or `null` = the checkpoint's value), so older yamls and cached run names are unchanged.
+HP_OVERRIDES = ("soft_frame_cost", "boundary_contrast_frames", "sil_skippable",
+                "optional_sil", "class_prior_norm")
 # Passed to `BFA` as they are.
 ALIGNER_KWARGS = ("lang", "device", "bad_confidence_threshold", "low_confidence_level",
                   "chunk_audio", "segment_max_seconds")
@@ -28,16 +33,16 @@ BFA_SETTINGS = DECODER_AXES + ALIGNER_KWARGS + RUN_SETTINGS
 SECTIONS = {
     "paths": ("audio_roots", "releases_dir", "results_csv"),
     "run": ("existing", "vocab_analysis", "warn_level", "torch_threads"),
-    "bfa": BFA_SETTINGS,
+    "bfa": BFA_SETTINGS + HP_OVERRIDES,
     "mfa": ("conda_env", "num_jobs", "extra_args", "keep_workdir"),
     "scoring": ("tolerance_ms", "align_max_dist", "offset_start", "offset_end",
                 "use_end_boundaries", "measure_group_errors", "merge_two_token_phones",
                 "limit_clips", "plots"),
 }
-EXPERIMENT_KEYS = ("name", "enabled", "dataset", "subset", "model") + BFA_SETTINGS
+EXPERIMENT_KEYS = ("name", "enabled", "dataset", "subset", "model") + BFA_SETTINGS + HP_OVERRIDES
 MODEL_KEYS = {
     "bfa": ("model_name", "ckpt_path"),                    # exactly one of the two
-    "mfa": ("method", "acoustic_model", "dictionary"),     # all three
+    "mfa": ("method", "acoustic_model", "dictionary", "speaker_folders"),   # all four
 }
 
 
@@ -59,7 +64,8 @@ def load_config(path=None):
 
     _check_keys("the top level", cfg, tuple(SECTIONS) + ("models", "experiments"))
     for section, keys in SECTIONS.items():
-        _check_keys(f"`{section}:`", cfg[section] or {}, keys)
+        required = BFA_SETTINGS if section == "bfa" else None
+        _check_keys(f"`{section}:`", cfg[section] or {}, keys, required=required)
 
     paths = cfg["paths"]
     unknown = sorted(set(paths["audio_roots"]) - set(DATASET_SRT_ROOTS))

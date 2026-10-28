@@ -22,14 +22,24 @@ A language belongs to exactly one language group (by script; `standard_g2p.lang_
 group with no entry in `P4MBFA_MODELS` cannot be aligned with the std set yet -
 `get_std_preset` raises and names `phoneme_set="ph66"` as the way through.
 
-    latin     mbfa-latin      FLEURS, 36 languages, trained at the most noise (0.05)
-    cyrillic  mbfa-cyrillic   FLEURS: be bg hr kk mk ru sr uk
-    cjk       mbfa-cjk        FLEURS: cmn yue
-    japanese  mbfa-japanese   FLEURS: ja
+    latin       mbfa-latin        FLEURS, 36 languages, trained at the most noise (0.05)
+    cyrillic    mbfa-cyrillic     FLEURS: be bg hr kk mk ru sr uk
+    cjk         mbfa-cjk          FLEURS: cmn yue
+    japanese    mbfa-japanese     FLEURS: ja
+    vietnamese  mbfa-vietnamese   FLEURS: vi
+    thai_khmer  mbfa-thai         FLEURS: th (Khmer is excluded from the std set)
+    abjad       mbfa-abjad        FLEURS: ar ckb fa sd ur
+    brahmic     mbfa-brahmic      FLEURS: hi or ta
+    other_alphabetic  mbfa-other-alphabetic  FLEURS: am el hy ka ko
 
-`mbfa-latin-benchmark` is a second latin model, selectable by name only: the best TIMIT score
-of every latin run, trained at less noise (0.02). TIMIT is clean studio speech and favours it;
-`mbfa-latin` is the one meant for real recordings and so the one the presets use.
+A group's other member languages (Sanskrit in brahmic, Uyghur and Syriac in abjad, Ancient Greek
+in other_alphabetic, the latin languages FLEURS does not have) are aligned by the group's model without having been trained on.
+
+Two more latin models are selectable by name only. `mbfa-latin-benchmark` has the best TIMIT
+score of every latin run, trained at less noise (0.02); TIMIT is clean studio speech and
+favours it, and `mbfa-latin` is the one meant for real recordings, so the presets use that.
+`mbfa-latin-noEnglish` is the `mbfa-latin` recipe trained without English (35 languages): it
+is there to test transfer to a language a model never heard.
 
 ### ph66 / p3cupe
 
@@ -66,12 +76,18 @@ P4MBFA_MODELS = {
     "cyrillic": "mbfa-cyrillic",
     "cjk": "mbfa-cjk",
     "japanese": "mbfa-japanese",
-    # TODO: vietnamese, other_alphabetic, abjad, brahmic and thai_khmer have training configs
-    # in bfa_models/p4mbfa but no model yet. `burmese` cannot be trained until standard_g2p
-    # gives it an inventory (it holds only the four special tokens).
+    "vietnamese": "mbfa-vietnamese",
+    "thai_khmer": "mbfa-thai",
+    "abjad": "mbfa-abjad",
+    "brahmic": "mbfa-brahmic",
+    "other_alphabetic": "mbfa-other-alphabetic",
+    # `burmese` cannot be trained until standard_g2p gives it an inventory (it holds only the
+    # four special tokens).
 }
 # The latin model that scores best on TIMIT. Not a preset - pass it as `model_name`.
 MBFA_LATIN_BENCHMARK = "mbfa-latin-benchmark"
+# The latin recipe without English, for transfer tests. Not a preset - pass it as `model_name`.
+MBFA_LATIN_NOENGLISH = "mbfa-latin-noEnglish"
 
 # --- p3cupe models --------------------------------------------------------------------------
 P3CUPE_EN = "CUPE-3-en"
@@ -81,8 +97,33 @@ P3CUPE_MLS7 = "CUPE-3-mls7"
 P3CUPE_EN_BASE = "CUPE-3-en-base"
 
 # Every published model, with the phoneme set it decodes.
-MODELS = {**{name: "std" for name in (*P4MBFA_MODELS.values(), MBFA_LATIN_BENCHMARK)},
+MODELS = {**{name: "std" for name in (*P4MBFA_MODELS.values(), MBFA_LATIN_BENCHMARK,
+                                        MBFA_LATIN_NOENGLISH)},
           **{name: "ph66" for name in (P3CUPE_EN, P3CUPE_MLS7, P3CUPE_EN_BASE)}}
+
+# --- decoder defaults -----------------------------------------------------------------------
+# Decoder settings BFA decodes with unless the caller passes its own, by phoneme set, so every
+# model of a set gets them - the language-group models still to come included. They sit on top
+# of the `decoder` record a checkpoint carries (β 30, W 17 for every released model, the values
+# its training targets were built with); whatever is not listed here stays the checkpoint's.
+# The same for every model. W 33 won a decode-time sweep on TIMIT + Buckeye for every model.
+# β 15 is chosen for conversational speech, the target use: on full Buckeye it beats β 30 for
+# every model scored (F1@25 +0.2 to +1.6), while on read speech (TIMIT) the two are within
+# about half a point. β 0 does better still on conversational speech for the ph66 models at
+# 25 ms, but costs them 4-11 points at 10 ms on read speech and degrades more when the
+# transcript is wrong.
+#   boundary_bonus_weight      β, nats per standard deviation of local acoustic change
+#   boundary_contrast_frames   W, frames of the moving average that change is measured against
+DECODER_DEFAULTS = {
+    "ph66": {"boundary_bonus_weight": 15.0, "boundary_contrast_frames": 33},
+    "std": {"boundary_bonus_weight": 15.0, "boundary_contrast_frames": 33},
+}
+
+
+def decoder_defaults(phoneme_set):
+    """The decoder settings BFA puts over a checkpoint's own for this phoneme set, as a dict."""
+    return dict(DECODER_DEFAULTS.get(resolve_phoneme_set(phoneme_set), {}))
+
 
 # espeak-ng language codes the ph66 mapper covers. Tonal languages (cmn, yue, vi, th) and
 # distant families (ja, ko, Bantu) are out of scope for this mapper, not merely untrained.

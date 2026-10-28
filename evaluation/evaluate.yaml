@@ -15,9 +15,9 @@ paths:
   # these directories. The datasets are: timit | buckeye
   audio_roots:
     # expects TRAIN/ and TEST/, each DR1 .. DR8 / <speaker> / *.WAV, *.PHN, *.WRD
-    timit: /my_datasets/speech_data_small/timit/raw/TIMIT
+    timit: /my_datasets/speech_data/timit/raw/TIMIT
     # expects s01 .. s40 / sXXXXa|b / *.wav, *.phones, *.words
-    buckeye: /my_datasets/speech_data_small/buckeye_corpus
+    buckeye: /my_datasets/speech_data/buckeye_corpus
 
   # Where `export_hf.py release` builds a release before it is pushed. `{releases_dir}` in a
   # model's ckpt_path below is replaced by this.
@@ -36,7 +36,10 @@ paths:
 #   model_name: <name>         a published BFA model, downloaded from huggingface.co/Tabahi/<name>
 #   ckpt_path:  <path>         a local BFA model: a release directory or a training checkpoint
 #   method: mfa                the Montreal Forced Aligner, with `acoustic_model` and `dictionary`
-#                              (pretrained names, downloaded on first use, or local paths)
+#                              (pretrained names, downloaded on first use, or local paths) and
+#                              `speaker_folders`: true puts each speaker's segments in its own
+#                              folder (per-speaker fMLLR, work split over num_jobs); false is one
+#                              flat folder, which MFA treats as a single speaker run as one job
 # The phoneme set is not declared: the model decides it (p3cupe is ph66, p4mbfa is std).
 models:
   # ---- p3cupe (ph66 phoneme set)
@@ -46,6 +49,7 @@ models:
   # ---- p4mbfa (std phoneme set), one per language group
   mbfa-latin:           {model_name: mbfa-latin}            # the std default
   mbfa-latin-benchmark: {model_name: mbfa-latin-benchmark}  # best latin model on TIMIT
+  mbfa-latin-noEnglish: {model_name: mbfa-latin-noEnglish}  # the mbfa-latin recipe without English
   # TIMIT and Buckeye are English, so the next three cannot be scored on them: a model whose
   # language group is not the corpus's is refused before anything runs.
   mbfa-cyrillic:        {model_name: mbfa-cyrillic}
@@ -65,6 +69,24 @@ models:
     method: mfa
     acoustic_model: english_us_arpa     # e.g. english_us_arpa | english_mfa
     dictionary: english_us_arpa         # e.g. english_us_arpa | english_us_mfa | english_mfa
+    speaker_folders: false              # one flat folder: MFA treats it as a single speaker
+  mfa-english_mfa:
+    method: mfa
+    acoustic_model: english_mfa     # e.g. english_us_arpa | english_mfa
+    dictionary: english_us_mfa         # e.g. english_us_arpa | english_us_mfa | english_mfa
+    speaker_folders: false
+  # The MFA baselines of docs/evaluation.md: the same models, one folder per speaker
+  mfa-english_us_arpa-spk:
+    method: mfa
+    acoustic_model: english_us_arpa
+    dictionary: english_us_arpa
+    speaker_folders: true
+  mfa-english_mfa-spk:
+    method: mfa
+    acoustic_model: english_mfa
+    dictionary: english_us_mfa
+    speaker_folders: true
+
 
 
 # ---------------------------------------------------------------------------------------------
@@ -90,8 +112,8 @@ run:
 # ---------------------------------------------------------------------------------------------
 # Any of these can be overridden, or swept as a list, inside an `experiments:` entry.
 bfa:
-  # ---- the decoder. null = the value the model was released/trained with
-  boundary_bonus_weight: null       # null | a number >= 0   (0 switches the boundary bonus off)
+  # ---- the decoder. null = BFA's default for the model (presets.DECODER_DEFAULTS, else the model's own)
+  boundary_bonus_weight: null       # null = BFA's default (15) | a number >= 0   (0 switches the boundary bonus off)
   min_phone_frames: null            # null | an integer >= 1, in 5 ms frames
   soft_phone_frames: null           # null | an integer >= 0, in 5 ms frames
   sub_frame_onsets: false           # false = onsets on the 5 ms frame grid | true = refined within the frame
@@ -138,24 +160,20 @@ mfa:
 #   ...and any key of `bfa:` above, to override it or sweep it.
 #
 # Each run goes to tmp/alignments/<dataset>__<model>__<settings>/, for example
-#   timit__CUPE-3-en__b30_d6_s10_grid          bonus 30, min 6 frames, soft 10, frame-grid onsets
+#   timit__CUPE-3-en__b15_d6_s10_grid_cf33     bonus 15, min 6 frames, soft 10, frame-grid onsets,
+#                                              contrast window 33 (tagged: the model file says 17)
 #   buckeye__mbfa-latin__b0_d6_s10_grid_n10    bonus 0, on 10 interviews
 #   timit__mfa-english_us_arpa                 MFA takes none of the BFA settings
 # The decoder values in the name are the ones that ran, so `null` and the model's own value
 # written out are the same run.
 experiments:
-  - name: released models and MFA, full corpora
-    dataset: [buckeye]
+  - name: released models and MFA, full corpora (the tables in docs/evaluation.md)
+    dataset: [timit, buckeye]
     subset: -1
-    model:
-      #- CUPE-3-en
-      #- CUPE-3-en-base
-      #- CUPE-3-mls7
-      - mbfa-latin
-      - mbfa-latin-benchmark
-      - mfa-english_us_arpa
+    model: [CUPE-3-en, CUPE-3-en-base, CUPE-3-mls7, mbfa-latin, mbfa-latin-benchmark,
+            mbfa-latin-noEnglish, mfa-english_us_arpa-spk, mfa-english_mfa-spk]
 
-  - name: boundary bonus off and on
+  - name: boundary bonus off, and at 30
     enabled: false
     dataset: [timit, buckeye]
     model: [CUPE-3-en, CUPE-3-en-base, CUPE-3-mls7, mbfa-latin, mbfa-latin-benchmark]

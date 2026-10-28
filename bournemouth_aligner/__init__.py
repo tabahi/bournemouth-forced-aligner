@@ -7,7 +7,7 @@ Two phoneme sets: "std" (standard_g2p phonemes, p4mbfa models, the default) and 
 URL: https://github.com/tabahi/bournemouth-forced-aligner
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 from .core import BFA
 

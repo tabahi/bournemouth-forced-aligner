@@ -7,29 +7,55 @@
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-yellow.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![GitHub stars](https://img.shields.io/github/stars/tabahi/bournemouth-forced-aligner.svg)](https://github.com/tabahi/bournemouth-forced-aligner/stargazers)
 
-**Label which phoneme is spoken at which millisecond of a recording, in 63 languages.**
+**Find where every phoneme and word starts and ends in a recording, in 82 languages.**
 
-[Developer guide](docs/README.md) • [About the models](docs/about-models.md) • [Evaluation](docs/evaluation.md) • [Language support](docs/language-support.md) • [Changelog](CHANGELOG.md)
+[Getting started](#getting-started) • [Language support](docs/language-support.md) • [About the models](docs/about-models.md) • [Evaluation](docs/evaluation.md) • [Developer guide](docs/README.md) • [Changelog](CHANGELOG.md)
 
 </div>
 
-> ⚠️ **BFA 2.0 is not compatible with 1.x.** The acoustic models are new: no CTC, no blank class,
-> 5 ms frames, and a multilingual model family that is now the default. The alignment method
-> has changed too. A segmental Viterbi, the same decoder the models were trained with, places each
-> boundary where two phone posteriors cross, instead of snapping CTC spikes onto onsets. v1
-> checkpoints do not load, and the output and constructor arguments have changed: see the
-> [CHANGELOG](CHANGELOG.md). To keep using 1.x, pin it:
-> `pip install "bournemouth-forced-aligner<2"`.
+You give BFA a recording and the words spoken in it. It gives back a time for every phoneme and
+every word, as a Praat TextGrid or a JSON file. This is called **forced alignment**. You don't need
+a pronunciation dictionary or any training: BFA works out the phonemes from the text itself.
 
-## What it does
+![The word "butterfly" aligned: each phoneme's span marked on the spectrogram](examples/samples/images/butterfly_mel.png)
 
-Given an audio file and its transcript, BFA returns a start and end time for every phoneme and
-word: a **forced alignment**. No pronunciation dictionary and no per-language training are needed.
+## Getting started
+
+### 1. Install
+
+You need [Python](https://www.python.org/downloads/) 3.8 or newer. Then, in a terminal
+(Command Prompt or PowerShell on Windows):
+
+```bash
+pip install bournemouth-forced-aligner
+```
+
+This works on Windows, macOS and Linux, and reads WAV, FLAC, OGG and MP3 files.
+
+### 2. Align one recording
+
+```bash
+balign recording.wav "the words spoken in the recording" --preset=en-us --textgrid=recording.TextGrid
+```
+
+- `recording.wav` is your audio file.
+- The text in quotes is what is said in it, written out in ordinary spelling.
+- `--preset=en-us` is the language: American English here. See [step 3](#3-other-languages) for others.
+- `--textgrid=recording.TextGrid` writes a TextGrid you can open in [Praat](https://www.fon.hum.uva.nl/praat/),
+  with a `phonemes` tier and a `words` tier.
+
+BFA also writes `recording.vs.json` next to the audio, with the same times and more detail.
+
+The first run downloads the models, about 1.3 GB in all, once. After that BFA works offline.
+
+To try it on a recording that comes with BFA, download
+[butterfly.wav](examples/samples/audio/109867__timkahn__butterfly.wav) and run:
+
+```bash
+balign butterfly.wav "butterfly" --preset=en-us --textgrid=butterfly.TextGrid
+```
 
 ```text
-Input:  butterfly.wav  +  "butterfly"
-
-Output:
   b   →    0 ms –  52 ms  (confidence: 0.89)
   ə   →   52 ms – 168 ms  (confidence: 0.09)
   t   →  168 ms – 258 ms  (confidence: 0.05)
@@ -40,57 +66,58 @@ Output:
   ɪ   →  826 ms – 982 ms  (confidence: 0.25)
 ```
 
-| | |
-|---|---|
-| Speed | ~1 s per 10 s of audio on CPU |
-| Resolution | 5 ms frames, with onsets interpolated between frames |
-| Languages | 63 with the default `std` phoneme set, including Mandarin, Cantonese and Japanese. 80+ through espeak-ng (`ph66`) |
-| Output | JSON (phoneme, word and phoneme-group timestamps, tone/stress/length), Praat TextGrid, phoneme embeddings |
-| Runs on | Linux, macOS, Windows; CPU or GPU |
+Phonemes are written in IPA. The confidence says how sure the model is of each phoneme. Compare
+it between phonemes of one recording, not as an absolute score: a correctly placed phoneme often
+reads below 0.5 ([why](docs/about-models.md#confidence)).
 
-![Words and phonemes aligned to a mel spectrogram](examples/samples/images/LJ02_mel_words.png)
+### 3. Other languages
 
-## Install
+Change `--preset`:
 
 ```bash
-pip install bournemouth-forced-aligner
-
-# The latest code from GitHub instead:
-# pip install git+https://github.com/tabahi/bournemouth-forced-aligner.git
+balign aufnahme.wav "guten Morgen" --preset=de --textgrid=aufnahme.TextGrid
 ```
 
-That is all you need for WAV, FLAC, OGG and MP3, on Linux, macOS (Intel and Apple silicon) and Windows.
-Optional extras:
+| | | | |
+|---|---|---|---|
+| `en-us` English (US) | `en-GB` English (UK) | `de` German | `fr` French |
+| `es` Spanish | `pt` Portuguese | `it` Italian | `nl` Dutch |
+| `ru` Russian | `uk` Ukrainian | `pl` Polish | `tr` Turkish |
+| `zh` Mandarin | `yue` Cantonese | `ja` Japanese | `ko` Korean |
+| `vi` Vietnamese | `th` Thai | `ar` Arabic | `fa` Persian |
+| `hi` Hindi | `ur` Urdu | `el` Greek | `sw` Swahili |
+
+That is a sample. All 82 languages, and what to know about each (tone, word segmentation), are
+on the [language support](docs/language-support.md) page, or run `balign --list-presets`.
+Japanese, Cantonese and Thai need one extra install step, listed [below](#optional-extras).
+
+### 4. A long recording
+
+For a recording with many sentences, such as an interview, put the transcript in a JSON file.
+Give each stretch of speech its start and end time in seconds:
+
+```json
+{"segments": [
+  {"start": 0.0, "end": 4.2, "text": "so where did you grow up"},
+  {"start": 4.6, "end": 9.8, "text": "in a small town near the coast"}
+]}
+```
 
 ```bash
-pip install "bournemouth-forced-aligner[ja]"     # Japanese word segmentation (fugashi + unidic-lite)
-pip install "bournemouth-forced-aligner[yue]"    # Cantonese word segmentation (pycantonese)
-pip install "bournemouth-forced-aligner[ph66]"   # the espeak-ng phoneme set; also needs the espeak-ng system package
-pip install "bournemouth-forced-aligner[audio]"  # other audio formats (m4a, aac, mp4); also needs FFmpeg
+balign interview.wav interview.json --preset=en-us --textgrid=interview.TextGrid
 ```
 
-The first run downloads the aligner model (~55 MB) and, for the default phoneme set, the G2P
-model [`charsiu/g2p_multilingual_byT5_small_100`](https://huggingface.co/charsiu/g2p_multilingual_byT5_small_100)
-(~1.2 GB, once) into the Hugging Face cache. After that, everything runs offline.
+The times don't need to be exact, but each stretch must contain all of its words (a little
+silence either side is fine). BFA finds the phonemes inside each stretch.
+[Whisper](https://github.com/openai/whisper) and most speech-to-text tools write this format
+(with extra fields, which BFA ignores).
 
-## Quick start
-
-From the command line:
-
-```bash
-balign butterfly.wav "butterfly" --preset=en-us --textgrid=butterfly.TextGrid --mel-path=mel.png
-```
-
-This writes `butterfly.vs.json` next to the audio, a Praat TextGrid, and a plot:
-
-![Butterfly alignment](mel_spectrum_butterfly.png)
-
-From Python:
+### 5. From Python
 
 ```python
 from bournemouth_aligner import BFA
 
-aligner = BFA(preset="en-us")              # "de", "fr", "ru", "zh", "ja", ...
+aligner = BFA(preset="en-us")
 audio = aligner.load_audio("butterfly.wav")
 result = aligner.process_sentence("butterfly", audio)
 
@@ -100,98 +127,112 @@ for ph in result["segments"][0]["phoneme_ts"]:
 aligner.convert_to_textgrid(result, output_file="butterfly.TextGrid")
 ```
 
-To align a whole recording from a Whisper-style transcript (`{"segments": [{"start", "end", "text"}]}`):
+For a transcript file: `aligner.process_srt_file("interview.json", "interview.wav", ts_out_path="interview.vs.json")`.
+More in [examples/](examples/) and the [developer guide](docs/README.md), which also explains
+every field of the JSON output.
 
-```python
-result = aligner.process_srt_file("interview.srt.json", "interview.wav", ts_out_path="interview.vs.json")
-```
+## Tips for good results
+
+- **The text must match the audio.** Every phoneme of the text is placed somewhere, so a word that
+  isn't spoken gets squeezed into its neighbours. Segments that went badly are flagged in the
+  JSON as `coverage_analysis["bad_alignment"]`.
+- **Write numbers as words.** "twenty five", not "25". The same goes for abbreviations and symbols.
+- **Shorter stretches align better.** A stretch of up to 2 minutes is aligned in one pass, and
+  longer ones are handled automatically, but a transcript split into sentences works best.
+- **The phonemes come from a dictionary-style pronunciation of the text**, not from what the
+  speaker actually said. Reduced or dialectal pronunciations are aligned against the standard form.
+- **Conversational vs read speech.** The default setting is tuned for conversational speech. For
+  each phoneme's own onset, rather than the boundaries as a whole, try `--boundary-bonus-weight=0`.
+
+## Optional extras
 
 ```bash
-balign interview.wav interview.srt.json interview.vs.json --preset=en-us
+pip install "bournemouth-forced-aligner[ja]"     # Japanese word segmentation (fugashi + unidic-lite)
+pip install "bournemouth-forced-aligner[yue]"    # Cantonese word segmentation (pycantonese)
+pip install "bournemouth-forced-aligner[th]"     # Thai word segmentation (pythainlp)
+pip install "bournemouth-forced-aligner[ph66]"   # the espeak-ng phoneme set; also needs the espeak-ng program
+pip install "bournemouth-forced-aligner[audio]"  # other audio formats (m4a, aac, mp4); also needs FFmpeg
 ```
 
-More: [examples/](examples/), and the full API, CLI options and output format in the
-[developer guide](docs/README.md).
+The latest code from GitHub: `pip install git+https://github.com/tabahi/bournemouth-forced-aligner.git`.
 
-## Languages and phoneme sets
-
-BFA has two phoneme sets. Each is decoded by its own family of models:
-
-| `phoneme_set` | Phonemizer | Models | Languages |
-|---|---|---|---|
-| **`"std"`** (default) | [standard_g2p](https://github.com/tabahi/CharsiuG2P), a ByT5 G2P | `mbfa-latin`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`: one per writing system | 63, with tone, stress and length labels |
-| `"ph66"` | espeak-ng, reduced to 66 phonemes | `CUPE-3-en` (English), `CUPE-3-mls7` (everything else) | 80+, best trained on English + 7 European languages |
-
-```python
-BFA(preset="de")                         # std, mbfa-latin
-BFA(preset="zh")                         # std, mbfa-cjk, with tone
-BFA(preset="en-us", phoneme_set="ph66")  # espeak-ng, CUPE-3-en: the most accurate English model
-BFA(preset="hi", phoneme_set="ph66")     # a language the std set has no model for yet
-```
-
-Every supported language, its code, and the details (tone, word segmentation, and why
-numbers must be spelled out) are on the [language support](docs/language-support.md) page.
-
-## Models
-
-Eight models, each a [Hugging Face repository](https://huggingface.co/Tabahi) that downloads on first use.
-Each is a 13.5-14.9 M-parameter CNN that looks at 120 ms of audio at a time and outputs a phoneme
-posterior every 5 ms. The table, how they are trained, and how a boundary is read off them are on
-[about the models](docs/about-models.md).
-
-## Accuracy
-
-Phoneme-onset F1 on full corpora (TIMIT 6,300 clips, Buckeye 255 recordings), compared with the
-Montreal Forced Aligner:
-
-| | TIMIT, within 10 ms | TIMIT, within 25 ms | Buckeye, within 25 ms |
-|---|---:|---:|---:|
-| BFA `CUPE-3-en` (ph66, English) | **58.1** | 76.2 | 73.3 |
-| BFA `mbfa-latin` (std, 36 languages, default) | 54.3 | 72.5 | 68.4 |
-| MFA `english_us_arpa` (English model + dictionary) | 54.8 | **80.5** | **83.5** |
-
-- **BFA's onsets are more precise.** The English model beats MFA within 10 ms and has a lower median error (7 vs 8 ms).
-  At 25 ms MFA leads by 4 points, because BFA has more large misses.
-- **One model covers 36 languages, with no pronunciation dictionary.** MFA needs a separate acoustic model and dictionary for each language.
-- **Buckeye favours MFA.** Its reference boundaries were first placed by an HMM aligner with an
-  ARPAbet dictionary, the same approach MFA uses. MFA scores higher on this noisy conversational corpus than on clean TIMIT.
-
-The full analysis is on the [evaluation](docs/evaluation.md) page. A label-free test is coming soon.
-It stretches and compresses phones by known amounts, adds noise, and checks that the aligner
-measures the changes. It needs no hand labels, so it works in every language (see
-[planned](docs/evaluation.md#planned-a-label-free-duration-test)).
-
-## Settings worth knowing
+## What's inside
 
 | | |
 |---|---|
-| `boundary_bonus_weight=0` | Turns off the acoustic-change bonus. Better per-phone onset accuracy, and better on spontaneous speech with the ph66 models. |
-| `duration_max=10` | Pad short segments less. Much faster on short clips; long segments are never cut. |
-| `low_confidence_level` | Confidence is on a different scale for each model. Segments that fall below it are flagged `coverage_analysis["bad_alignment"]`. |
-| `punctuation_sil=True` | std: let the aligner place a pause at commas and full stops. |
+| Speed | ~1 s per 10 s of audio on an ordinary CPU; a GPU is optional |
+| Resolution | 5 ms frames, with each boundary placed between frames |
+| Languages | 82 with the default phoneme set, including Mandarin, Cantonese, Japanese, Korean, Vietnamese, Thai, Arabic, Persian, Hindi and Greek; 80+ through espeak-ng (`ph66`) |
+| Output | Praat TextGrid; JSON with phoneme, word and phoneme-group times, plus tone, stress and length; phoneme embeddings |
+| Runs on | Linux, macOS, Windows |
+
+### Phoneme sets
+
+BFA has two phoneme sets, each with its own models:
+
+| `phoneme_set` | Pronunciations from | Models | Languages |
+|---|---|---|---|
+| **`std`** (default) | [standard_g2p](https://github.com/tabahi/CharsiuG2P), a neural G2P model | one per writing system: `mbfa-latin`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `mbfa-vietnamese`, `mbfa-thai`, `mbfa-abjad`, `mbfa-brahmic`, `mbfa-other-alphabetic` | 82, with tone, stress and length labels |
+| `ph66` | espeak-ng, reduced to 66 phonemes | `CUPE-3-en` (English), `CUPE-3-mls7` (everything else) | 80+, trained on English and 7 European languages |
+
+```bash
+balign recording.wav "hello world" --preset=en-us --phoneme-set=ph66   # the most accurate English model
+balign recording.wav "<Bengali text>" --preset=bn --phoneme-set=ph66   # Bengali: only ph66 has it so far
+```
+
+### Models
+
+Each language group has its own model, downloaded from [Hugging Face](https://huggingface.co/Tabahi)
+the first time it's needed: nine for the default phoneme set, three for `ph66`, and two
+alternative Latin-script models. Each is a small neural network (about 15 M parameters) that
+looks at 120 ms of audio at a time and estimates which phoneme is being spoken every 5 ms. How
+they are trained and how a boundary is read off them: [about the models](docs/about-models.md).
+
+### Accuracy
+
+Phoneme-boundary F1 on two hand-labelled English corpora (TIMIT, 6,300 read sentences; Buckeye,
+255 conversational recordings), against the Montreal Forced Aligner (MFA):
+
+| | TIMIT, within 10 ms | TIMIT, within 25 ms | Buckeye, within 25 ms |
+|---|---:|---:|---:|
+| BFA `CUPE-3-en` (ph66, English) | **58.7** | 76.8 | 74.2 |
+| BFA `mbfa-latin` (default, 36 languages) | 53.7 | 72.6 | 68.4 |
+| MFA `english_us_arpa` (English model + dictionary) | 55.2 | **80.9** | **84.3** |
+
+- **BFA's boundaries are more precise.** The English model beats MFA within 10 ms and has a lower
+  median error (7 vs 8 ms). At 25 ms MFA leads by 4 points, because BFA has more large misses.
+- **One model covers 36 languages, with no pronunciation dictionary.** MFA needs a separate
+  acoustic model and dictionary for each language.
+- **Buckeye favours MFA.** Its reference boundaries were first placed by an HMM aligner with an
+  ARPAbet dictionary, the same approach MFA uses, and MFA scores higher on this noisy
+  conversational corpus than on clean TIMIT.
+
+The full analysis is on the [evaluation](docs/evaluation.md) page.
+
+### Settings worth knowing
+
+| Python / command line | |
+|---|---|
+| `boundary_bonus_weight` / `--boundary-bonus-weight` | How strongly boundaries are pulled towards sudden changes in the sound. The default, 15, is set for conversational speech. 0 gives better onsets for individual phonemes. |
+| `duration_max=10` | Much faster on short clips. Long segments are never cut. |
+| `low_confidence_level` | The confidence below which a phoneme counts as doubtful when flagging bad segments. |
+| `punctuation_sil=True` | Let the aligner place a pause at commas and full stops (default phoneme set only). |
 | `warn_level=0` | Print nothing, downloads included. |
 
-## FAQ
+All options: `balign --help`, and the [developer guide](docs/README.md).
 
-**Do I need a pronunciation dictionary?** No. The G2P model (or espeak-ng) writes the phonemes.
+## Upgrading from 1.x
 
-**Numbers come out wrong.** The std G2P reads dictionary words. Write "twenty five", not "25", or
-use `phoneme_set="ph66"`, which expands numbers.
-
-**Confidence looks low.** The models are trained not to saturate: a well-placed phone often
-reads below 0.5. Compare confidences within one model only. See
-[confidence](docs/about-models.md#confidence).
-
-**Words in the transcript are not in the audio.** Every phone of the text is always placed, so
-extra words get squeezed into neighbouring audio. Check `coverage_analysis["bad_alignment"]`.
-
-**Long recordings?** Segments up to 120 s are aligned in one pass. Longer ones are walked in
-overlapping windows automatically. A transcript split into sentences still works best.
+BFA 2.0 is not compatible with 1.x. The acoustic models are new: no CTC, no blank class, 5 ms
+frames, and a multilingual model family that is now the default. The alignment method has
+changed too: a segmental Viterbi, the same decoder the models were trained with, places each
+boundary where two phoneme posteriors cross, instead of snapping CTC spikes onto onsets. v1
+models do not load, and the output and constructor arguments have changed: see the
+[CHANGELOG](CHANGELOG.md). To keep using 1.x, pin it: `pip install "bournemouth-forced-aligner<2"`.
 
 ## Contribute
 
-- **More language groups.** Vietnamese, Greek/Armenian/Georgian/Korean, Arabic-script, Indic
-  and Thai have token lists in the std set, but no trained model yet.
+- **More language groups.** Khmer and Burmese need G2P work first.
 - **ONNX / C++.** [`bournemouth_aligner/cpp_onnx/`](bournemouth_aligner/cpp_onnx/) still
   targets the v1 model.
 
@@ -199,6 +240,8 @@ Open an [issue](https://github.com/tabahi/bournemouth-forced-aligner/issues) to 
 Start with the [developer guide](docs/README.md).
 
 
+
+[Getting started](#getting-started) • [Language support](docs/language-support.md) • [About the models](docs/about-models.md) • [Evaluation](docs/evaluation.md) • [Developer guide](docs/README.md) • [Changelog](CHANGELOG.md)
 
 <div align="center">
 

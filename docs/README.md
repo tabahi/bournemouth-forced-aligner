@@ -143,7 +143,8 @@ BFA(
     punctuation_sil=False,        # std: write a SIL at pause punctuation
     duration_max=30,              # padding width (s) of the batched path; longer segments run alone
     device="auto",                # "auto" | "cpu" | "cuda" | "mps"
-    boundary_bonus_weight=None,   # onset bonus; None = the model's value (30); 0 = off
+    boundary_bonus_weight=None,   # onset bonus; None = 15; 0 = off
+    boundary_contrast_frames=None,# onset bonus contrast window, 5 ms frames; None = 33
     sub_frame_onsets=True,        # interpolate onsets at the posterior crossing
     min_phone_frames=None,        # duration floor in 5 ms frames; None = the model's (6)
     soft_phone_frames=None,       # soft duration frames above the floor; None = the model's (10)
@@ -166,7 +167,7 @@ BFA(
 | parameter | notes |
 |---|---|
 | `preset`, `lang` | `lang` is overridden by `preset` only while it is still the default. std takes BCP 47 / ISO 639-3 / espeak spellings ([language support](language-support.md)). ph66 takes espeak-ng codes. |
-| `model_name` | `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `CUPE-3-en`, `CUPE-3-en-base`, `CUPE-3-mls7`, or a repo id. |
+| `model_name` | `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-latin-noEnglish`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `mbfa-vietnamese`, `mbfa-thai`, `mbfa-abjad`, `mbfa-brahmic`, `CUPE-3-en`, `CUPE-3-en-base`, `CUPE-3-mls7`, or a repo id. |
 | `ckpt_path` | A p4mbfa model also fixes the language group, so `lang` must belong to that group. |
 | `duration_max` | Memory against batch size. Short segments are padded to this width, which dominates CPU time on short clips (TIMIT: ~1.0 s/clip at 30, ~0.3 s at 10, identical onsets). It never truncates. |
 | `boundary_bonus_weight` | Helps boundary F1 on read speech, and hurts per-phone onset accuracy and spontaneous speech with ph66 models. See [the onset bonus](about-models.md#the-onset-bonus). |
@@ -276,7 +277,8 @@ balign AUDIO TEXT_OR_SRT [OUTPUT] [options]
 | `--g2p-device DEVICE` | `--device` | std only |
 | `--punctuation-sil / --no-punctuation-sil` | off | std only |
 | `--duration-max FLOAT` | **60** | padding width of the batched path (the Python default is 30) |
-| `--boundary-bonus-weight FLOAT` | model's | `0` = off |
+| `--boundary-bonus-weight FLOAT` | 15 ph66, 30 std | `0` = off |
+| `--boundary-contrast-frames INT` | 33 | onset bonus contrast window, 5 ms frames |
 | `--sub-frame-onsets / --frame-grid-onsets` | sub-frame | |
 | `--min-phone-frames INT` | model's | |
 | `--segment-max-seconds FLOAT` | 120 | |
@@ -372,10 +374,10 @@ are in [evaluation.md](evaluation.md).
    to `models:` in `evaluate.yaml` as a `ckpt_path` entry.
 3. To make it a preset, publish it under `Tabahi/` and change the name in `presets.py`.
 
-### A new language group (e.g. `vietnamese`)
+### A new language group
 
 The token list and the language membership already exist in standard_g2p. Train a model with
-the group's yaml in `bfa_models/p4mbfa/`, add `"vietnamese": "mbfa-vietnamese"` to
+the group's yaml in `bfa_models/p4mbfa/`, add `"<group>": "<the published repo name>"` to
 `presets.P4MBFA_MODELS`, and add the group to [language-support.md](language-support.md).
 Nothing in `core.py` changes. If the group needs a word segmenter, it is already handled in
 `standard_g2p/word_segmentation.py`. Add the package as an extra in `pyproject.toml` and `setup.py`.

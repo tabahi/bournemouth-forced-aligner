@@ -23,9 +23,10 @@ p4mbfa checkpoint belongs to one LANGUAGE GROUP (latin, cyrillic, cjk, ...). The
 the group and the group picks the checkpoint (`presets.py`).
 
 The models are the published ones and nothing else: `mbfa-latin`, `mbfa-latin-benchmark`,
-`mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese` (std) and `CUPE-3-en`, `CUPE-3-en-base`,
-`CUPE-3-mls7` (ph66), each a Hugging Face repository fetched on first use (`hub.py`), or the
-same thing on disk through `ckpt_path`.
+`mbfa-latin-noEnglish`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `mbfa-vietnamese`,
+`mbfa-thai`, `mbfa-abjad`, `mbfa-brahmic`, `mbfa-other-alphabetic` (std) and `CUPE-3-en`,
+`CUPE-3-en-base`, `CUPE-3-mls7` (ph66), each a Hugging Face repository fetched on first use
+(`hub.py`), or the same thing on disk through `ckpt_path`.
 
 ## What places a boundary
 
@@ -82,7 +83,7 @@ class BFA:
     def __init__(self, preset="en-us", model_name=None, lang='en-us',
                  duration_max=30, device="auto", boundary_bonus_weight=None,
                  sub_frame_onsets=True, min_phone_frames=None, soft_phone_frames=None,
-                 bad_confidence_threshold=0.6, low_confidence_level=None, chunk_audio=True,
+                 boundary_contrast_frames=None, bad_confidence_threshold=0.6, low_confidence_level=None, chunk_audio=True,
                  chunk_seconds=DEFAULT_CHUNK_SECONDS, chunk_max_phonemes=DEFAULT_MAX_PHONEMES,
                  chunk_phonemes_per_second=DEFAULT_PHONEMES_PER_SECOND, chunk_vad=True,
                  segment_max_seconds=DEFAULT_SEGMENT_MAX_SECONDS, warn_level=1,
@@ -96,8 +97,10 @@ class BFA:
                 language and, through it, the checkpoint. `None` loads no model, and
                 `load_model()` must be called before aligning anything.
             model_name (str, optional): A published model, overriding the preset's choice:
-                "mbfa-latin", "mbfa-latin-benchmark", "mbfa-cyrillic", "mbfa-cjk",
-                "mbfa-japanese" (std) or "CUPE-3-en", "CUPE-3-en-base", "CUPE-3-mls7" (ph66),
+                "mbfa-latin", "mbfa-latin-benchmark", "mbfa-latin-noEnglish", "mbfa-cyrillic",
+                "mbfa-cjk", "mbfa-japanese", "mbfa-vietnamese", "mbfa-thai", "mbfa-abjad",
+                "mbfa-brahmic", "mbfa-other-alphabetic" (std) or "CUPE-3-en", "CUPE-3-en-base",
+                "CUPE-3-mls7" (ph66),
                 or any Hugging Face repository id in the same layout. Downloaded on first use
                 (`hub.resolve_model`).
             lang (str): Language code for phonemization. Only overridden by `preset` while it
@@ -133,27 +136,27 @@ class BFA:
             device (str): "cpu", "cuda", "mps", or "auto" to detect.
             boundary_bonus_weight (float or None): Weight, in nats per standard deviation, on
                 the log-mel acoustic-change bonus added to every phone-onset transition inside
-                the Viterbi. `None` (default) uses the value the model was published with,
-                which is 30 for every released model; 0 turns the bonus off.
+                the Viterbi. `None` (default) uses the phoneme set's default
+                (`presets.DECODER_DEFAULTS`): 15 for every model. 0 turns the bonus off.
 
-                Which is better depends on what is being measured (TIMIT, held-out half of
-                the 400-clip probe, from the model cards):
+                Boundary F1@25 with W = 33, TIMIT (1,000 clips) / Buckeye (10 recordings):
 
-                                      boundary f1@25        phone onsets within 25 ms
-                                      bonus 0   bonus 30    bonus 0   bonus 30
-                    CUPE-3-en          73.8      75.6        73.1      68.7
-                    CUPE-3-en-base     73.8      76.0        74.6      68.6
-                    CUPE-3-mls7        70.9      74.2        71.1      66.4
-                    mbfa-latin         65.2      71.7
-                    mbfa-latin-bench.  68.8      72.9
+                                      bonus 0       bonus 15      bonus 30
+                    CUPE-3-en       74.6 / 77.2   76.7 / 75.2   76.6 / 73.9
+                    mbfa-latin      67.0 / 68.2   72.4 / 69.7   72.9 / 69.6
 
-                Scored as a set of boundaries on read speech the bonus wins on every model.
-                Scored per phone ONSET it loses about five points, because it drags stop
-                onsets onto the burst and pulls vowel onsets early. And on conversational
-                speech (Buckeye, 3 interviews) the CUPE-3 models score higher WITHOUT it -
-                boundary f1@25 of 72.0 against 68.8 for CUPE-3-en - while the mbfa models do
-                not care (63.2 against 63.6). Keep it for read speech and segmentation; try 0
-                for spontaneous speech and when each phone's own onset is what matters.
+                On read speech the bonus wins on every model, most at 10 ms. Scored per phone
+                ONSET it loses about five points, because it drags stop onsets onto the burst
+                and pulls vowel onsets early. On conversational speech the ph66 models score
+                higher with less of it, while the std models barely move. It also keeps onsets
+                anchored to the audio when the transcript is wrong. The default, 15, is set for
+                conversational speech; 30 is within half a point on read speech and holds up a
+                little better under transcript errors. Try 0 when each phone's own onset is
+                what matters.
+            boundary_contrast_frames (int or None): W, the moving-average window, in 5 ms
+                frames, that the bonus's acoustic change is measured against. `None` (default)
+                uses the phoneme set's default, 33 (165 ms). The released checkpoints were
+                trained with 17. Has no effect when the bonus is 0.
             sub_frame_onsets (bool): Place each onset at the interpolated crossing of the two
                 neighbouring posteriors instead of on the 5 ms frame grid. This is the readout
                 the loss was shaped for; `False` gives plain frame indices.
@@ -235,6 +238,7 @@ class BFA:
         self._bonus_weight_override = boundary_bonus_weight
         self._min_phone_frames_override = min_phone_frames
         self._soft_phone_frames_override = soft_phone_frames
+        self._contrast_frames_override = boundary_contrast_frames
         self.boundary_bonus_weight = float(boundary_bonus_weight or 0.0)
         self.bad_confidence_threshold = bad_confidence_threshold
         # Settled by `load_model`: the family's own level unless one was given here.
@@ -439,16 +443,19 @@ class BFA:
 
     def _resolve_decoder(self):
         """
-        Settle the aligner's topology: the checkpoint's training values, with any explicit
-        constructor override applied on top.
+        Settle the decoder: the checkpoint's training values, then the phoneme set's
+        defaults (`presets.DECODER_DEFAULTS`), then any explicit constructor override.
         """
         hp = dict(self.extractor.decoder_hp)
+        hp.update(_presets.decoder_defaults(self.phoneme_set))
         if self._min_phone_frames_override is not None:
             hp['min_phone_frames'] = int(self._min_phone_frames_override)
         if self._soft_phone_frames_override is not None:
             hp['soft_phone_frames'] = int(self._soft_phone_frames_override)
         if self._bonus_weight_override is not None:
             hp['boundary_bonus_weight'] = float(self._bonus_weight_override)
+        if self._contrast_frames_override is not None:
+            hp['boundary_contrast_frames'] = int(self._contrast_frames_override)
         self.decoder_hp = hp
         self.min_phone_frames = int(hp['min_phone_frames'])
         self.soft_phone_frames = int(hp['soft_phone_frames'])
@@ -458,7 +465,8 @@ class BFA:
             f"({self.min_phone_frames * self.ms_per_frame:g} ms minimum phone), "
             f"sil_skippable={hp['sil_skippable']}, class_prior_norm={hp['class_prior_norm']}, "
             f"onset bonus {self.boundary_bonus_weight:g} "
-            f"({self.extractor.flux_source} flux), "
+            f"({self.extractor.flux_source} flux, contrast window "
+            f"{hp['boundary_contrast_frames']} frames), "
             f"sub-frame onsets {'on' if self.sub_frame_onsets else 'off'}")
 
     def download_model(self, model_name=None, local_dir=None):

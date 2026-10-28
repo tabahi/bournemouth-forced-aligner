@@ -59,7 +59,9 @@ def _resolve_model_lang(preset, model, lang, phoneme_set=None):
                    f'Default: {DEFAULT_PHONEME_SET}, or whatever --model / --ckpt-path is.')
 @click.option('--model', default=None,
               help='Published model to use instead of the preset\'s (advanced): mbfa-latin, '
-                   'mbfa-latin-benchmark, mbfa-cyrillic, mbfa-cjk, mbfa-japanese, CUPE-3-en, '
+                   'mbfa-latin-benchmark, mbfa-latin-noEnglish, mbfa-cyrillic, mbfa-cjk, '
+                   'mbfa-japanese, mbfa-vietnamese, mbfa-thai, mbfa-abjad, mbfa-brahmic, '
+                   'mbfa-other-alphabetic, CUPE-3-en, '
                    'CUPE-3-en-base, CUPE-3-mls7, or a Hugging Face repository id. Downloaded '
                    'on first use.')
 @click.option('--ckpt-path', type=click.Path(), default=None,
@@ -89,9 +91,12 @@ def _resolve_model_lang(preset, model, lang, phoneme_set=None):
               help='Maximum segment duration in seconds (for windowed processing).')
 @click.option('--boundary-bonus-weight', default=None, type=float,
               help='Weight on the log-mel acoustic-change bonus added to every phone-onset '
-                   "transition. Default: the value the model was published with (30 for "
-                   'every released model). 0 turns it off; see the constructor docstring for '
-                   'what it is measured to cost and buy.')
+                   'transition. Default: 15. 0 '
+                   'turns it off; see the constructor docstring for what it is measured to '
+                   'cost and buy.')
+@click.option('--boundary-contrast-frames', default=None, type=int,
+              help='Moving-average window, in 5 ms frames, that the onset bonus measures '
+                   'acoustic change against. Default: the phoneme set\'s (33).')
 @click.option('--sub-frame-onsets/--frame-grid-onsets', default=True,
               help='Place onsets at the interpolated crossing of two posteriors (default) '
                    'rather than on the 5 ms frame grid.')
@@ -124,7 +129,8 @@ def _resolve_model_lang(preset, model, lang, phoneme_set=None):
 def main(audio_path, text_or_srt, output_path,
          preset, phoneme_set, model, ckpt_path, lang, g2p_device, punctuation_sil,
          embeddings, mel_path, textgrid,
-         device, duration_max, boundary_bonus_weight, sub_frame_onsets, min_phone_frames,
+         device, duration_max, boundary_bonus_weight, boundary_contrast_frames,
+         sub_frame_onsets, min_phone_frames,
          segment_max_seconds, chunk_audio, chunk_seconds, chunk_max_phonemes, chunk_pps,
          chunk_vad, debug, list_presets):
     """Bournemouth Forced Aligner — extract phoneme timestamps from audio.
@@ -233,6 +239,7 @@ def main(audio_path, text_or_srt, output_path,
             duration_max=duration_max,
             device=device,
             boundary_bonus_weight=boundary_bonus_weight,
+            boundary_contrast_frames=boundary_contrast_frames,
             sub_frame_onsets=sub_frame_onsets,
             min_phone_frames=min_phone_frames,
             segment_max_seconds=segment_max_seconds,
