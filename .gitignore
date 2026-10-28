@@ -236,3 +236,7 @@ plan-for-improvements.md
 # The scoring JSONs beside the figures are ~3 MB each and stay local.
 !evaluation/results/*.csv
 evaluation/plots/*.json
+
+# Research notes, the paper and its experiment scripts: kept out of the public repo.
+research/
+evaluation/research/

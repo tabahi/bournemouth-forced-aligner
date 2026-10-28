@@ -26,22 +26,24 @@ Codes are accepted in any case and in several spellings: BCP 47 (`pt-BR`), ISO 6
 regional variant the G2P does not have falls back to its base language with a warning.
 `aligner.lang` holds the canonical code.
 
-A language outside the four groups below raises `UnsupportedLanguageError`, and the message names
+A language outside the nine groups below raises `UnsupportedLanguageError`, and the message names
 `phoneme_set="ph66"` as the alternative. BFA never falls back to the other phoneme set silently.
 
 `balign --list-presets` prints the live list.
 
-## Supported: 63 languages in 4 language groups
+## Supported: 82 languages in 9 language groups
 
 **Trained** means the language was in the model's FLEURS training data; the hours are the
-FLEURS training audio for that language. `mbfa-latin` used all of it. `mbfa-cyrillic` and
-`mbfa-cjk` used a 62% sample. A language the G2P covers but the model never heard is still aligned, through
+FLEURS training audio for that language. `mbfa-latin` and the models of the newer groups
+(vietnamese, thai_khmer, abjad, brahmic, other_alphabetic) used all of it. `mbfa-cyrillic` and `mbfa-cjk` used a
+62% sample. A language the G2P covers but the model never heard is still aligned, through
 the phonemes it shares with the trained ones. Expect it to be less accurate.
 
 ### `latin` → `mbfa-latin` (208 tokens)
 
-The default group. Latin script, words separated by spaces, no tone. `mbfa-latin-benchmark` covers the same
-languages and is selected by name.
+The default group. Latin script, words separated by spaces, no tone. Two more latin models cover the
+same languages and are selected by name: `mbfa-latin-benchmark` (best on clean speech) and
+`mbfa-latin-noEnglish` (the same recipe trained without English, for transfer tests).
 
 | code | language | trained (h) |
 |---|---|---:|
@@ -136,19 +138,69 @@ Han script. These languages need word segmentation, and they carry lexical tone.
 
 `BFA(preset="ja")` raises `ImportError` at construction until the segmenter is installed.
 
-## Not supported yet
+### `vietnamese` → `mbfa-vietnamese` (45 tokens)
 
-The G2P covers these languages and their groups have token lists, but no model has been trained yet. Training configs
-exist in [bfa_models](https://github.com/tabahi/bfa_models/tree/main/p4mbfa) for every one
-except Burmese.
+Latin script with tone letters. Kept out of `latin` because it is tonal.
+
+| code | language | trained (h) |
+|---|---|---:|
+| `vi` | Vietnamese (Northern); `vi-c` Central, `vi-s` Southern | 8.7 |
+
+### `thai_khmer` → `mbfa-thai` (38 tokens)
+
+Thai script. Needs word segmentation, and carries lexical tone. Khmer shares the token list but is
+excluded (see below), so the model was trained on Thai only.
+
+| code | language | trained (h) | segmenter |
+|---|---|---:|---|
+| `th` | Thai | 7.8 | `pythainlp`: `pip install "bournemouth-forced-aligner[th]"` |
+
+### `abjad` → `mbfa-abjad` (90 tokens)
+
+Arabic script and Syriac. The orthography leaves most vowels out, so the G2P supplies them.
+
+| code | language | trained (h) |
+|---|---|---:|
+| `ar` | Arabic | 5.8 |
+| `ku` | Kurdish (Central, `ckb`) | 9.0 |
+| `fa` | Persian | 8.2 |
+| `sd` | Sindhi | 8.8 |
+| `ur` | Urdu | 6.3 |
+| `ug` | Uyghur | — |
+| `syc` | Syriac | — |
+
+### `brahmic` → `mbfa-brahmic` (96 tokens)
+
+Indic abugidas (Devanagari, Odia, Tamil scripts).
+
+| code | language | trained (h) |
+|---|---|---:|
+| `hi` | Hindi | 6.2 |
+| `or` | Odia | 3.2 |
+| `ta` | Tamil | 7.4 |
+| `sa` | Sanskrit | — |
+
+### `other_alphabetic` → `mbfa-other-alphabetic` (104 tokens)
+
+The remaining alphabets: Greek, Armenian, Georgian, Hangul and Ethiopic. Words are separated by
+spaces, and no language in the group has tone.
+
+| code | language | trained (h) |
+|---|---|---:|
+| `am` | Amharic | 9.0 |
+| `el` | Greek | 9.6 |
+| `hy` | Armenian (Eastern); `hy-west` Western | 9.3 |
+| `ka` | Georgian | 4.5 |
+| `ko` | Korean | 7.4 |
+| `grc` | Ancient Greek | — |
+
+The models of these five groups were warm-started from the latin model's trunk and selected on
+FLEURS validation loss; no boundary labels exist for them, so they have no boundary evaluation yet.
+
+## Not supported yet
 
 | language group | languages | why not yet |
 |---|---|---|
-| `vietnamese` | `vi` (Northern), `vi-c`, `vi-s` | no model. Kept out of `latin` because it is tonal |
-| `other_alphabetic` | `el` Greek, `grc` Ancient Greek, `hy` Armenian (`hy-west`), `ka` Georgian, `ko` Korean, `am` Amharic | no model |
-| `abjad` | `ar` Arabic, `fa` Persian, `ku` Kurdish (`ckb`), `sd` Sindhi, `ur` Urdu, `ug` Uyghur, `syc` Syriac | no model |
-| `brahmic` | `hi` Hindi, `or` Odia, `ta` Tamil, `sa` Sanskrit | no model |
-| `thai_khmer` | `th` Thai | no model. Segmenter: `pythainlp` (`[th]`) |
 | excluded | `km` Khmer, `my` Burmese, `nan` Min Nan, `tts` Isan | the G2P output is not usable yet (see below) |
 
 The excluded languages have these problems: Khmer folds 20% of its tokens to `<unk>`. Burmese writes tone as vowel
@@ -175,7 +227,7 @@ a place to put a pause. An explicit `<SIL>` in the text is always honoured.
 
 ### Tone
 
-Mandarin and Cantonese are the tonal languages with a model. Tone is a **separate layer**, not
+Mandarin, Cantonese, Vietnamese and Thai are the tonal languages with a model. Tone is a **separate layer**, not
 part of the phoneme: the vowel /a/ with tone 35 and with tone 21 is the same token, so the phoneme
 inventory stays small and the phonemes are shared with other languages.
 
@@ -185,7 +237,7 @@ inventory stays small and the phonemes are shared with other languages.
   (`知道` → `ʈ ʂ ɚ⁵⁵ t ɑ ʊ⁵¹`), and consonants carry 0.
 - The tone comes **from the G2P's dictionary pronunciation**, not from the audio. It is the
   word's lexical tone, with tone sandhi not applied, so a speaker's realised contour can differ
-  from it. The tone's *timing* is the timing of the vowel it sits on. `mbfa-cjk` has a
+  from it. The tone's *timing* is the timing of the vowel it sits on. The tonal models have a
   trained tone head, but BFA does not read it yet.
 - Atonal languages have 0 everywhere. Burmese tone is written as vowel diacritics, so it would
   not reach this layer (Burmese is excluded anyway).
@@ -228,7 +280,7 @@ words must be segmented first. BFA does this automatically:
 | Mandarin (`zh`, `zh-Hant`) | longest match on the bundled dictionary keys | nothing |
 | Cantonese (`yue`) | pycantonese (HKCanCor) | `[yue]` |
 | Japanese (`ja`) | fugashi with UniDic morphemes, fed to the G2P as katakana | `[ja]` |
-| Thai (`th`, no model yet) | pythainlp `newmm` | `[th]` |
+| Thai (`th`) | pythainlp `newmm` | `[th]` |
 
 Each language has exactly one segmenter, so the same text always produces the same words on
 every machine. A missing segmenter package raises once, when the language is set, and the error includes the install

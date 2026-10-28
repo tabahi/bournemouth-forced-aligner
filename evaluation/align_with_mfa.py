@@ -147,6 +147,16 @@ def parse_textgrid(textgrid_path):
     return phonemes
 
 
+def speaker_of(dataset, audio_path):
+    """The speaker of a clip: TIMIT's speaker folder (`.../DR1/FAKS0/SA1.WAV` -> FAKS0), or the
+    Buckeye interview's speaker (`s0101a.wav` -> s01)."""
+    if dataset == "timit":
+        return os.path.basename(os.path.dirname(audio_path))
+    if dataset == "buckeye":
+        return os.path.basename(audio_path)[:3]
+    raise ValueError(f"no speaker rule for dataset {dataset!r}")
+
+
 def run_mfa(exp, jobs, mfa_cfg, log):
     """
     Align every job's segments with MFA and write one `<clip>.json` each.
@@ -173,6 +183,18 @@ def run_mfa(exp, jobs, mfa_cfg, log):
         os.makedirs(d)
 
     utterances = build_corpus(jobs, corpus_dir)
+    # One folder per real speaker, so MFA's fMLLR adapts per speaker and the work is split over
+    # --num_jobs. A flat folder is ONE speaker to MFA: adaptation is fitted to the whole corpus
+    # at once, and it runs a single job.
+    speaker = {}
+    if exp.get("speaker_folders"):
+        speaker = {out: speaker_of(exp["dataset"], audio) for audio, _, out in jobs}
+        for name, info in utterances.items():
+            spk_dir = os.path.join(corpus_dir, speaker[info["out_path"]])
+            os.makedirs(spk_dir, exist_ok=True)
+            for ext in (".wav", ".txt"):
+                os.replace(os.path.join(corpus_dir, name + ext), os.path.join(spk_dir, name + ext))
+        log(f"{len(set(speaker[i['out_path']] for i in utterances.values()))} speaker folders")
     stats = {"total_segments": len(utterances), "failed_segments": 0, "failed_files": 0,
              "mfa_seconds": None}
     if not utterances:
@@ -196,7 +218,7 @@ def run_mfa(exp, jobs, mfa_cfg, log):
         segments = []
         for name, info in sorted(clip_utterances, key=lambda item: item[1]["seg_idx"]):
             # MFA mirrors the corpus tree, and puts a flat corpus's files at the top.
-            textgrid_path = os.path.join(textgrid_dir, f"{name}.TextGrid")
+            textgrid_path = os.path.join(textgrid_dir, speaker.get(out_path, ""), f"{name}.TextGrid")
             phonemes = parse_textgrid(textgrid_path) if os.path.exists(textgrid_path) else []
             if not phonemes:
                 stats["failed_segments"] += 1

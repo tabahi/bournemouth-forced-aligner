@@ -38,9 +38,20 @@ METHODS = [
     ("CUPE-3-mls7", "CUPE-3-mls7 (ph66)", "#1baf7a", "-"),
     ("mbfa-latin", "mbfa-latin (std)", "#eda100", "--"),
     ("mbfa-latin-benchmark", "mbfa-latin-benchmark (std)", "#e87ba4", "--"),
-    ("mfa-english_us_arpa", "MFA english_us_arpa", "#008300", ":"),
+    ("mbfa-latin-noEnglish", "mbfa-latin-noEnglish (std)", "#7f7f7f", "--"),
+    ("mfa-english_us_arpa-spk", "MFA english_us_arpa", "#008300", ":"),
+    ("mfa-english_mfa-spk", "MFA english_mfa", "#7b52c9", ":"),
 ]
 TOLERANCES = (10, 25, 50)
+# The decoder each family is drawn at: BFA's defaults (presets.DECODER_DEFAULTS), named as
+# process_alignments names them. Runs made before those defaults (β 30, W 17 for every model)
+# end in "__b30_d6_s10_grid".
+DEFAULT_DECODER = {"ph66": "__b15_d6_s10_grid_cf33", "std": "__b15_d6_s10_grid_cf33"}
+
+
+def default_suffix(row):
+    """The run-name ending of this row's model at BFA's defaults."""
+    return DEFAULT_DECODER.get((row.get("phoneme_set") or "").split("/")[0], "\0")
 
 INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a64", "#e4e3de", "#ffffff"
 
@@ -54,6 +65,10 @@ def load_rows(results_dir):
             sys.exit(f"{path} not found; run compute_metrics.py first")
         with open(path, newline="") as f:
             rows = [r for r in csv.DictReader(f) if r.get("cfg_subset", "-1") in ("-1", "")]
+        # BFA: only the released decoder; other full-corpus sweeps (β 0/15/45) share the model
+        # name and would otherwise overwrite it, last row winning
+        rows = [r for r in rows if r.get("method") == "MFA"
+                or r["experiment"].endswith(default_suffix(r))]
         out[ds] = {r["cfg_model"]: r for r in rows}
     return out
 

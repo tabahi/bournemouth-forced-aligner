@@ -38,7 +38,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from evaluation.config import ALIGNER_KWARGS, BFA_SETTINGS, DECODER_AXES, load_config
+from evaluation.config import (ALIGNER_KWARGS, BFA_SETTINGS, DECODER_AXES, HP_OVERRIDES,
+                               load_config)
 from evaluation.layout import (OUTPUT_DIR, PATHS_LISTS, alignment_path, assert_unique_stems,
                                experiment_dir, log_path, manifest_path, resolve_srt)
 
@@ -120,13 +121,15 @@ def resolve_model(model_key):
 
 
 _CKPT_DEFAULTS_CACHE = {}
+_CKPT_FILE_HP_CACHE = {}
 _CKPT_IDENTITY_CACHE = {}
 
 
 def checkpoint_decoder_defaults(model_key):
     """
-    The decoder settings the model is published or was trained with - i.e. what a `None` on
-    any of `DECODER_AXES` actually resolves to.
+    The decoder settings BFA runs this model with when the yaml says `null`: the model's own
+    record with BFA's phoneme-set defaults (`presets.DECODER_DEFAULTS`) on top - exactly what
+    `BFA._resolve_decoder` does.
 
     Read straight from the model's own record (a release's config.json, a training
     checkpoint's `hyper_parameters`) rather than by constructing an aligner, so validation
@@ -136,6 +139,17 @@ def checkpoint_decoder_defaults(model_key):
     if model_key not in _CKPT_DEFAULTS_CACHE:
         _read_checkpoint(model_key)
     return _CKPT_DEFAULTS_CACHE[model_key]
+
+
+def checkpoint_file_hp(model_key):
+    """
+    The decoder settings as the model's own record holds them, before BFA's phoneme-set
+    defaults. `hp_overrides` names runs against these, so a run at the library's W 33 is tagged
+    `cf33` and never shares a name (or an `existing: skip`) with a run at the checkpoint's W 17.
+    """
+    if model_key not in _CKPT_FILE_HP_CACHE:
+        _read_checkpoint(model_key)
+    return _CKPT_FILE_HP_CACHE[model_key]
 
 
 def checkpoint_identity(model_key):
@@ -182,6 +196,9 @@ def _read_checkpoint(model_key):
         "min_phone_frames": int(hp["min_phone_frames"]),
         "soft_phone_frames": int(hp["soft_phone_frames"]),
     }
+    # The settings only the checkpoint carries (`HP_OVERRIDES`), for resolving a sweep's
+    # overrides and naming runs by what differs from them.
+    defaults.update({key: hp[key] for key in HP_OVERRIDES if key in hp})
     if 'n_tokens' in config:
         group = config.get('lang_group')
         identity = {"family": "p4mbfa", "phoneme_set": f"std/{group}", "lang_group": group,
@@ -192,6 +209,9 @@ def _read_checkpoint(model_key):
     training = release.get("training", {})
     identity["source_experiment"] = training.get("experiment")
     identity["source_checkpoint"] = training.get("source_checkpoint")
+    from bournemouth_aligner import presets
+    _CKPT_FILE_HP_CACHE[model_key] = dict(defaults)
+    defaults.update(presets.decoder_defaults(presets.SET_OF_FAMILY[identity["family"]]))
     _CKPT_DEFAULTS_CACHE[model_key] = defaults
     _CKPT_IDENTITY_CACHE[model_key] = identity
 
@@ -205,10 +225,44 @@ def effective_decoder_config(exp):
     """
     defaults = checkpoint_decoder_defaults(exp["model"])
     out = {}
-    for axis in DECODER_AXES:
+    for axis in DECODER_AXES + HP_OVERRIDES:
         value = exp.get(axis)
         out[axis] = defaults.get(axis, value) if value is None else value
     return out
+
+
+def hp_overrides(exp):
+    """
+    The `HP_OVERRIDES` this experiment RUNS at something other than the checkpoint file's
+    value, as {key: value}: the yaml's value, or for a `null` BFA's own default. Empty for a
+    run at the checkpoint file's settings, so the names of runs made before the library
+    defaults changed are unchanged.
+    """
+    library = checkpoint_decoder_defaults(exp["model"])
+    defaults = checkpoint_file_hp(exp["model"])
+    out = {}
+    for key in HP_OVERRIDES:
+        value = exp.get(key)
+        if value is None:
+            if key not in library:
+                continue
+            value = library[key]
+        if key == "boundary_contrast_frames":
+            value = int(value)
+        elif key == "soft_frame_cost":
+            value = float(value)
+        else:
+            value = bool(value)
+        if key not in defaults:
+            raise KeyError(f"{exp['model']}: the checkpoint has no {key!r} to override")
+        if value != defaults[key]:
+            out[key] = value
+    return out
+
+
+# Name tags for `hp_overrides`, in run names and labels.
+HP_TAGS = {"soft_frame_cost": "kc", "boundary_contrast_frames": "cf",
+           "sil_skippable": "silskip", "optional_sil": "optsil", "class_prior_norm": "cpn"}
 
 
 # =====================================================================================
@@ -248,6 +302,14 @@ def _validate_experiment(exp):
         raise ValueError(f"min_phone_frames={mpf}: must be >= 1 (frames are 5 ms).")
     if spf is not None and int(spf) < 0:
         raise ValueError(f"soft_phone_frames={spf}: must be >= 0.")
+    for key in ("sil_skippable", "optional_sil", "class_prior_norm"):
+        if exp.get(key) is not None and not isinstance(exp[key], bool):
+            raise ValueError(f"{key}={exp[key]!r}: must be true, false or null")
+    if exp.get("boundary_contrast_frames") is not None and int(exp["boundary_contrast_frames"]) < 1:
+        raise ValueError("boundary_contrast_frames must be >= 1")
+    if exp.get("soft_frame_cost") is not None and float(exp["soft_frame_cost"]) < 0:
+        raise ValueError("soft_frame_cost must be >= 0")
+    hp_overrides(exp)                    # raises on a key the checkpoint does not carry
     return exp
 
 
@@ -294,6 +356,7 @@ def experiment_id(exp):
                   "subframe" if eff["sub_frame_onsets"] else "grid"]
         parts += [f"{tag}{_tag_value(exp[key])}" for key, tag, usual in ID_EXTRAS
                   if exp[key] != usual]
+        parts += [f"{HP_TAGS[key]}{_tag_value(value)}" for key, value in hp_overrides(exp).items()]
     if int(exp["subset"]) > 0:
         parts.append(f"n{int(exp['subset'])}")
     name = "__".join([exp["dataset"], exp["model"]] + (["_".join(parts)] if parts else []))
@@ -319,7 +382,8 @@ def build_experiments():
         if not entry.get("enabled", True):
             continue
         group = entry.get("name", f"experiments[{n}]")
-        settings = {key: _as_list(entry.get(key, CFG["bfa"][key])) for key in BFA_SETTINGS}
+        settings = {key: _as_list(entry.get(key, CFG["bfa"].get(key)))
+                    for key in BFA_SETTINGS + HP_OVERRIDES}
         for dataset, subset, model in product(_as_list(entry["dataset"]),
                                               _as_list(entry.get("subset", -1)),
                                               _as_list(entry["model"])):
@@ -328,7 +392,8 @@ def build_experiments():
                 # None of the BFA settings reach MFA, so the whole grid is one run of it.
                 grid = [{"method": "MFA",
                          "acoustic_model": CFG["models"][model]["acoustic_model"],
-                         "dictionary": CFG["models"][model]["dictionary"]}]
+                         "dictionary": CFG["models"][model]["dictionary"],
+                         "speaker_folders": bool(CFG["models"][model]["speaker_folders"])}]
             else:
                 grid = [{"method": "BFA", **dict(zip(settings, values))}
                         for values in product(*settings.values())]
@@ -364,6 +429,8 @@ def experiment_label(exp):
                  f"+{_fmt(exp['soft_phone_frames'], eff['soft_phone_frames'])}")
         if not eff["sub_frame_onsets"]:
             label += "-gridonset"
+        for key, value in hp_overrides(exp).items():
+            label += f"-{HP_TAGS[key]}{_tag_value(value)}"
     if exp["subset"] > 0:
         label += f"-n{exp['subset']}"
     return label
@@ -401,7 +468,8 @@ def write_manifest(exp, status, extra=None):
         })
     else:
         manifest["model"] = {"acoustic_model": exp["acoustic_model"],
-                             "dictionary": exp["dictionary"]}
+                             "dictionary": exp["dictionary"],
+                             "speaker_folders": exp.get("speaker_folders", False)}
     manifest.update(extra or {})
 
     with open(path, "w") as f:
@@ -508,6 +576,12 @@ def build_aligner(exp, log_file=None):
         **{key: exp[key] for key in ALIGNER_KWARGS},
     )
     aligner.warn_level = CFG["run"]["warn_level"]
+    # Checkpoint-only settings: BFA reads `decoder_hp` at every decode, so setting them on the
+    # built aligner is the same as a checkpoint that carried them.
+    overrides = hp_overrides(exp)
+    if overrides:
+        aligner.decoder_hp.update(overrides)
+        log_message(f"[{timestamp_now()}] decoder_hp overrides: {overrides}", log_file)
     return aligner
 
 

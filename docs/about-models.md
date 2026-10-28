@@ -2,7 +2,7 @@
 
 [Main README](../README.md) · [Developer guide](README.md) · **About the models** · [Evaluation](evaluation.md) · [Language support](language-support.md)
 
-BFA v2 runs one of eight published acoustic models, all built on the same CNN trunk and trained with the
+BFA v2 runs one of thirteen published acoustic models, all built on the same CNN trunk and trained with the
 same objective. This page covers their structure, how they are trained, how BFA decodes them, and
 which training run each published model is.
 
@@ -195,7 +195,15 @@ with, which is not always the one it was trained with:
 | `CUPE-3-en-base`, `CUPE-3-mls7` | min 6, soft 4 | min 6, **soft 10** |
 | every mbfa model | min 6, soft 10 | min 6, soft 10 |
 
-All eight are published with `boundary_bonus_weight: 30`.
+Every model is published with `boundary_contrast_frames: 17` and, except one, with
+`boundary_bonus_weight: 30`, the values they were trained with. `mbfa-other-alphabetic` was
+fine-tuned with the onset bonus off and is published with `boundary_bonus_weight: 0`. Since
+2.0.1, BFA decodes with its own defaults instead (`presets.DECODER_DEFAULTS`): onset bonus 15 and
+contrast window 33 frames for every model, `mbfa-other-alphabetic` included. The window was
+chosen by a decode-time sweep on TIMIT and Buckeye. The bonus is chosen for conversational
+speech: on full Buckeye, 15 beats 30 for every model scored, while on read TIMIT the two are
+within about half a point. Pass
+`boundary_bonus_weight=30, boundary_contrast_frames=17` to decode as before.
 
 ### The onset bonus
 
@@ -225,8 +233,8 @@ read a short phone, which is nearly all ramp, as less confident than a long one 
 quality.
 
 Confidences are **not on a common scale across models**. Mean confidence on the full TIMIT / Buckeye
-runs: `CUPE-3-en` 0.54 / 0.43, `CUPE-3-en-base` 0.39 / 0.32, `CUPE-3-mls7` 0.25 / 0.21,
-`mbfa-latin` 0.25 / 0.19, `mbfa-latin-benchmark` 0.16 / 0.15. `low_confidence_level` therefore
+runs at the defaults: `CUPE-3-en` 0.54 / 0.43, `CUPE-3-en-base` 0.40 / 0.32, `CUPE-3-mls7`
+0.26 / 0.21, `mbfa-latin` 0.25 / 0.20, `mbfa-latin-benchmark` 0.17 / 0.16. `low_confidence_level` therefore
 defaults to each family's own level: 0.2 for CUPE-3 and 0.1 for mbfa. A segment of more than 60
 phones is flagged `bad_alignment` when more than `bad_confidence_threshold` (60%) of its phones fall below that level.
 
@@ -247,7 +255,13 @@ why it was picked, is
 | [`mbfa-latin-benchmark`](https://huggingface.co/Tabahi/mbfa-latin-benchmark) | std/latin | ma02a, 8 | FLEURS latin, 62% sample, ~170 h | 0.02 | TIMIT f1@25 73.33 / 72.93, best of every latin run |
 | [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | std/cyrillic | mr01a, 10 | FLEURS be bg hr kk mk ru sr uk, ~40 h | 0.02 | FLEURS val_loss 2.652 |
 | [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std/cjk | mc01a, 13 | FLEURS Mandarin + Cantonese, ~9 h | 0.02 | FLEURS val_loss 2.596 |
+| [`mbfa-latin-noEnglish`](https://huggingface.co/Tabahi/mbfa-latin-noEnglish) | std/latin | ma05a, 4 | FLEURS latin without English, 35 languages, 266.4 h | 0.05 | TIMIT f1@25 71.90 / 71.77, best of 9 epochs |
 | [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | std/japanese | mj01a, 8 | FLEURS Japanese, 7 h | 0.02 | FLEURS val_loss 2.349 + frame accuracy |
+| [`mbfa-vietnamese`](https://huggingface.co/Tabahi/mbfa-vietnamese) | std/vietnamese | mv01a, 6 | FLEURS Vietnamese, 8.7 h | 0.02 | FLEURS val_loss 3.347 |
+| [`mbfa-thai`](https://huggingface.co/Tabahi/mbfa-thai) | std/thai_khmer | mt01a, 8 | FLEURS Thai, 7.8 h | 0.02 | FLEURS val_loss 2.523 |
+| [`mbfa-abjad`](https://huggingface.co/Tabahi/mbfa-abjad) | std/abjad | mp01a, 5 | FLEURS ar ckb fa sd ur, 38.2 h | 0.02 | FLEURS val_loss 2.855 |
+| [`mbfa-brahmic`](https://huggingface.co/Tabahi/mbfa-brahmic) | std/brahmic | mb01a, 4 | FLEURS hi or ta, 16.8 h | 0.02 | FLEURS val_loss 3.555 |
+| [`mbfa-other-alphabetic`](https://huggingface.co/Tabahi/mbfa-other-alphabetic) | std/other_alphabetic | mo01b, 3 | FLEURS am el hy ka ko, 39.8 h | 0.02 | FLEURS val_loss 2.628 |
 | [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | ph66 | pa07f, 0 | LibriSpeech, ~500 h | 0.01 | TIMIT f1@25 76.10 / 75.58 |
 | [`CUPE-3-en-base`](https://huggingface.co/Tabahi/CUPE-3-en-base) | ph66 | pa01d, 3 | LibriSpeech, ~500 h | 0.01 | TIMIT f1@25 76.20 / 76.00 |
 | [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7) | ph66 | pa07a, 0 | `CUPE-3-en-base` + MLS de es fr it nl pl pt, 100 h each | 0.01 | TIMIT f1@25 74.79 / 74.15 |
@@ -257,16 +271,18 @@ checkpoint, the other is held out. The full-corpus scores are on the [Evaluation
 
 - **Which latin model.** `mbfa-latin` was trained with the most noise and is the one meant for real
   recordings, which is why every latin preset uses it. `mbfa-latin-benchmark` scores higher on clean
-  speech and is selected by name only.
+  speech and is selected by name only. `mbfa-latin-noEnglish` is the `mbfa-latin` recipe trained from
+  random weights without English, released to show transfer to a language a model never heard; it
+  is selected by name only.
 - **Which English ph66 model.** `CUPE-3-en` and `CUPE-3-en-base` are from the same lineage
   (pa01d → pa07a → … → pa07f) and score within noise of each other. `CUPE-3-en` is the
   preset. `CUPE-3-en-base` is selected by name.
 - **`CUPE-3-mls7`** is `CUPE-3-en-base` trained for one more epoch on seven MLS languages, with no English.
   It is the only p3cupe model that has heard anything but English, so every non-English ph66 preset
   uses it. The epoch cost about two points of English TIMIT F1.
-- **Groups without a model.** The non-latin groups were selected on validation loss over the model's own
-  alignments, because no boundary labels exist outside English. Training configs exist for `vietnamese`,
-  `other_alphabetic`, `abjad`, `brahmic` and `thai_khmer`, but no model has been trained yet.
+- **The non-latin groups** were selected on validation loss over the model's own alignments, because no
+  boundary labels exist outside English. `vietnamese`, `thai_khmer` (Thai only), `abjad` and `brahmic`
+  were added on 2026-10-27, `other_alphabetic` on 2026-10-28.
 
 ### Release format
 

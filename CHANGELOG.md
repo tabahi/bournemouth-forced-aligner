@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.1] - 2026-10-28
+
+### Changed
+- **Decoder defaults** (`presets.DECODER_DEFAULTS`), from a decode-time sweep on TIMIT and
+  Buckeye: onset bonus `boundary_bonus_weight` 15 (was 30) and contrast window 33 frames (was
+  17), the same for every model. 15 is chosen for conversational speech. The model files are
+  unchanged; pass `boundary_bonus_weight=30, boundary_contrast_frames=17` for the 2.0.0
+  behaviour.
+- README rewritten as a getting-started guide.
+
+### Added
+- **Five more language groups**: `mbfa-vietnamese` (vi), `mbfa-thai` (th), `mbfa-abjad` (ar, ckb, fa,
+  sd, ur; also aligns ug, syc), `mbfa-brahmic` (hi, or, ta; also aligns sa) and
+  `mbfa-other-alphabetic` (am, el, hy, ka, ko; also aligns grc). The std set now covers 82
+  languages in 9 groups. Thai needs `pip install "bournemouth-forced-aligner[th]"`.
+- `mbfa-latin-noEnglish`, selectable by name: the `mbfa-latin` recipe trained without English.
+- `boundary_contrast_frames` argument and `--boundary-contrast-frames` CLI option.
+
 ## [2.0.0] - 2026-10-15
 
 **Not compatible with 1.x.** New acoustic models and a different alignment method. v1

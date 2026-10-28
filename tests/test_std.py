@@ -167,6 +167,11 @@ class TestStdPresets:
         with pytest.raises(presets.UnsupportedLanguageError, match="excluded"):
             presets.get_std_preset("km")
 
+    def test_decoder_defaults_are_the_same_for_every_set(self):
+        for name in presets.PHONEME_SETS:
+            assert presets.decoder_defaults(name) == {"boundary_bonus_weight": 15.0,
+                                                      "boundary_contrast_frames": 33}
+
     def test_phoneme_set(self):
         assert presets.resolve_phoneme_set() == presets.DEFAULT_PHONEME_SET == "std"
         assert presets.resolve_phoneme_set("ph66") == "ph66"
