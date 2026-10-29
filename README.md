@@ -131,6 +131,27 @@ For a transcript file: `aligner.process_srt_file("interview.json", "interview.wa
 More in [examples/](examples/) and the [developer guide](docs/README.md), which also explains
 every field of the JSON output.
 
+#### Many files at once
+
+Aligning all your files in one call is much faster than one call per file. With a GPU, also set
+`n_jobs=4`: the alignment search then runs in 4 worker processes while the GPU works on the next
+batch. The output is the same.
+
+```python
+import json
+from bournemouth_aligner import BFA
+
+if __name__ == "__main__":                    # needed when n_jobs > 1
+    aligner = BFA(preset="en-us", n_jobs=4)
+    names = ["interview1", "interview2"]
+    transcripts = [json.load(open(n + ".json")) for n in names]
+    audio = [aligner.load_audio(n + ".wav") for n in names]
+
+    results = aligner.process_segments(transcripts, audio)    # one call for every file
+    for name, result in zip(names, results):
+        aligner.convert_to_textgrid(result, output_file=name + ".TextGrid")
+```
+
 ## Tips for good results
 
 - **The text must match the audio.** Every phoneme of the text is placed somewhere, so a word that
@@ -160,7 +181,7 @@ The latest code from GitHub: `pip install git+https://github.com/tabahi/bournemo
 
 | | |
 |---|---|
-| Speed | ~1 s per 10 s of audio on an ordinary CPU; a GPU is optional |
+| Speed | 6-20× faster than real time on a CPU, 100-500× with a GPU ([details](#speed)) |
 | Resolution | 5 ms frames, with each boundary placed between frames |
 | Languages | 82 with the default phoneme set, including Mandarin, Cantonese, Japanese, Korean, Vietnamese, Thai, Arabic, Persian, Hindi and Greek; 80+ through espeak-ng (`ph66`) |
 | Output | Praat TextGrid; JSON with phoneme, word and phoneme-group times, plus tone, stress and length; phoneme embeddings |
@@ -209,12 +230,34 @@ Phoneme-boundary F1 on two hand-labelled English corpora (TIMIT, 6,300 read sent
 
 The full analysis is on the [evaluation](docs/evaluation.md) page.
 
+### Speed
+
+Time to align, on a 16-core CPU and an NVIDIA RTX A6000. BFA aligns everything in one call
+with `n_jobs=4`, at its default settings:
+
+| | 100 TIMIT clips (5 min of audio) | 10 Buckeye interviews (90 min) |
+|---|---:|---:|
+| BFA `CUPE-3-en`, GPU | **2.1 s** | **26 s** |
+| BFA `mbfa-latin` (default), GPU | 3.3 s | 34 s |
+| BFA `mbfa-latin` (default), CPU | 49 s | 562 s |
+| MFA, 8 jobs, CPU | 95-154 s | 149-243 s |
+
+- BFA needs 3-9 s to start, once per process; MFA's times include about 1 min of start-up per call.
+- **On short clips, set `duration_max=10`.** Every segment is padded to `duration_max` (30 s by
+  default), so 10 s is up to 2.6× faster, with the same result: 100 TIMIT clips take 0.9 s with
+  a GPU and 15 s on a CPU (`CUPE-3-en`).
+- On a CPU, BFA is faster than MFA on short jobs and slower on long conversational recordings
+  at the default padding.
+
+Full timings: [evaluation](docs/evaluation.md#cost).
+
 ### Settings worth knowing
 
 | Python / command line | |
 |---|---|
 | `boundary_bonus_weight` / `--boundary-bonus-weight` | How strongly boundaries are pulled towards sudden changes in the sound. The default, 15, is set for conversational speech. 0 gives better onsets for individual phonemes. |
-| `duration_max=10` | Much faster on short clips. Long segments are never cut. |
+| `duration_max=10` | Up to 2.6× faster on short clips, same result. Long segments are never cut. |
+| `n_jobs=4` | Run the alignment search in 4 worker processes when one call aligns many segments (`process_segments`, `process_srt_file`). With a GPU: 2.4× faster on long recordings. Little effect on a CPU. Same output; your script needs `if __name__ == "__main__":`. |
 | `low_confidence_level` | The confidence below which a phoneme counts as doubtful when flagging bad segments. |
 | `punctuation_sil=True` | Let the aligner place a pause at commas and full stops (default phoneme set only). |
 | `warn_level=0` | Print nothing, downloads included. |

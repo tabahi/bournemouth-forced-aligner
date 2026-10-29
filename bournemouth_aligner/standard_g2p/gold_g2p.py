@@ -587,9 +587,17 @@ class goldG2P:
     # barely moves.
     DEFAULT_CACHE_SIZE = 500_000          # ~55 MB
 
+    # A batch's memory grows with words x its longest word, since every input
+    # is padded to the longest. 2048 padded input bytes (128 words of up to 16
+    # bytes, tag included) needs ~0.25 GB on top of the 1.2 GB of weights, so
+    # the G2P still fits a 2 GB GPU; one 250-byte "word" in a batch of 128
+    # would need ~2.6 GB.
+    DEFAULT_BATCH_BYTES = 2048
+
     def __init__(self, device='cpu', default_lang='en',
                  batch_size=128, max_length=64, map_inventory=True,
-                 tone_diacritics=False, cache_size=DEFAULT_CACHE_SIZE):
+                 tone_diacritics=False, cache_size=DEFAULT_CACHE_SIZE,
+                 batch_bytes=DEFAULT_BATCH_BYTES):
         # Any torch device string: 'cpu', 'cuda', 'cuda:1', ...
         self.device = device
         if not (os.path.exists(os.path.join(G2P_MODEL_local_dir, 'pytorch_model.bin'))
@@ -609,6 +617,7 @@ class goldG2P:
         # carries no language of its own.
         self.set_default_lang(default_lang)
         self.batch_size = batch_size
+        self.batch_bytes = batch_bytes
         self.max_length = max_length
         self.tone_diacritics = tone_diacritics
 
@@ -702,19 +711,40 @@ class goldG2P:
 
     # -- inference ---------------------------------------------------------
 
+    def _batches(self, prompts):
+        """Indices of `prompts` in model batches: shortest first, so a batch
+        pads little and stops generating early, and each batch is at most
+        `batch_size` prompts and `batch_bytes` padded bytes (ByT5 reads one
+        token per byte). A prompt longer than `batch_bytes` gets a batch of
+        its own."""
+        n_bytes = [len(p.encode('utf-8')) for p in prompts]
+        order = sorted(range(len(prompts)), key=n_bytes.__getitem__)
+        batch = []
+        for i in order:
+            # Sorted ascending, so prompt i is the longest of the batch.
+            if batch and (len(batch) >= self.batch_size
+                          or (len(batch) + 1) * n_bytes[i] > self.batch_bytes):
+                yield batch
+                batch = []
+            batch.append(i)
+        if batch:
+            yield batch
+
     def _generate(self, words, tag):
-        """Raw model call for a batch of words, given an already-resolved tag."""
+        """Raw model call for a list of words, given an already-resolved tag."""
         import torch
-        out = []
-        for i in range(0, len(words), self.batch_size):
-            chunk = ['<%s>: %s' % (tag, w) for w in words[i:i + self.batch_size]]
-            enc = self.tokenizer(chunk, padding=True, add_special_tokens=False,
+        prompts = ['<%s>: %s' % (tag, w) for w in words]
+        out = [None] * len(words)
+        for idx in self._batches(prompts):
+            enc = self.tokenizer([prompts[i] for i in idx], padding=True,
+                                 add_special_tokens=False,
                                  return_tensors='pt').to(self.device)
             with torch.no_grad():
                 preds = self.model.generate(**enc, num_beams=1,
                                             max_length=self.max_length)
-            out.extend(self.tokenizer.batch_decode(preds.tolist(),
-                                                   skip_special_tokens=True))
+            for i, ipa in zip(idx, self.tokenizer.batch_decode(
+                    preds.tolist(), skip_special_tokens=True)):
+                out[i] = ipa
         return out
 
     def g2p_words(self, words, lang=None):

@@ -237,6 +237,5 @@ plan-for-improvements.md
 !evaluation/results/*.csv
 evaluation/plots/*.json
 
-# Research notes, the paper and its experiment scripts: kept out of the public repo.
-research/
-evaluation/research/
+# Research notes, the paper and its experiment scripts: a separate private repo, nested here.
+bfa_research/

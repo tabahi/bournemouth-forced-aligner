@@ -26,9 +26,9 @@ numbers is described in [`evaluation/README.md`](../evaluation/README.md). The r
 - **Its onsets are more precise.** On TIMIT the three CUPE-3 models beat both MFA models at
   10 ms (58.0-58.7 vs 55.2 and 56.5 F1; R-value 0.65 vs 0.62-0.63), with a lower median error
   (7 ms vs 8 ms).
-- **It is ready faster on small jobs.** On 100 TIMIT clips BFA finishes 3.5-6.4× sooner than MFA
-  with a GPU, and 2.3-3.3× sooner on a CPU. There is no corpus or dictionary to set up. See
-  [Cost](#cost).
+- **It is faster, especially with a GPU.** Start-up included, BFA with a GPU aligns 100 TIMIT
+  clips 8-21× sooner than MFA, and 10 Buckeye interviews 3.6-15× sooner. On a CPU it is
+  1.7-7.1× sooner on TIMIT. There is no corpus or dictionary to set up. See [Cost](#cost).
 
 **Where MFA is strong**
 
@@ -41,8 +41,8 @@ numbers is described in [`evaluation/README.md`](../evaluation/README.md). The r
   noisy conversational Buckeye (84.3-85.3) than on clean TIMIT (78.6-80.9). See
   [Why Buckeye favours MFA](#why-buckeye-favours-mfa). TIMIT was labelled by hand, so it is the
   fairer comparison.
-- **On whole corpora MFA is faster.** Its start-up cost is spread over the whole job.
-  Separately, BFA's decoder is still a Python loop (see [Cost](#cost)).
+- **On a CPU, MFA is faster on long conversational recordings.** On 10 Buckeye interviews, BFA
+  on a CPU at its default padding takes 2.2-3.8× as long as MFA. See [Cost](#cost).
 
 For English alone, the ph66 models (`CUPE-3-en`, `CUPE-3-en-base`) beat the multilingual std
 models by 4.2-5.8 points. See [Why the std models score lower](#why-the-std-models-score-lower).
@@ -263,47 +263,74 @@ each model was trained on, and its validation scores.
 
 ## Cost
 
-Timing was measured on the same 100 TIMIT clips (5.2 min of audio) for every system. The
-machine was an AMD Threadripper PRO 3975WX pinned to 16 cores (32 threads), and one NVIDIA RTX
-A5000 ran BFA's network when a GPU was used. Each figure is the median of three passes.
+Every system was timed on one machine:
+- an AMD Threadripper PRO 5975WX pinned to 16 cores (32 threads);
+- one NVIDIA RTX A6000 for BFA's network, when a GPU was used;
+- BFA v2.0.1 and MFA 3.4.3.
 
-- **BFA** ran in one process with 16 torch threads and batches of 16, timed after a warm-up
-  clip. Model loading (1-12 s) is not included.
-- **MFA 3.4.3** ran `mfa align` with 8 jobs. Its time is the whole call, split by MFA's own
-  progress messages.
+BFA aligned all the clips in one `process_segments` call, in batches of 16, with 16 torch threads.
+Its start-up is not included in the tables below: it is listed separately.
+MFA ran `mfa align` with 8 jobs. Its time is the whole call, start-up included, and is given
+for one flat folder and for one folder per speaker. Each figure is the median of three passes.
+*RTF* (real-time factor) is processing time over audio duration: 0.01 means 100× faster than
+real time.
 
-| 100 TIMIT clips | network on | padding | wall time | real-time factor | network | decoder |
+**100 TIMIT clips** (5.2 min of audio, one sentence each)
+
+| system | device | `duration_max` | one call per clip | one call | one call, `n_jobs` 4 / 8 | RTF |
 |---|---|---:|---:|---:|---:|---:|
-| BFA `CUPE-3-en` | GPU | 10 s | **17.8 s** | **0.057** | 1.4 s | 16.0 s |
-| BFA `CUPE-3-en` | GPU | 30 s | 20.4 s | 0.065 | 4.0 s | 16.1 s |
-| BFA `mbfa-latin` | GPU | 30 s | 22.5 s | 0.072 | 6.0 s | 16.1 s |
-| BFA `CUPE-3-en` | CPU | 10 s | 34.6 s | 0.111 | 18.6 s | 15.7 s |
-| BFA `CUPE-3-en` | CPU | 30 s | 69.7 s | 0.224 | 53.5 s | 15.9 s |
-| BFA `mbfa-latin` | CPU | 30 s | 72.9 s | 0.234 | 56.2 s | 16.1 s |
+| BFA `CUPE-3-en` | GPU | 10 s | 12.3 s | 2.1 s | **0.9 / 0.9 s** | **0.003** |
+| BFA `CUPE-3-en` | GPU | 30 s | 14.3 s | 3.6 s | 2.1 / 2.1 s | 0.007 |
+| BFA `mbfa-latin` | GPU | 30 s | 23.0 s | 5.0 s | 3.3 / 3.3 s | 0.010 |
+| BFA `CUPE-3-en` | CPU | 10 s | 28.9 s | 15.9 s | 15.4 / 16.2 s | 0.049 |
+| BFA `CUPE-3-en` | CPU | 30 s | 57.9 s | 42.7 s | 39.8 / 40.4 s | 0.128 |
+| BFA `mbfa-latin` | CPU | 30 s | 85.3 s | 54.7 s | 48.8 / 47.9 s | 0.154 |
+| MFA `english_mfa` (flat / per speaker) | CPU | | | | 95.2 / 112.1 s | 0.305 |
+| MFA `english_us_arpa` (flat / per speaker) | CPU | | | | 128.3 / 153.7 s | 0.412 |
 
-| 100 TIMIT clips | wall time | real-time factor | start-up | corpus + dictionary setup | features | alignment | collect + export |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| MFA `english_mfa` | 79.7 s | 0.256 | 38.0 s | 13.9 s | 8.5 s | 8.2 s | 11.1 s |
-| MFA `english_us_arpa` | 114.1 s | 0.366 | 51.5 s | 36.7 s | 7.4 s | 6.5 s | 12.0 s |
+**10 Buckeye interviews** (90.2 min of audio, 1,264 segments)
 
-*Real-time factor* is processing time over audio duration (0.1 = ten times faster than real time).
+| system | device | `duration_max` | one call per clip | one call | one call, `n_jobs` 4 / 8 | RTF |
+|---|---|---:|---:|---:|---:|---:|
+| BFA `CUPE-3-en` | GPU | 10 s | 45.9 s | 47.5 s | 12.9 / **10.7 s** | **0.002** |
+| BFA `CUPE-3-en` | GPU | 30 s | 60.1 s | 60.9 s | 25.7 / 25.1 s | 0.005 |
+| BFA `mbfa-latin` | GPU | 30 s | 71.9 s | 69.7 s | 33.5 / 33.1 s | 0.006 |
+| BFA `CUPE-3-en-base` | CPU | 30 s | 578 s | 590 s | 566 / 535 s | 0.099 |
+| BFA `mbfa-latin` | CPU | 30 s | 648 s | 579 s | 562 / 555 s | 0.103 |
+| MFA `english_mfa` (flat / per speaker) | CPU | | | | 206.2 / 149.3 s | 0.028 |
+| MFA `english_us_arpa` (flat / per speaker) | CPU | | | | 243.0 / 185.9 s | 0.034 |
 
-- **On a job of this size BFA is faster.** With a GPU it finishes 3.5-6.4× sooner than MFA. On a
-  CPU with 10 s padding (`duration_max=10`) it finishes 2.3-3.3× sooner, and with 30 s padding
-  1.1-1.6× sooner. Most of MFA's time is fixed cost: 38-52 s of start-up before its first
-  progress message, then 14-37 s setting up the corpus and dictionary.
-- **Once loaded, the two do a similar amount of work.** MFA's feature extraction and alignment
-  take 14-17 s; BFA's network and decoder take 17-22 s on a GPU.
-- **On a whole corpus MFA is faster.** Its fixed cost is paid once per call. With 8 jobs and one
-  folder per speaker, it aligned all of Buckeye (21.4 h of speech) in 12-19 min. At the
-  real-time factors above, one BFA process would need several times as long.
-- **BFA's remaining cost is almost all the decoder.** It takes 16 s per 100 clips whatever the
-  device, because it is a Python loop over 5 ms frames on one CPU thread. Compiling it is the
-  main speed-up left.
-- **Padding.** The network's share depends on padding: every segment is padded to
-  `duration_max` (30 s by default). On short clips, `duration_max=10` halves the CPU time with
-  identical onsets.
-- **Nothing to prepare.** BFA needs no corpus layout, dictionary or per-language acoustic model.
+`CUPE-3-en-base` has the same network as `CUPE-3-en` and costs the same.
+
+**Start-up.** A BFA process needs 3-9 s before its first clip, once: imports, loading the
+model, and starting the `n_jobs` workers. The std models also load their G2P model with the
+first clip (~4 s). MFA spends 59-100 s on start-up and setup in every call.
+
+**Start-up included, BFA against MFA:**
+
+| | BFA with a GPU | BFA on a CPU |
+|---|---|---|
+| 100 TIMIT clips | 8-21× sooner | 1.7-7.1× sooner |
+| 10 Buckeye interviews | 3.6-15× sooner | 2.2-3.8× **slower** (30 s padding) |
+| one 32 s clip (`30s.wav`) | 1.3-1.5 s + start-up, against MFA's 79-120 s | 1.7-3.3 s + start-up |
+
+**What to choose**
+
+- **Align many clips in one call.** `process_segments` with all your clips, or
+  `process_srt_file` with a whole transcript. On a GPU this is 4-6× faster than one call per
+  short clip.
+- **With a GPU, set `n_jobs=4`.** It runs the decoder in worker processes while the GPU works on
+  the next batch: 2.4× faster on Buckeye at 30 s padding, 4.3× at 10 s. The output is identical.
+  8 workers help only at `duration_max=10`.
+- **On a CPU, lower `duration_max` instead.** The network is almost all of the time, so
+  `n_jobs` changes little. Every segment is padded to `duration_max`, so 10 s instead of 30 s
+  makes short clips 2.6× faster (TIMIT: 39.8 → 15.4 s) with identical onsets. Segments longer
+  than `duration_max` are decoded whole, never cut.
+- **The std models cost 1.0-1.6× the ph66 models** at the same padding. Their G2P runs once
+  per call over every new word.
+- **MFA is faster on a CPU for long conversational recordings** at the default 30 s padding:
+  each 2.2 s Buckeye segment is padded to 30 s. The effect of 10 s padding on Buckeye's scores
+  was not measured.
 
 ## Analysis
 

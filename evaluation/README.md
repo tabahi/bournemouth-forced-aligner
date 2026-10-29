@@ -146,11 +146,11 @@ python evaluation/process_alignments.py 4 3 &
 
 Do not let two shells run MFA at the same time; MFA keeps one shared database per user.
 
-**Cost.** BFA on one CPU process runs at about 0.22 × real time with the harness's 30 s
-padding. A Buckeye clip is a whole interview of about 130 segments, so use `subset` for a quick
-look. MFA has about a minute of fixed start-up and setup per call, then runs fast. With 8 jobs
-it aligned all of Buckeye in 12-19 min (Plans to add parallel jobs to BFA as well). Measured timings for both are in
-[docs/evaluation.md](../docs/evaluation.md#cost).
+**Cost.** The harness calls BFA once per clip. A Buckeye clip is a whole interview of about 130
+segments, so use `subset` for a quick look. On a CPU with the harness's 30 s padding, BFA runs at
+about 0.1-0.12 × real time on Buckeye; with a GPU, about 0.01 ×. MFA has about a minute of fixed
+start-up and setup per call, then runs fast. With 8 jobs it aligned all of Buckeye in 12-19 min.
+Measured timings for both are in [docs/evaluation.md](../docs/evaluation.md#cost).
 
 ## Step 2: scoring
 
