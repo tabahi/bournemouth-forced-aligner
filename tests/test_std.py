@@ -235,6 +235,34 @@ class TestStdInventory:
                 "word_num")
         assert len({len(d[k]) for k in keys}) == 1
 
+    def test_g2p_batches_fit_the_word_and_byte_caps(self):
+        from bournemouth_aligner.standard_g2p.gold_g2p import goldG2P
+        g = goldG2P.__new__(goldG2P)                # the batching rule needs no model
+        g.batch_size, g.batch_bytes = 4, 40
+        prompts = ["x" * n for n in (5, 30, 3, 9, 9, 9, 9, 100, 7)]
+        batches = list(g._batches(prompts))
+        assert sorted(i for b in batches for i in b) == list(range(len(prompts)))
+        for b in batches:
+            n = [len(prompts[i]) for i in b]
+            assert n == sorted(n)                   # shortest first
+            assert len(b) <= 4
+            assert len(b) == 1 or len(b) * max(n) <= 40
+        assert [7] in batches                       # too long for the cap: a batch of its own
+
+    def test_prefetch_sends_each_new_word_once(self):
+        class StubG2P:
+            cache, cache_size, calls = {("eng-us", "hello"): "hɛlo"}, 0, []
+            def _tag(self, lang):
+                return "eng-us"
+            def ipa_for(self, words, lang=None):
+                self.calls.append(list(words))
+        p = StdPhonemizer("en")
+        p.prefetch(["", "<SIL>"])
+        assert p._g2p is None                       # no words: the model is not loaded
+        p._g2p = StubG2P()
+        p.prefetch(["Hello world", "world, again", "hello"])
+        assert p._g2p.calls == [["world", "again"]]
+
     def test_gold_token_outside_the_group_folds_to_unk(self):
         # A Mandarin retroflex is in gold but not on Japanese's 28-token list.
         outside = next(t for t in LGI.tokens("cjk")[4:] if t not in LGI.tokens("japanese"))

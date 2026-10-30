@@ -157,6 +157,7 @@ BFA(
     chunk_phonemes_per_second=15, # budget rate per second of SPEECH
     chunk_vad=True,               # energy VAD for speech seconds and cut placement
     warn_level=1,                 # 0 silent, 1 warnings, 2 + progress bars, geometry, decoder
+    n_jobs=1,                     # worker processes for the Viterbi; -1 = every CPU
 )
 ```
 
@@ -167,13 +168,14 @@ BFA(
 | parameter | notes |
 |---|---|
 | `preset`, `lang` | `lang` is overridden by `preset` only while it is still the default. std takes BCP 47 / ISO 639-3 / espeak spellings ([language support](language-support.md)). ph66 takes espeak-ng codes. |
-| `model_name` | `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-latin-noEnglish`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `mbfa-vietnamese`, `mbfa-thai`, `mbfa-abjad`, `mbfa-brahmic`, `CUPE-3-en`, `CUPE-3-en-base`, `CUPE-3-mls7`, or a repo id. |
+| `model_name` | `mbfa-latin`, `mbfa-latin-benchmark`, `mbfa-latin-noEnglish`, `mbfa-cyrillic`, `mbfa-cjk`, `mbfa-japanese`, `mbfa-vietnamese`, `mbfa-thai`, `mbfa-abjad`, `mbfa-brahmic`, `mbfa-other-alphabetic`, `CUPE-3-en`, `CUPE-3-en-base`, `CUPE-3-mls7`, or a repo id. |
 | `ckpt_path` | A p4mbfa model also fixes the language group, so `lang` must belong to that group. |
-| `duration_max` | Memory against batch size. Short segments are padded to this width, which dominates CPU time on short clips (TIMIT: ~1.0 s/clip at 30, ~0.3 s at 10, identical onsets). It never truncates. |
+| `duration_max` | Memory against batch size. Short segments are padded to this width, which dominates CPU time on short clips (100 TIMIT clips on a CPU in one call: 40 s at 30, 15 s at 10, identical onsets). It never truncates. |
 | `boundary_bonus_weight` | Helps boundary F1 on read speech, and hurts per-phone onset accuracy and spontaneous speech with ph66 models. See [the onset bonus](about-models.md#the-onset-bonus). |
 | `min_phone_frames` | If a segment cannot fit its text at this floor, it gets a shorter floor automatically. |
 | `low_confidence_level` | Confidence scales differ per model ([confidence](about-models.md#confidence)). |
-| `segment_max_seconds` | Whole-segment decoding is more accurate than chunking. The cost is ~1.8 s of Viterbi per 32 s of audio. |
+| `n_jobs` | Above 1, `process_segments` (and `process_sentences_batch`, `process_srt_file`) hands each batch's Viterbi to a pool of worker processes while the model runs on the next batch. Workers load no model, and the output is identical to `n_jobs=1`. It helps only when one call holds more than `batch_size` segments, or segments longer than `duration_max`, and mostly with the network on a GPU: 10 Buckeye interviews take 25 s instead of 61 s at `n_jobs=4`. On a CPU the network is the cost, and it changes little. 4 is enough except at `duration_max=10`, where 8 is a little faster. Chunked segments stay sequential. Workers are started with "spawn", so a script that sets it needs `if __name__ == "__main__":`. `close()` stops the pool. |
+| `segment_max_seconds` | Whole-segment decoding is more accurate than chunking. The cost is ~1.3 s of Viterbi per 32 s of audio. |
 
 ### Methods
 
@@ -196,6 +198,7 @@ BFA(
 | `framewise_assortment(aligned_ts, total_frames, frames_per_second, gap_contraction=5, select_key="phoneme_id")` | Timestamps → one label per mel frame, for TTS duration targets. |
 | `compress_frames(frames)` / `decompress_frames(rle)` | Run-length encoding of frame labels. |
 | `download_model(model_name, local_dir=None)` | Resolve a model to a local path. |
+| `close()` | Stop the `n_jobs` worker pool. The aligner stays usable; the pool restarts when next needed. |
 
 `aligner.phonemes_key` / `aligner.phoneme_groups_key` give the per-set key names (`local_ph` /
 `gold_phg` in std, `ph66` / `pg16` in ph66).
@@ -277,7 +280,7 @@ balign AUDIO TEXT_OR_SRT [OUTPUT] [options]
 | `--g2p-device DEVICE` | `--device` | std only |
 | `--punctuation-sil / --no-punctuation-sil` | off | std only |
 | `--duration-max FLOAT` | **60** | padding width of the batched path (the Python default is 30) |
-| `--boundary-bonus-weight FLOAT` | 15 ph66, 30 std | `0` = off |
+| `--boundary-bonus-weight FLOAT` | 15 | `0` = off |
 | `--boundary-contrast-frames INT` | 33 | onset bonus contrast window, 5 ms frames |
 | `--sub-frame-onsets / --frame-grid-onsets` | sub-frame | |
 | `--min-phone-frames INT` | model's | |
@@ -291,6 +294,10 @@ balign AUDIO TEXT_OR_SRT [OUTPUT] [options]
 | `--debug` | off | per-segment and per-window progress |
 | `--list-presets` | | print both sets' languages and exit |
 | `--version` | | |
+
+`balign` aligns one file per call, so it has no `--n-jobs` option. To align many files, call
+`process_segments` once from Python with all of them and `n_jobs=4` (see the
+[main README](../README.md#many-files-at-once)).
 
 ## Long audio and chunking
 
@@ -324,6 +331,9 @@ early rather than failing. The time cap is what stops that:
 The G2P model `charsiu/g2p_multilingual_byT5_small_100` (~1.2 GB) plus the `google/byt5-small`
 tokenizer are fetched on the first call that phonemizes std text. `$BFA_G2P_DIR` /
 `g2p_model_dir=` point at an existing copy. One G2P instance is shared per (directory, device).
+Each `process_segments` call runs all of its segments' new words through the G2P together,
+shortest first, in batches of up to 128 words and 2,048 padded input bytes (~0.25 GB on top of
+the weights, so the G2P fits a 2 GB GPU). Words already in the cache never reach the model.
 
 A repository updated on the Hub is **not** picked up by a machine that already has it cached.
 Delete it from the cache to refresh.

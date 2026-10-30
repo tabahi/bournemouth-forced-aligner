@@ -212,6 +212,32 @@ class StdPhonemizer:
         layers = self._expand(d) if d else self._empty_layers()
         return self._assemble(text, items, layers, d.get("gold_unmapped", []) if d else [])
 
+    def prefetch(self, texts):
+        """
+        Put every word of `texts` that the G2P has not seen yet through the model in one
+        batched pass, so `phonemize_sentence` on those texts only reads the word cache.
+
+        Without it each sentence runs its own few new words through the model, which on
+        a GPU is one small, mostly idle batch per segment. Words beyond the cache's size are
+        left out (they would evict each other before they were read); they are phonemized
+        sentence by sentence as before.
+        """
+        words, seen = [], set()
+        for text in texts:
+            for w in self._split(text):
+                if w is not None and w not in seen:
+                    seen.add(w)
+                    words.append(w)
+        if not words:
+            return                              # never load the G2P for nothing
+        g2p = self.g2p
+        tag = g2p._tag(self.language)
+        todo = [w for w in words if (tag, w) not in g2p.cache]
+        if g2p.cache_size:
+            todo = todo[:g2p.cache_size]
+        if todo:
+            g2p.ipa_for(todo, lang=self.language)
+
     def phonemize_gold(self, segment):
         """
         A segment that is ALREADY phonemized to gold indices - a `.gs.json` segment - into the

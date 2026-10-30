@@ -396,6 +396,40 @@ class TestBFA:
             assert isinstance(ts_item['end_ms'], float)
             assert ts_item['end_ms'] >= ts_item['start_ms']
 
+    # ---- Parallel Viterbi ----
+
+    def test_n_jobs_matches_serial(self, aligner):
+        """`n_jobs > 1` runs each batch's Viterbi in a worker process; nothing may move. The
+        input covers the batched path (batch_size=1 gives several batches), the whole-segment
+        path and a segment too short for its text, which falls back to one-at-a-time."""
+        clips = ["examples/samples/LJSpeech/LJ001-0001", "examples/samples/LJSpeech/LJ001-0002"]
+        wavs = [aligner.load_audio(c + ".wav") for c in clips]
+        segs = [json.load(open(c + ".srt.json"))["segments"] for c in clips]
+        segs[1] = segs[1] + [{"start": 0.5, "end": 0.6,
+                              "text": "this sentence cannot fit in a tenth of a second"}]
+
+        def run(n_jobs):
+            aligner.n_jobs = n_jobs
+            data = [{"segments": [dict(s) for s in ss]} for ss in segs]
+            return aligner.process_segments(data, wavs, batch_size=1)
+
+        saved = aligner.seg_duration_max
+        aligner.seg_duration_max = 5.0      # LJ001-0001 (9.7 s) takes the whole-segment path
+        try:
+            serial, parallel = run(1), run(2)
+        finally:
+            aligner.seg_duration_max = saved
+            aligner.n_jobs = 1
+            aligner.close()
+        assert parallel == serial
+
+    def test_n_jobs_validation(self, aligner):
+        with pytest.raises(ValueError):
+            aligner.n_jobs = 0
+        aligner.n_jobs = -1
+        assert aligner.n_jobs == (os.cpu_count() or 1)
+        aligner.n_jobs = 1
+
 
 if __name__ == "__main__":
     pytest.main()

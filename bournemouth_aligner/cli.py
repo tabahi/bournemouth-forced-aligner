@@ -8,7 +8,7 @@ from .presets import (DEFAULT_LANG, DEFAULT_PHONEME_SET, MLS7_LANGS, P3CUPE_EN, 
 from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
                        DEFAULT_PHONEMES_PER_SECOND)
 
-__version__ = "2.0.0"
+from . import __version__
 
 # ---------------------------------------------------------------------------
 # Helpers

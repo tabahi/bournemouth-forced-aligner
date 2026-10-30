@@ -49,7 +49,7 @@ def example_simplified_pipeline():
     print(f"\nAligned {len(phoneme_ts)} phonemes in {elapsed_ms:.1f} ms:\n")
     for i, tup in enumerate(phoneme_ts):
         ph_id = tup[0]
-        start_ms, end_ms = tup[6], tup[7]
+        start_ms, end_ms = tup[5], tup[6]
         label = aligner.phoneme_id_to_label.get(ph_id, f"UNK_{ph_id}")
         ipa = ipa_labels[i] if i < len(ipa_labels) else "?"
         print(f"  {i+1:>2}: {label:>6s} ({ipa:>3s})  {start_ms:7.1f} - {end_ms:7.1f} ms")
@@ -109,7 +109,7 @@ def example_simplified_batch():
         print(f"[{b}] '{text[:60]}...' -> {len(phoneme_ts)} phonemes")
         for i, tup in enumerate(phoneme_ts[:5]):
             ph_id = tup[0]
-            start_ms, end_ms = tup[6], tup[7]
+            start_ms, end_ms = tup[5], tup[6]
             label = aligner.phoneme_id_to_label.get(ph_id, f"UNK_{ph_id}")
             ipa_lbl = ipa[i] if i < len(ipa) else "?"
             print(f"    {label:>6s} ({ipa_lbl}): {start_ms:.0f}-{end_ms:.0f} ms")

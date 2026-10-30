@@ -1,28 +1,41 @@
+"""
+Read the per-phoneme embeddings that `process_srt_file(..., extract_embeddings=True, vspt_path=...)`
+saves (the CLI's `--embeddings PATH` writes the same file). Run from the repository root.
+"""
+import os
+
 import torch
+
+EMBEDDINGS_PATH = "output_vspt_embd.pt"
+
+
+def _write_embeddings():
+    """Align a sample clip and save its embeddings, so this example runs on its own."""
+    from bournemouth_aligner import BFA
+
+    aligner = BFA(preset="en-us", duration_max=10)
+    aligner.process_srt_file("examples/samples/LJSpeech/LJ001-0002.srt.json",
+                             "examples/samples/LJSpeech/LJ001-0002.wav",
+                             ts_out_path="output_vspt.vs.json",
+                             extract_embeddings=True, vspt_path=EMBEDDINGS_PATH, do_groups=True)
 
 
 def _read_embeddings():
-    embeddings_path = "output_vspt_embd.pt"
+    if not os.path.exists(EMBEDDINGS_PATH):
+        _write_embeddings()
 
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load the embeddings
-    vspt_p_embd, vspt_g_embds = torch.load(embeddings_path, map_location=device, weights_only=True)
+    # One tensor per segment: phoneme embeddings, and phoneme-group embeddings (do_groups=True).
+    vspt_p_embd, vspt_g_embd = torch.load(EMBEDDINGS_PATH, map_location=device, weights_only=True)
 
-    # Analyze the embeddings
     print("Total segments:", len(vspt_p_embd))
-    print("First segment embeddings shape:", vspt_p_embd[0].shape)
-    print("First segment embeddings shape:", vspt_g_embds[0].shape)
+    total_phonemes, embeddings_dim = vspt_p_embd[0].shape
+    print("Phonemes in the first segment:", total_phonemes)
+    print("Embedding dimension:", embeddings_dim)
+    if vspt_g_embd is not None and vspt_g_embd[0] is not None:
+        print("Group embeddings of the first segment:", tuple(vspt_g_embd[0].shape))
 
-
-    total_phonemes = vspt_p_embd[0].shape[0]
-    embeddings_dim = vspt_p_embd[0].shape[1]
-    print("Phoneme embeddings:")
-    print("Total phonemes:", total_phonemes)       # 1 to 625
-    print("Embeddings dimension:", embeddings_dim) # 512
 
 if __name__ == "__main__":
     _read_embeddings()

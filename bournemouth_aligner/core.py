@@ -41,11 +41,13 @@ whole number of output frames, so the stitched grid is the model's own conv grid
 correction term. See `segmental/windowing.py`.
 '''
 
+import collections
 import contextlib
 import json
 import math
 import os
 import traceback
+from concurrent.futures.process import BrokenProcessPool
 
 import torch
 import torchaudio
@@ -88,7 +90,7 @@ class BFA:
                  chunk_phonemes_per_second=DEFAULT_PHONEMES_PER_SECOND, chunk_vad=True,
                  segment_max_seconds=DEFAULT_SEGMENT_MAX_SECONDS, warn_level=1,
                  phoneme_set=None, ckpt_path=None, g2p_model_dir=None, g2p_device=None,
-                 g2p_cache_size=None, punctuation_sil=False):
+                 g2p_cache_size=None, punctuation_sil=False, n_jobs=1):
         """
         Initialize the BFA phoneme timestamp extractor.
 
@@ -192,6 +194,16 @@ class BFA:
                 1 (default) = warnings, and one line when a model is downloaded. 2 = also
                 download progress bars and informational output (resolved geometry, decoder
                 settings, coverage details). Errors are raised as exceptions regardless.
+            n_jobs (int): Worker processes for the Viterbi of `process_segments` (and so of
+                `process_sentences_batch` and `process_srt_file`). 1 (default) runs everything
+                in this process. Above 1, each batch's Viterbi is handed to a pool while this
+                process runs the model on the next batch, and segments longer than
+                `duration_max` are decoded in the pool too; chunked segments stay here. The
+                workers load no model - only the decoder - and give the same timestamps as
+                `n_jobs=1`. It pays off only when one call holds more segments than
+                `batch_size`, or several long ones. -1 uses every CPU. Workers are started with
+                "spawn", so a script that sets this must keep its top-level code under
+                `if __name__ == "__main__":`. The pool starts on first use; `close()` stops it.
 
         Parameter priority (highest to lowest): `ckpt_path`, `model_name`, `preset`.
 
@@ -259,6 +271,10 @@ class BFA:
         self.chunk_weak_run = DEFAULT_WEAK_RUN
         self.chunk_snap_to_silence = DEFAULT_SNAP_TO_SILENCE_SEC
 
+        # --- parallel Viterbi (segmental/parallel.py) -------------------------------------
+        self.n_jobs = n_jobs
+        self._viterbi_pool = None               # started by _get_viterbi_pool() on first use
+
         if preset is not None or model_name is not None or ckpt_path is not None:
             self.load_model(preset=preset, model_name=model_name, ckpt_path=ckpt_path)
         else:
@@ -291,6 +307,38 @@ class BFA:
         self._warn_level = int(level)
         if getattr(self, 'phonemizer', None) is not None:
             self.phonemizer.verbose = self._warn_level
+
+    @property
+    def n_jobs(self):
+        return self._n_jobs
+
+    @n_jobs.setter
+    def n_jobs(self, n):
+        n = 1 if n is None else int(n)
+        if n == -1:
+            n = os.cpu_count() or 1
+        if n < 1:
+            raise ValueError(f"n_jobs must be >= 1, or -1 for every CPU; got {n}")
+        self._n_jobs = n
+
+    def _get_viterbi_pool(self):
+        """The worker pool for the Viterbi, (re)started to match `n_jobs`. None when serial."""
+        if self.n_jobs <= 1:
+            return None
+        pool = self._viterbi_pool
+        if pool is None or pool.n_jobs != self.n_jobs:
+            if pool is not None:
+                pool.close()
+            from .segmental.parallel import ViterbiPool
+            self._viterbi_pool = ViterbiPool(self.n_jobs)
+        return self._viterbi_pool
+
+    def close(self):
+        """Stop the Viterbi worker pool, if `n_jobs > 1` started one. The aligner stays usable;
+        the next call that needs the pool starts it again."""
+        if getattr(self, '_viterbi_pool', None) is not None:
+            self._viterbi_pool.close()
+            self._viterbi_pool = None
 
     def _info(self, msg):
         """Informational output - resolved geometry, decoder settings. `warn_level >= 2`."""
@@ -606,6 +654,16 @@ class BFA:
                 stamps.append((int(phones[i]), start, end, ti))
         return stamps
 
+    def _align_kwargs(self):
+        """`align_batch`'s decoder settings, as the aligner is configured now."""
+        hp = self.decoder_hp
+        return dict(
+            min_frames=self.min_phone_frames, soft_frames=self.soft_phone_frames,
+            soft_cost=hp['soft_frame_cost'], sil_skippable=hp['sil_skippable'],
+            optional_sil=hp['optional_sil'], class_prior_norm=hp['class_prior_norm'],
+            sil_class=self.silence_class, bonus_weight=self.boundary_bonus_weight,
+            contrast_frames=hp['boundary_contrast_frames'], sub_frame=self.sub_frame_onsets)
+
     def _decode_batch(self, log_probs, ph_seqs, ph_seq_lens, spectral_lens, flux=None):
         """
         Force-align a batch and return framestamps per clip.
@@ -614,17 +672,12 @@ class BFA:
             ValueError: when a clip's sequence cannot be fitted into its frames even at one
                 frame per phone. The chunker catches this and retries with a smaller budget.
         """
-        hp = self.decoder_hp
-        aligned = align_batch(
-            log_probs, ph_seqs, ph_seq_lens, spectral_lens,
-            min_frames=self.min_phone_frames, soft_frames=self.soft_phone_frames,
-            soft_cost=hp['soft_frame_cost'], sil_skippable=hp['sil_skippable'],
-            optional_sil=hp['optional_sil'], class_prior_norm=hp['class_prior_norm'],
-            sil_class=self.silence_class, flux=flux,
-            bonus_weight=self.boundary_bonus_weight,
-            contrast_frames=hp['boundary_contrast_frames'],
-            sub_frame=self.sub_frame_onsets)
+        aligned = align_batch(log_probs, ph_seqs, ph_seq_lens, spectral_lens, flux=flux,
+                              **self._align_kwargs())
+        return self._framestamps_from_batch(aligned, ph_seq_lens, spectral_lens)
 
+    def _framestamps_from_batch(self, aligned, ph_seq_lens, spectral_lens):
+        """`align_batch`'s output -> framestamps per clip; raises as `_decode_batch` does."""
         out = []
         for b, entry in enumerate(aligned):
             n_targets = int(ph_seq_lens[b])
@@ -683,6 +736,20 @@ class BFA:
             timestamp dict has 'phoneme_timestamps' and 'group_timestamps' as 7-tuples
             `(id, start_frame, end_frame, target_idx, confidence, start_ms, end_ms)`.
         """
+        st = self._forward_batch(wavs, wav_lens, phoneme_sequences, group_sequences,
+                                 extract_embeddings)
+        frame_phonemes = self._decode_batch(st['log_probs_p'], st['ph_seqs'],
+                                            st['ph_seq_lens_t'], st['spectral_lens'],
+                                            flux=st['flux'])
+        return self._finish_batch(st, frame_phonemes, wav_lens, start_offset_times,
+                                  extract_embeddings, do_groups, debug)
+
+    def _forward_batch(self, wavs, wav_lens, phoneme_sequences, group_sequences,
+                       extract_embeddings):
+        """
+        The first third of `extract_timestamps_from_segment_batch`: pad the sequences, run the
+        model, and bring everything the Viterbi and the post-processing read to the CPU.
+        """
         assert self.extractor is not None, \
             "No model loaded. Use load_model() before aligning."
 
@@ -721,9 +788,28 @@ class BFA:
         grp_seqs = group_sequences.cpu()
         ph_seq_lens_t = torch.tensor(ph_seq_lens, dtype=torch.long)
         spectral_lens = spectral_lens.cpu()
+        return dict(log_probs_p=log_probs_p, log_probs_g=log_probs_g, ph_seqs=ph_seqs,
+                    grp_seqs=grp_seqs, ph_seq_lens=ph_seq_lens, ph_seq_lens_t=ph_seq_lens_t,
+                    spectral_lens=spectral_lens, flux=None if flux is None else flux.cpu(),
+                    embeddings=(embeddings.cpu() if extract_embeddings and embeddings is not None
+                                else None))
 
-        frame_phonemes = self._decode_batch(log_probs_p, ph_seqs, ph_seq_lens_t, spectral_lens,
-                                            flux=None if flux is None else flux.cpu())
+    def _submit_viterbi(self, pool, st):
+        """Hand one `_forward_batch` result's Viterbi to the worker pool; returns the future."""
+        from .segmental.parallel import pack_job
+        return pool.submit(pack_job(st['log_probs_p'], st['ph_seqs'], st['ph_seq_lens_t'],
+                                    st['spectral_lens'], st['flux']),
+                           self._align_kwargs())
+
+    def _finish_batch(self, st, frame_phonemes, wav_lens, start_offset_times,
+                      extract_embeddings, do_groups, debug):
+        """
+        The last third of `extract_timestamps_from_segment_batch`: framestamps -> timestamps
+        with confidences, the coverage counters, and the pooled embeddings.
+        """
+        log_probs_p, log_probs_g = st['log_probs_p'], st['log_probs_g']
+        grp_seqs, ph_seq_lens = st['grp_seqs'], st['ph_seq_lens']
+        spectral_lens, embeddings = st['spectral_lens'], st['embeddings']
 
         # Groups are a many-to-one relabelling of the phonemes, so they take the phoneme
         # segmentation directly: consistent with it by construction, and one DP instead of two.
@@ -749,7 +835,6 @@ class BFA:
 
         pooled_p, pooled_g = [None] * len(frame_phonemes), [None] * len(frame_phonemes)
         if extract_embeddings and embeddings is not None:
-            embeddings = embeddings.cpu()
             for b in range(len(frame_phonemes)):
                 n = int(spectral_lens[b])
                 pooled_p[b] = weighted_pool_embeddings(
@@ -892,18 +977,25 @@ class BFA:
         batched path pads every segment to `duration_max` and would otherwise truncate a longer
         one silently, dropping its tail.
         '''
+        wavs, wav_lens, ph_seqs, offsets, grp_seqs = self._whole_inputs(
+            clip_wav, start_sec, end_sec, phoneme_sequence, group_sequence, do_groups)
+        res, pe, ge = self.extract_timestamps_from_segment_batch(
+            wavs, wav_lens, ph_seqs, start_offset_times=offsets, group_sequences=grp_seqs,
+            extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+        return res[0], pe[0], ge[0]
+
+    def _whole_inputs(self, clip_wav, start_sec, end_sec, phoneme_sequence, group_sequence,
+                      do_groups):
+        """`align_segment_whole`'s batch of one: (wavs, wav_lens, phoneme_sequences,
+        start_offset_times, group_sequences) as `extract_timestamps_from_segment_batch` takes
+        them."""
         sr = self.resampler_sample_rate
         wav = clip_wav.mean(dim=0) if clip_wav.dim() > 1 else clip_wav
         a = max(0, int(start_sec * sr))
         b = int(end_sec * sr) if (end_sec is not None and end_sec > 0) else wav.shape[0]
         wav = self._rms_normalize(wav[a:min(b, wav.shape[0])])
-        res, pe, ge = self.extract_timestamps_from_segment_batch(
-            wav.unsqueeze(0), [wav.shape[0]], [list(phoneme_sequence)],
-            start_offset_times=[start_sec],
-            group_sequences=[list(group_sequence)] if (do_groups and group_sequence is not None)
-            else None,
-            extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
-        return res[0], pe[0], ge[0]
+        grp = ([list(group_sequence)] if (do_groups and group_sequence is not None) else None)
+        return wav.unsqueeze(0), [wav.shape[0]], [list(phoneme_sequence)], [start_sec], grp
 
     @torch.no_grad()
     def align_segment_chunked(self, clip_wav, start_sec, end_sec, phoneme_sequence,
@@ -1300,6 +1392,18 @@ class BFA:
             return self.phonemizer.phonemize_gold(seg)
         return self.phonemize_sentence(seg["text"])
 
+    def _prefetch_g2p(self, segs):
+        """
+        Run the new words of all `segs` through the G2P in large batches before they are
+        phonemized one by one, which then only reads the G2P's word cache. Only the std set
+        has a G2P model; segments carrying `gold_ph` never reach it.
+        """
+        prefetch = getattr(self.phonemizer, "prefetch", None)
+        if prefetch is None:
+            return
+        prefetch([seg["text"] for seg in segs
+                  if not (self.phoneme_set == "std" and seg.get("gold_ph"))])
+
     def post_process_segment(self, segment, ts, phoneme_sequence, phoneme_timestamps,
                              group_timestamps=None, debug=False):
         """Turn one segment's framestamps into the output dicts, with coverage and words."""
@@ -1447,6 +1551,7 @@ class BFA:
                 return empty, [[] for _ in range(num_batch)], [[] for _ in range(num_batch)]
             return empty
 
+        self._prefetch_g2p([seg for _, seg, _ in flat_items])
         ts_outs = [self._phonemize_segment(seg) for _, seg, _ in flat_items]
         phoneme_sequences = [ts[self.phonemes_key] for ts in ts_outs]
         group_sequences = ([ts[self.phoneme_groups_key] for ts in ts_outs] if do_groups
@@ -1521,19 +1626,106 @@ class BFA:
             else:
                 short_ids.append(i)
 
-        for i in whole_ids:
-            bi, seg, clip_wav = flat_items_f[i]
-            try:
-                res, pe, ge = self.align_segment_whole(
-                    clip_wav, float(seg["start"]), float(seg["end"]), ph_seqs_f[i],
-                    group_sequence=grp_seqs_f[i] if do_groups else None,
-                    extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
-            except ValueError as ex:
-                self._warn(f"alignment failed for clip {bi}, segment "
-                           f"{seg['start']:.2f}-{seg['end']:.2f}s: {ex}")
-                res, pe, ge = {'phoneme_timestamps': [], 'group_timestamps': []}, None, None
-            results[i], pooled_emb_p_list[i], pooled_emb_g_list[i] = res, pe, ge
+        def store(ids, r_slice, p_slice, g_slice):
+            for k, j in enumerate(ids):
+                results[j] = r_slice[k]
+                pooled_emb_p_list[j] = p_slice[k]
+                pooled_emb_g_list[j] = g_slice[k]
 
+        def whole_failed(i, ex):
+            bi, seg, _ = flat_items_f[i]
+            self._warn(f"alignment failed for clip {bi}, segment "
+                       f"{seg['start']:.2f}-{seg['end']:.2f}s: {ex}")
+            store([i], [{'phoneme_timestamps': [], 'group_timestamps': []}], [None], [None])
+
+        slices = [short_ids[k:k + max(1, batch_size)]
+                  for k in range(0, len(short_ids), max(1, batch_size))]
+        pool = self._get_viterbi_pool() if (whole_ids or len(slices) > 1) else None
+
+        if pool is None:
+            for i in whole_ids:
+                bi, seg, clip_wav = flat_items_f[i]
+                try:
+                    res, pe, ge = self.align_segment_whole(
+                        clip_wav, float(seg["start"]), float(seg["end"]), ph_seqs_f[i],
+                        group_sequence=grp_seqs_f[i] if do_groups else None,
+                        extract_embeddings=extract_embeddings, do_groups=do_groups,
+                        debug=debug)
+                except ValueError as ex:
+                    whole_failed(i, ex)
+                    continue
+                store([i], [res], [pe], [ge])
+
+        else:
+            # --- n_jobs > 1: this process runs the model, the pool runs the Viterbi ---------
+            # A job is a whole batch: (ids, the forward pass's outputs, inputs for the
+            # post-processing, the future). At most 2 * n_jobs are held, which bounds the
+            # posteriors kept in memory while keeping every worker busy.
+            pending = collections.deque()
+
+            def broken(ex):
+                self.close()
+                return RuntimeError(
+                    "A Viterbi worker process died (n_jobs > 1). Workers are started with "
+                    "'spawn', which re-imports the calling script: its top-level code must "
+                    "be under `if __name__ == \"__main__\":`. Running out of memory also "
+                    "ends a worker; lower n_jobs or batch_size if so.")
+
+            def submit(kind, ids, wavs_b, lens_b, ph_b, offsets_b, grp_b):
+                try:
+                    st = self._forward_batch(wavs_b, lens_b, ph_b, grp_b, extract_embeddings)
+                except ValueError as ex:   # handled in collect(), as the serial path does
+                    pending.append((kind, ids, None, lens_b, offsets_b, ex))
+                else:
+                    try:
+                        fut = self._submit_viterbi(pool, st)
+                    except BrokenProcessPool as ex:
+                        raise broken(ex) from ex
+                    pending.append((kind, ids, st, lens_b, offsets_b, fut))
+                while len(pending) > 2 * pool.n_jobs:
+                    collect(pending.popleft())
+
+            def collect(job):
+                kind, ids, st, lens_b, offsets_b, fut = job
+                failed = fut if isinstance(fut, ValueError) else None
+                if failed is None:
+                    try:
+                        aligned = fut.result()
+                    except BrokenProcessPool as ex:
+                        raise broken(ex) from ex
+
+                def finish():
+                    if failed is not None:
+                        raise failed
+                    frames = self._framestamps_from_batch(aligned, st['ph_seq_lens'],
+                                                          st['spectral_lens'])
+                    return self._finish_batch(st, frames, lens_b, offsets_b,
+                                              extract_embeddings, do_groups, debug)
+
+                if kind == 'whole':
+                    try:
+                        store(ids, *finish())
+                    except ValueError as ex:
+                        whole_failed(ids[0], ex)
+                else:
+                    store(ids, *self._align_slice(
+                        ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times, flat_items_f,
+                        extract_embeddings, do_groups, debug, first=finish))
+
+            with torch.no_grad():
+                for i in whole_ids:
+                    _bi, seg, clip_wav = flat_items_f[i]
+                    submit('whole', [i], *self._whole_inputs(
+                        clip_wav, float(seg["start"]), float(seg["end"]), ph_seqs_f[i],
+                        grp_seqs_f[i] if do_groups else None, do_groups))
+                for ids in slices:
+                    submit('short', ids, torch.stack([wavs[j] for j in ids], dim=0),
+                           [wav_lens[j] for j in ids], [ph_seqs_f[j] for j in ids],
+                           [start_times[j] for j in ids],
+                           [grp_seqs_f[j] for j in ids] if do_groups else None)
+
+        # Chunked segments run here in both modes - each window depends on the one before -
+        # and with a pool they overlap the batches still in its queue.
         for i in long_ids:
             bi, seg, clip_wav = flat_items_f[i]
             self._info(f"Clip {bi}: segment {seg['start']:.2f}-{seg['end']:.2f}s with "
@@ -1550,16 +1742,15 @@ class BFA:
                 res, pe, ge = {'phoneme_timestamps': [], 'group_timestamps': []}, None, None
             results[i], pooled_emb_p_list[i], pooled_emb_g_list[i] = res, pe, ge
 
-        # --- the rest go through the batched single-shot path -----------------------------
-        for start in range(0, len(short_ids), max(1, batch_size)):
-            ids = short_ids[start:start + max(1, batch_size)]
-            r_slice, p_slice, g_slice = self._align_slice(
-                ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times, flat_items_f,
-                extract_embeddings, do_groups, debug)
-            for k, j in enumerate(ids):
-                results[j] = r_slice[k]
-                pooled_emb_p_list[j] = p_slice[k]
-                pooled_emb_g_list[j] = g_slice[k]
+        if pool is not None:
+            while pending:
+                collect(pending.popleft())
+        else:
+            # --- serial: the rest go through the batched single-shot path -----------------
+            for ids in slices:
+                store(ids, *self._align_slice(
+                    ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times, flat_items_f,
+                    extract_embeddings, do_groups, debug))
 
         for idx, ((bi, seg, _), result, ts) in enumerate(zip(flat_items_f, results, ts_outs_f)):
             processed = self.post_process_segment(
@@ -1591,7 +1782,7 @@ class BFA:
         return batch_results
 
     def _align_slice(self, ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times,
-                     flat_items_f, extract_embeddings, do_groups, debug):
+                     flat_items_f, extract_embeddings, do_groups, debug, first=None):
         """
         One batched forward+decode over `ids`, falling back to one segment at a time if any
         of them cannot be aligned.
@@ -1599,6 +1790,9 @@ class BFA:
         The fallback matters because the decode raises for the WHOLE batch as soon as one
         segment's text outruns its audio; retrying individually costs one extra pass over a
         handful of segments and keeps the rest of the slice.
+
+        `first`, when given, stands in for the batched attempt: a callable returning its result
+        or raising its ValueError - the pool's Viterbi for this slice, already computed.
         """
         def run(subset):
             return self.extract_timestamps_from_segment_batch(
@@ -1610,7 +1804,7 @@ class BFA:
                 extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
 
         try:
-            return run(ids)
+            return first() if first is not None else run(ids)
         except ValueError as ex:
             if len(ids) == 1:
                 bi, seg, _ = flat_items_f[ids[0]]

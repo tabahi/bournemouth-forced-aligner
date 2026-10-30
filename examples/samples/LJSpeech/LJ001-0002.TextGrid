@@ -2,7 +2,7 @@ File type = "ooTextFile"
 Object class = "TextGrid"
 
 xmin = 0
-xmax = 1.965569580078125
+xmax = 1.899546485260771
 tiers? <exists>
 size = 2
 item []:
@@ -10,123 +10,127 @@ item []:
         class = "IntervalTier"
         name = "phonemes"
         xmin = 0
-        xmax = 1.965569580078125
+        xmax = 1.899546485260771
         intervals: size = 24
         intervals [1]:
-            xmin = 0.0
-            xmax = 0.049552173614501954
+            xmin = 0.0225
+            xmax = 0.0825
             text = "ɪ"
         intervals [2]:
-            xmin = 0.049552173614501954
-            xmax = 0.08258695983886719
+            xmin = 0.0825
+            xmax = 0.1275
             text = "n"
         intervals [3]:
-            xmin = 0.08258695983886719
-            xmax = 0.19820869445800782
+            xmin = 0.1275
+            xmax = 0.1675
             text = "b"
         intervals [4]:
-            xmin = 0.19820869445800782
-            xmax = 0.21472608947753907
+            xmin = 0.1675
+            xmax = 0.3275
             text = "iː"
         intervals [5]:
-            xmin = 0.21472608947753907
-            xmax = 0.3138304443359375
+            xmin = 0.3275
+            xmax = 0.3725
             text = "ɪ"
         intervals [6]:
-            xmin = 0.3138304443359375
-            xmax = 0.39641738891601563
+            xmin = 0.3725
+            xmax = 0.4375
             text = "ŋ"
         intervals [7]:
-            xmin = 0.39641738891601563
-            xmax = 0.4624869384765625
+            xmin = 0.4375
+            xmax = 0.4763196563720703
             text = "k"
         intervals [8]:
-            xmin = 0.4624869384765625
-            xmax = 0.5285565185546875
+            xmin = 0.4763196563720703
+            xmax = 0.5075000000000001
             text = "ə"
         intervals [9]:
-            xmin = 0.5285565185546875
-            xmax = 0.56159130859375
+            xmin = 0.5075000000000001
+            xmax = 0.6075
             text = "m"
         intervals [10]:
-            xmin = 0.56159130859375
-            xmax = 0.627660888671875
+            xmin = 0.6075
+            xmax = 0.6775327301025391
             text = "p"
         intervals [11]:
-            xmin = 0.627660888671875
-            xmax = 0.7763174438476562
+            xmin = 0.6775327301025391
+            xmax = 0.7425
             text = "æ"
         intervals [12]:
-            xmin = 0.7763174438476562
-            xmax = 0.8093521728515625
+            xmin = 0.7425
+            xmax = 0.8975
             text = "ɹ"
         intervals [13]:
-            xmin = 0.8093521728515625
-            xmax = 0.8754217529296875
+            xmin = 0.8975
+            xmax = 0.9425
             text = "ə"
         intervals [14]:
-            xmin = 0.8754217529296875
-            xmax = 0.9910435180664062
+            xmin = 0.9425
+            xmax = 0.9780134582519533
             text = "t"
         intervals [15]:
-            xmin = 0.9910435180664062
-            xmax = 1.040595703125
+            xmin = 0.9780134582519533
+            xmax = 1.0525
             text = "ɪ"
         intervals [16]:
-            xmin = 1.040595703125
-            xmax = 1.1231826171875
+            xmin = 1.0525
+            xmax = 1.1106121826171875
             text = "v"
         intervals [17]:
-            xmin = 1.1231826171875
-            xmax = 1.2222869873046875
+            xmin = 1.1106121826171875
+            xmax = 1.1825
             text = "l"
         intervals [18]:
-            xmin = 1.2222869873046875
-            xmax = 1.271839111328125
+            xmin = 1.1825
+            xmax = 1.2726354217529297
             text = "i"
         intervals [19]:
-            xmin = 1.271839111328125
-            xmax = 1.3874608154296875
+            xmin = 1.2726354217529297
+            xmax = 1.3871023559570312
             text = "m"
         intervals [20]:
-            xmin = 1.3874608154296875
-            xmax = 1.5195999755859375
+            xmin = 1.3871023559570312
+            xmax = 1.568700408935547
             text = "ɑː"
         intervals [21]:
-            xmin = 1.5195999755859375
-            xmax = 1.618704345703125
+            xmin = 1.568700408935547
+            xmax = 1.5975000000000001
             text = "d"
         intervals [22]:
-            xmin = 1.618704345703125
-            xmax = 1.68477392578125
+            xmin = 1.5975000000000001
+            xmax = 1.7025000000000001
             text = "ɚ"
         intervals [23]:
-            xmin = 1.68477392578125
-            xmax = 1.7838782958984376
+            xmin = 1.7025000000000001
+            xmax = 1.8075
             text = "n"
         intervals [24]:
-            xmin = 1.7838782958984376
-            xmax = 1.965569580078125
+            xmin = 1.8075
+            xmax = 1.8800000000000003
             text = "SIL"
     item [2]:
         class = "IntervalTier"
         name = "words"
         xmin = 0
-        xmax = 1.965569580078125
-        intervals: size = 4
+        xmax = 1.899546485260771
+        intervals: size = 5
         intervals [1]:
-            xmin = 0.0
-            xmax = 0.08258695983886719
+            xmin = 0.0225
+            xmax = 0.1275
             text = "in"
         intervals [2]:
-            xmin = 0.08258695983886719
-            xmax = 0.39641738891601563
+            xmin = 0.1275
+            xmax = 0.4375
             text = "being"
         intervals [3]:
-            xmin = 0.39641738891601563
-            xmax = 1.271839111328125
+            xmin = 0.4375
+            xmax = 1.2726354217529297
             text = "comparatively"
         intervals [4]:
-            xmin = 1.271839111328125
-            xmax = 1.7838782958984376
+            xmin = 1.2726354217529297
+            xmax = 1.8075
             text = "modern"
+        intervals [5]:
+            xmin = 1.8075
+            xmax = 1.8800000000000003
+            text = "<sil>"

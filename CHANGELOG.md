@@ -1,8 +1,19 @@
 # Changelog
 
-## [2.0.1] - 2026-10-28
+## [2.0.1] - 2026-10-29
+
+### Added
+- **`n_jobs`** constructor argument: above 1, `process_segments` (and `process_srt_file`,
+  `process_sentences_batch`) runs each batch's alignment search in worker processes while the
+  network handles the next batch. The output is identical to `n_jobs=1`. With a GPU, 10 Buckeye
+  interviews align 2.4× faster at `n_jobs=4`; on a CPU it changes little. Scripts that set it
+  need `if __name__ == "__main__":`. `close()` stops the workers.
+- Timings for v2.0.1 against MFA 3.4.3 in [docs/evaluation.md](docs/evaluation.md#cost).
 
 ### Changed
+- **Faster G2P for the std set.** Each `process_segments` call runs all of its new words through
+  the G2P model together (up to 128 words per batch) instead of once per sentence: 4-21× less
+  G2P time, identical phonemes.
 - **Decoder defaults** (`presets.DECODER_DEFAULTS`), from a decode-time sweep on TIMIT and
   Buckeye: onset bonus `boundary_bonus_weight` 15 (was 30) and contrast window 33 frames (was
   17), the same for every model. 15 is chosen for conversational speech. The model files are
@@ -17,6 +28,12 @@
   languages in 9 groups. Thai needs `pip install "bournemouth-forced-aligner[th]"`.
 - `mbfa-latin-noEnglish`, selectable by name: the `mbfa-latin` recipe trained without English.
 - `boundary_contrast_frames` argument and `--boundary-contrast-frames` CLI option.
+
+### Fixed
+- `balign --version` reported 2.0.0.
+- `examples/run_simplipied_pipeline.py` read the wrong fields of the timestamp tuples, and
+  `examples/read_embeddings.py` needed a file that no example wrote.
+- The sample outputs in `examples/samples/` were still in the 1.x format.
 
 ## [2.0.0] - 2026-10-15
 
@@ -182,6 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - phonemizer>=3.3.0
 
 
+[2.0.1]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v2.0.1
 [2.0.0]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v2.0.0
 [1.1.5]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.5
 [1.1.3]: https://github.com/tabahi/bournemouth-forced-aligner/releases/tag/v1.1.3

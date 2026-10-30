@@ -2,7 +2,8 @@
 import json
 import time
 
-from bournemouth_aligner import BFA
+from bournemouth_aligner import BFA # For BFA installed in environment, use this import. If you are running this example directly from the repo, uncomment the lines below for relative imports.
+# For relative imports when running this example directly, uncomment the following lines:
 #import sys
 #sys.path.append('.')
 #from bournemouth_aligner.core import BFA
@@ -29,7 +30,7 @@ def example_batch_sentence_processing():
     audio_wavs = [bfa_aligner.load_audio(p) for p in audio_paths]
 
     t0 = time.time()
-    timestamps = bfa_aligner.process_sentences_batch(texts, audio_wavs, do_groups=True, debug=True)
+    timestamps = bfa_aligner.process_sentences_batch(texts, audio_wavs, do_groups=True, debug=False)
     print(f"Batch processing took {(time.time() - t0)*1000:.1f} ms")
 
     # Print results
@@ -79,19 +80,22 @@ def example_batch_SRT_processing():
         all_audio_wavs.append(audio_wav)
 
     t0 = time.time()
+    bfa_aligner.warn_level = 0 # to make it completely silent, set to 0. Default is 1 (warnings only). Set to 2 for debug info.
+    
     timestamps = bfa_aligner.process_segments(
         all_texts_srts,
         all_audio_wavs,
         do_groups=True,
         batch_size=16,  # Process 16 segments in a single batch if they are short enough (duration_max=10s), otherwise use batch_size=1 to process segments one by one
-        debug=True,
+        debug=False, # Set to True to print debug info for each segment
     )
     ts_out_path="examples/samples/LJSpeech/batch_output.vs.json"
     with open(ts_out_path, 'w') as f:
         json.dump(timestamps, f, indent=4)
     
     print(f"Batch segments processing took {(time.time() - t0)*1000:.1f} ms")
-
+    
+    
     # Print word-level results
     for b in range(len(all_texts_srts)):
         print(f"\nBatch item {b}")

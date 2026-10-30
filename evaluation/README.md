@@ -146,9 +146,11 @@ python evaluation/process_alignments.py 4 3 &
 
 Do not let two shells run MFA at the same time; MFA keeps one shared database per user.
 
-**Cost** on one CPU process: a full TIMIT run (6,300 clips) is a little over an hour per BFA
-model. A Buckeye clip is a whole interview of about 130 segments, so use `subset` for a quick
-look. MFA took about a minute for 20 TIMIT clips, most of it start-up.
+**Cost.** The harness calls BFA once per clip. A Buckeye clip is a whole interview of about 130
+segments, so use `subset` for a quick look. On a CPU with the harness's 30 s padding, BFA runs at
+about 0.1-0.12 × real time on Buckeye; with a GPU, about 0.01 ×. MFA has about a minute of fixed
+start-up and setup per call, then runs fast. With 8 jobs it aligned all of Buckeye in 12-19 min.
+Measured timings for both are in [docs/evaluation.md](../docs/evaluation.md#cost).
 
 ## Step 2: scoring
 
