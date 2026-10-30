@@ -1,15 +1,17 @@
 import torch
 import torchaudio
-#from bournemouth_aligner import BFA
-import sys
-sys.path.append('.')
-from bournemouth_aligner.core import BFA
-from bournemouth_aligner.utils import read_audio
+try:
+    from bournemouth_aligner import BFA
+except ImportError:
+    import sys
+    sys.path.append('.')
+    from bournemouth_aligner.core import BFA
+    from bournemouth_aligner.utils import read_audio
 
 
 
 # Step1: Initialize BFA
-device = 'cpu' # CPU is faster for single file processing
+device = 'auto' # CPU is faster for single file processing
 duration_max = 10 # it's only for padding and clipping. Set it more than your expected duration
 
 # Using language preset (recommended) - automatically selects best English model
