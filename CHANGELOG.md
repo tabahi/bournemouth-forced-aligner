@@ -1,4 +1,23 @@
 # Changelog
+## [2.0.3] - 2026-11-??
+
+### Changed
+- **`segment_max_seconds` default raised from 120 s to 600 s** (`BFA`, `balign
+  --segment-max-seconds`): recordings up to 10 minutes are now aligned in one pass instead of
+  by the chunked walk. The walk drifts on real long recordings: on a 10 min L2-ARCTIC speaker
+  (150 read sentences back to back) and a 10 min Buckeye interview it ran ahead of the audio
+  and used up the transcript with 20-25% of the audio left, so only 0-9% of phones landed in
+  their own sentence. One pass placed 86-100% there. Its onset accuracy (F1 at 25 ms) is 3-5
+  points below aligning each sentence separately on the read speech, and 7-13 points below on
+  the interview, whose untranscribed stretches (interviewer, laughter) were muted for the
+  test. Cost of one pass over 10 minutes: about a minute on a GPU or 8 CPU threads, and ~7 GB
+  of peak memory. Lower `segment_max_seconds` if memory is tight.
+
+### Known issues
+- The chunked walk (`chunk_audio`, segments longer than `segment_max_seconds`) still drifts as
+  above and will be fixed in a later release. For recordings over 10 minutes, cut the audio
+  and transcript at pauses into pieces under 10 minutes, or raise `segment_max_seconds` if
+  memory allows.
 
 ## [2.0.2] - 2026-11-05
 

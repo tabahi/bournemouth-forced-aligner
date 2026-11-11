@@ -304,8 +304,8 @@ language picks one of two models:
 
 - English codes (`en-us`, `en`, `en-gb`, `en-029`, `en-gb-x-rp`, `en-gb-scotland`,
   `en-gb-x-gbclan`, `en-gb-x-gbcwmd`) → `CUPE-3-en`, the most accurate English model BFA has.
-- Every other code → `CUPE-3-mls7`, trained on English plus German, Spanish, French, Italian,
-  Dutch, Polish and Portuguese. For any other language, its phonemes are aligned by their nearest
+- Every other code → `CUPE-3-mls7`, trained on German, Spanish, French, Italian, Dutch, Polish
+  and Portuguese (no English). For any other language, its phonemes are aligned by their nearest
   sounds in those, with a warning.
 
 espeak-ng can phonemize 80+ languages into ph66. These are the codes the ph66 mapper covers:

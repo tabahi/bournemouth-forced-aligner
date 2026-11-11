@@ -21,8 +21,8 @@ numbers is described in [evaluation methods](evaluation-methods.md). The raw sco
   by 2.4-4.9 points for BFA against 8.8-9.8 for MFA. MFA's 25 ms lead on clean TIMIT is then
   gone, and BFA's 10 ms lead grows from 3-5 points to 8-9. See
   [Robustness to transcript errors](#robustness-to-transcript-errors).
-- **Its onsets are more precise.** On TIMIT the three CUPE-3 models beat both MFA models at
-  10 ms (58.0-58.7 vs 55.2 and 56.5 F1; R-value 0.65 vs 0.62-0.63), with a lower median error
+- **Its onsets are more precise.** On TIMIT the two English CUPE-3 models beat both MFA models at
+  10 ms (58.5-58.7 vs 55.2 and 56.5 F1; R-value 0.65 vs 0.62-0.63), with a lower median error
   (7 ms vs 8 ms).
 - **It is faster, especially with a GPU.** Start-up included, BFA with a GPU aligns 100 TIMIT
   clips 8-21× sooner than MFA, and 10 Buckeye interviews 3.6-15× sooner. On a CPU it is
@@ -105,7 +105,7 @@ Both are in the CSVs at 10, 25 and 50 ms (`f1_*`, `r_value_*`).
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `CUPE-3-en` | ph66 | **58.7** | 76.8 | 86.8 | **0.65** | 0.80 | 74.1 | 79.6 | **7 ms** | 0.93 |
 | `CUPE-3-en-base` | ph66 | 58.5 | 77.2 | 87.1 | **0.65** | 0.80 | 74.5 | 80.0 | **7 ms** | 0.93 |
-| `CUPE-3-mls7` | ph66 | 58.0 | 76.0 | 86.4 | **0.65** | 0.79 | 73.4 | 78.8 | **7 ms** | 0.93 |
+| `CUPE-3-mls7` | ph66 | 54.4 | 71.9 | 83.7 | 0.62 | 0.76 | 69.4 | 74.5 | 8 ms | 0.93 |
 | `mbfa-latin` | std | 53.7 | 72.6 | 84.6 | 0.61 | 0.77 | 72.2 | 73.0 | 8 ms | 0.99 |
 | `mbfa-latin-benchmark` | std | 55.4 | 74.2 | 85.4 | 0.62 | 0.78 | 73.9 | 74.6 | 8 ms | 0.99 |
 | `mbfa-latin-noEnglish` | std | 53.6 | 72.1 | 84.0 | 0.61 | 0.76 | 71.7 | 72.4 | 8 ms | 0.99 |
@@ -118,7 +118,7 @@ Both are in the CSVs at 10, 25 and 50 ms (`f1_*`, `r_value_*`).
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `CUPE-3-en` | ph66 | 51.0 | 74.2 | 86.6 | 0.56 | 0.76 | 78.7 | 70.3 | 9 ms | 1.12 |
 | `CUPE-3-en-base` | ph66 | 50.2 | 73.7 | 86.3 | 0.55 | 0.76 | 78.1 | 69.8 | 9 ms | 1.12 |
-| `CUPE-3-mls7` | ph66 | 48.9 | 71.4 | 84.4 | 0.54 | 0.74 | 75.7 | 67.6 | 10 ms | 1.12 |
+| `CUPE-3-mls7` | ph66 | 45.8 | 67.5 | 81.3 | 0.51 | 0.70 | 71.5 | 63.9 | 10 ms | 1.12 |
 | `mbfa-latin` | std | 47.1 | 68.4 | 80.6 | 0.50 | 0.68 | 75.4 | 62.6 | 9 ms | 1.20 |
 | `mbfa-latin-benchmark` | std | 47.9 | 69.4 | 81.3 | 0.50 | 0.69 | 76.5 | 63.5 | 9 ms | 1.20 |
 | `mbfa-latin-noEnglish` | std | 46.9 | 68.1 | 80.4 | 0.49 | 0.68 | 75.1 | 62.3 | 9 ms | 1.20 |
@@ -133,7 +133,7 @@ The columns:
 
 R-value ranks the methods as F1 does, with one difference. It penalises the extra onsets of
 the std models on Buckeye (1.20 predicted per labelled onset) a little harder than F1 does.
-R @25 there is 0.68-0.69, against 0.74-0.76 for the ph66 models.
+R @25 there is 0.68-0.69, against 0.70-0.76 for the ph66 models.
 
 ### How close is the nearest onset?
 
@@ -234,7 +234,7 @@ F1 @25, with F1 @10 in brackets, averaged over the error kinds at each rate:
      0.9 less with 20%.
    - If your transcripts are known to be noisy (ASR output, for example), 30 is the safer
      setting. The default, 15, is set for conversational speech, where it scores higher than 30
-     for every model. On read speech the two are within about half a point.
+     for every model. On read speech the two are within about one point.
 6. **Low confidence partly flags a corrupted transcript.** Take mean per-phone confidence over
    a clip, with 10% of the phones corrupted. It separates corrupted clips from clean ones at
    AUROC 0.66-0.70 for insertions and substitutions (`CUPE-3-en`; 0.57-0.61 for the mbfa
@@ -251,9 +251,10 @@ Two results still speak to the other languages.
   `mbfa-latin` (see above). English is only 7 h of `mbfa-latin`'s 273 h of training audio. A
   language's share of the training data matters little once the model covers its writing
   system and its sounds.
-- **`CUPE-3-mls7`** is `CUPE-3-en-base` after one more epoch on seven European languages from
-  MLS, with no English. It keeps all but 1.2 points of the English model's TIMIT F1 @25 (76.0
-  vs 77.2), and all but 2.3 on Buckeye.
+- **`CUPE-3-mls7`** was trained from random weights on seven European languages from MLS, with
+  no English. It reaches F1 @25 71.9 on TIMIT and 67.5 on Buckeye, level with
+  `mbfa-latin-noEnglish` (72.1 and 68.1). `CUPE-3-en` is the same network continued on
+  LibriSpeech.
 
 Both point the same way: one model per writing system aligns a new language with no dictionary
 and no acoustic model of its own. See [Language support](language-support.md) for the languages
@@ -392,9 +393,9 @@ Two further things hold BFA back on Buckeye, and both can be changed:
   [above](#robustness-to-transcript-errors). A phonemizer that wrote reduced pronunciations
   would close part of the gap. A better acoustic model would not.
 - **The onset bonus.** On the full corpus, turning the bonus off (`boundary_bonus_weight=0`)
-  raises the CUPE-3 models' Buckeye F1 @25 by 1.6-3.2 points over their default of 15
-  (`CUPE-3-en`: 76.4 against 74.2). The cost is 2.0-3.7 points on TIMIT, and more under
-  transcript errors. On Buckeye the std models move by under 1 point either way
+  raises the two English CUPE-3 models' Buckeye F1 @25 by 2.2-3.2 points over their default
+  of 15 (`CUPE-3-en`: 76.4 against 74.2). The cost is 2.0-2.4 points on TIMIT, and more under
+  transcript errors. `CUPE-3-mls7` does not gain from it (66.8 against 67.5). On Buckeye the std models move by under 1 point either way
   (`mbfa-latin-benchmark`: 70.0 without the bonus, 69.4 at its default of 15).
 
 `coverage_analysis["bad_alignment"]` flags the worst segments. It flags under 1% of Buckeye
@@ -453,8 +454,8 @@ segment):
 
 | | `CUPE-3-en` | `CUPE-3-en-base` | `CUPE-3-mls7` | `mbfa-latin` | `mbfa-latin-benchmark` |
 |---|---:|---:|---:|---:|---:|
-| TIMIT | 0.54 | 0.40 | 0.26 | 0.25 | 0.17 |
-| Buckeye | 0.43 | 0.32 | 0.21 | 0.20 | 0.16 |
+| TIMIT | 0.54 | 0.40 | 0.28 | 0.25 | 0.17 |
+| Buckeye | 0.43 | 0.32 | 0.23 | 0.20 | 0.16 |
 
 The models are trained towards a target with deliberate entropy, so these numbers are far below
 1.0 even where the alignment is right. Each model also has its own scale, so compare
@@ -501,8 +502,8 @@ per run. These are written by `compute_metrics.py`.
 - **Boundary accuracy in languages other than English.** Neither corpus has non-English boundary
   labels. The eight non-Latin models (cyrillic, cjk, japanese, vietnamese, thai, abjad, brahmic,
   other_alphabetic) were selected on validation loss over their own alignments, and have no
-  boundary score. `CUPE-3-mls7` is scored here on English only: the score shows how much
-  English accuracy survived its multilingual epoch, not how well it aligns German or French.
+  boundary score. `CUPE-3-mls7` is scored here on English only, a language it never heard: the score shows
+  how well it transfers, not how well it aligns German or French.
   A hand-labelled non-English corpus would close this gap.
 - **Real ASR transcripts.** The transcript-error test uses controlled, synthetic errors.
 - **Sub-frame onsets**, the library default. These runs use the 5 ms frame grid.

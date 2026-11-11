@@ -73,7 +73,13 @@ from .utils import (dict_to_textgrid, read_audio, weighted_pool_embeddings, _cal
 # The decoder itself does not degrade on long audio - it has no band constraint and nothing to
 # collapse - so this is purely a time and memory bound: the DP is a python loop over frames at
 # 200 frames per second of audio, which measures ~1.8 s for a 32 s clip of 356 phonemes.
-DEFAULT_SEGMENT_MAX_SECONDS = 120.0
+#
+# 600 s since 2.0.3 (was 120). The chunked walk runs ahead of the audio on real recordings: on
+# a 10 min L2-ARCTIC speaker and a 10 min Buckeye interview it used up the text with 20-25% of
+# the audio left, for CUPE-3-en and mbfa-latin alike, while one pass kept 86-100% of phones in
+# their own sentence. One pass over 602 s: ~53 s on an RTX 5060, 68-86 s on 8 CPU threads,
+# ~7 GB peak memory. Until the walk is fixed, it is only a fallback past 10 min.
+DEFAULT_SEGMENT_MAX_SECONDS = 600.0
 
 
 class BFA:
@@ -188,10 +194,11 @@ class BFA:
                 for.
             chunk_vad (bool): Use an energy VAD to measure speech seconds per window and to
                 move a cut into a nearby pause.
-            segment_max_seconds (float): Segments up to this long are decoded whole. Whole
-                decoding is more accurate than chunking - chunk cuts can land mid-phone - so
-                raise it if the hardware allows; the cost is a python-loop DP that runs at
-                roughly 1.8 s per 32 s of audio.
+            segment_max_seconds (float): Segments up to this long are decoded whole (default
+                600, i.e. 10 min). Whole decoding is far more accurate than chunking, which
+                can drift ahead of the audio on long recordings, so raise it further if the
+                hardware allows; the cost is a python-loop DP that runs at roughly 1.8 s per
+                32 s of audio (a 10 min clip: about a minute and ~7 GB of memory).
             warn_level (int): 0 = nothing is printed, a first-time download included.
                 1 (default) = warnings, and one line when a model is downloaded. 2 = also
                 download progress bars and informational output (resolved geometry, decoder

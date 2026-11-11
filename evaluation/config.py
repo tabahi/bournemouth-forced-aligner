@@ -29,28 +29,37 @@ ALIGNER_KWARGS = ("lang", "device", "bad_confidence_threshold", "low_confidence_
 RUN_SETTINGS = ("duration_max", "batch_size", "coverage_min")
 # Everything under `bfa:`, and everything an `experiments:` entry may override or sweep.
 BFA_SETTINGS = DECODER_AXES + ALIGNER_KWARGS + RUN_SETTINGS
+# Passed to `BFA`, but optional: absent or `null` = False, what every run before v2.0.2 used
+# (BFA's own default became True then), so older yamls and run names are unchanged.
+OPTIONAL_KWARGS = ("punctuation_sil",)
 
 SECTIONS = {
     "paths": ("audio_roots", "releases_dir", "results_csv"),
     "run": ("existing", "vocab_analysis", "warn_level", "torch_threads"),
-    "bfa": BFA_SETTINGS + HP_OVERRIDES,
+    "bfa": BFA_SETTINGS + HP_OVERRIDES + OPTIONAL_KWARGS,
     "mfa": ("conda_env", "num_jobs", "extra_args", "keep_workdir"),
     # optional: only a yaml with a `method: maps` model needs it
     "maps": ("conda_env", "repo_dir", "num_jobs", "keep_workdir"),
+    # optional: only a yaml with a `method: ctc` model needs it
+    "ctc": ("device",),
+    # optional: only a yaml with a `method: charsiu` model needs it
+    "charsiu": ("device",),
     "scoring": ("tolerance_ms", "align_max_dist", "offset_start", "offset_end",
                 "use_end_boundaries", "measure_group_errors", "merge_two_token_phones",
                 "limit_clips", "plots"),
 }
 EXPERIMENT_KEYS = ("name", "enabled", "dataset", "subset", "split", "model") + BFA_SETTINGS \
-    + HP_OVERRIDES
+    + HP_OVERRIDES + OPTIONAL_KWARGS
 # `split:` of an experiment. `test` is the clips MAPS's English model was not trained on.
 SPLITS = ("all", "test")
-OPTIONAL_SECTIONS = ("maps",)
+OPTIONAL_SECTIONS = ("maps", "ctc", "charsiu")
 MODEL_KEYS = {
     "bfa": ("model_name", "ckpt_path"),                    # exactly one of the two
     "mfa": ("method", "acoustic_model", "dictionary", "speaker_folders"),   # all four
     "maps": ("method", "acoustic_model", "dictionary", "g2p_model", "interpolate",
              "trained_on"),                                                  # all six
+    "ctc": ("method", "hf_model", "revision", "compounds", "lang"),         # all five
+    "charsiu": ("method", "hf_model", "revision", "decoder"),               # all four
 }
 
 
@@ -105,9 +114,25 @@ def load_config(path=None):
                 raise KeyError(f"evaluate.yaml: models.{name} is a MAPS model, so the yaml "
                                f"needs a `maps:` section")
             entry["trained_on"] = list(entry["trained_on"] or [])
+        elif entry.get("method") == "ctc":
+            _check_keys(f"models.{name}", entry, MODEL_KEYS["ctc"])
+            if "ctc" not in cfg:
+                raise KeyError(f"evaluate.yaml: models.{name} is a CTC model, so the yaml "
+                               f"needs a `ctc:` section")
+            if entry["compounds"] not in ("split", "native"):
+                raise ValueError(f"evaluate.yaml: models.{name}: compounds "
+                                 f"{entry['compounds']!r} is one of split | native")
+        elif entry.get("method") == "charsiu":
+            _check_keys(f"models.{name}", entry, MODEL_KEYS["charsiu"])
+            if "charsiu" not in cfg:
+                raise KeyError(f"evaluate.yaml: models.{name} is a Charsiu model, so the yaml "
+                               f"needs a `charsiu:` section")
+            if entry["decoder"] not in ("viterbi", "argmax"):
+                raise ValueError(f"evaluate.yaml: models.{name}: decoder "
+                                 f"{entry['decoder']!r} is one of viterbi | argmax")
         elif "method" in entry:
             raise ValueError(f"evaluate.yaml: models.{name}: method {entry['method']!r} is "
-                             f"not one of mfa | maps (a BFA model has no `method`)")
+                             f"not one of mfa | maps | ctc | charsiu (a BFA model has no `method`)")
         else:
             _check_keys(f"models.{name}", entry, MODEL_KEYS["bfa"], required=())
             if len(entry) != 1:

@@ -44,6 +44,19 @@ paths:
 #                              `speaker_folders`: true puts each speaker's segments in its own
 #                              folder (per-speaker fMLLR, work split over num_jobs); false is one
 #                              flat folder, which MFA treats as a single speaker run as one job
+#   method: ctc                a phoneme CTC model with torchaudio's forced_align (needs the `ctc:`
+#                              section): `hf_model` + `revision` a Hugging Face wav2vec2 CTC model
+#                              with an eSpeak phoneme vocabulary, `lang` the eSpeak language the
+#                              text is phonemized in (BFA's ph66 phonemizer, so the phonemes are
+#                              CUPE-3-en's), `compounds` split | native: what happens to an eSpeak
+#                              compound such as `ɑːɹ` that ph66 counts as two phonemes (split: two
+#                              model tokens, each placed; native: the model's one token, its span
+#                              divided evenly). See evaluation/align_with_ctc_wav2vec.py
+#   method: charsiu            Charsiu's W2V2-FS aligner (needs the `charsiu:` section and g2p_en):
+#                              `hf_model` + `revision` a Charsiu FS checkpoint, `decoder` viterbi
+#                              (best monotonic path through its attention) | argmax (Charsiu's own
+#                              per-frame argmax). Its own g2p_en ARPAbet transcripts, 10 ms frames.
+#                              See evaluation/align_with_charsiu.py
 #   method: maps               the Mason-Alberta Phonetic Segmenter (needs the `maps:` section):
 #                              `acoustic_model` a .tf model of the MAPS repo, `dictionary` an MFA
 #                              dictionary name or a CMU/MFA-format file, `g2p_model` an MFA G2P
@@ -56,7 +69,7 @@ models:
   # ---- p3cupe (ph66 phoneme set)
   CUPE-3-en:            {model_name: CUPE-3-en}             # English, LibriSpeech 500 h: the English ph66 preset
   CUPE-3-en-base:       {model_name: CUPE-3-en-base}        # English, the root of the lineage
-  CUPE-3-mls7:          {model_name: CUPE-3-mls7}           # CUPE-3-en-base + 7 MLS languages
+  CUPE-3-mls7:          {model_name: CUPE-3-mls7}           # 7 MLS languages, no English, from random weights
   # ---- p4mbfa (std phoneme set), one per language group
   mbfa-latin:           {model_name: mbfa-latin}            # the std default
   mbfa-latin-benchmark: {model_name: mbfa-latin-benchmark}  # best latin model on TIMIT
@@ -97,6 +110,34 @@ models:
     acoustic_model: english_mfa
     dictionary: english_us_mfa
     speaker_folders: true
+
+  # ---- Phoneme CTC baseline: wav2vec2 XLSR-53 fine-tuned on Common Voice eSpeak phonemes,
+  # aligned with torchaudio.functional.forced_align (no training of ours)
+  w2v2-xlsr53-espeak:
+    method: ctc
+    hf_model: facebook/wav2vec2-xlsr-53-espeak-cv-ft
+    revision: 2c733782da5604684829819a5eb744c193fe9398
+    compounds: split
+    lang: en-us
+  w2v2-xlsr53-espeak-native:
+    method: ctc
+    hf_model: facebook/wav2vec2-xlsr-53-espeak-cv-ft
+    revision: 2c733782da5604684829819a5eb744c193fe9398
+    compounds: native
+    lang: en-us
+
+  # ---- Charsiu W2V2-FS (Zhu, Zhang & Jurgens 2022): trained with a forward-sum loss, without
+  # boundary labels. (Charsiu's W2V2-FC models are trained on MFA alignments; not listed.)
+  charsiu-fs10:
+    method: charsiu
+    hf_model: charsiu/en_w2v2_fs_10ms
+    revision: 72d5cc831f141cd15b3c9921a8f12a3c62f422ad
+    decoder: viterbi
+  charsiu-fs10-argmax:
+    method: charsiu
+    hf_model: charsiu/en_w2v2_fs_10ms
+    revision: 72d5cc831f141cd15b3c9921a8f12a3c62f422ad
+    decoder: argmax
 
   # ---- Mason-Alberta Phonetic Segmenter (Kelley, Perry & Tucker 2024). Its English model was
   # trained on TIMIT's training set and on Buckeye apart from s27, s38, s39, s40.
@@ -146,6 +187,7 @@ bfa:
   low_confidence_level: null        # null = the model family's own level (0.2 CUPE-3, 0.1 mbfa) | a number
   chunk_audio: true                 # true | false: split segments longer than segment_max_seconds
   segment_max_seconds: 120          # corpus segments are far shorter, so nothing is split
+  punctuation_sil: false            # false = no SIL at pause punctuation (the paper; BFA 2.0.2 defaults to true) | true
 
   # ---- the sweep
   duration_max: 30                  # seconds every segment is padded to; a longer segment is cut
@@ -177,6 +219,21 @@ maps:
   repo_dir: /my_tools/MAPS          # the clone: maps.py is run from here, unmodified
   num_jobs: 4                       # maps.py processes side by side (~1.5 GB RAM each; capped by free memory)
   keep_workdir: false               # true keeps tmp/maps/<experiment>/ (segments, TextGrids, logs)
+
+
+# ---------------------------------------------------------------------------------------------
+# Phoneme CTC baseline (optional section: only needed when a `method: ctc` model is listed)
+# ---------------------------------------------------------------------------------------------
+# Needs `transformers` beside torchaudio; the model is downloaded from the Hub on first use.
+ctc:
+  device: cuda                      # cpu | cuda | cuda:N   (the network and forced_align both run here)
+
+# ---------------------------------------------------------------------------------------------
+# Charsiu W2V2-FS (optional section: only needed when a `method: charsiu` model is listed)
+# ---------------------------------------------------------------------------------------------
+# Needs `transformers`, and `g2p_en` with NLTK's averaged_perceptron_tagger_eng and cmudict.
+charsiu:
+  device: cuda                      # cpu | cuda | cuda:N
 
 
 # ---------------------------------------------------------------------------------------------
@@ -224,6 +281,16 @@ experiments:
     dataset: [timit, buckeye]
     model: [CUPE-3-en, CUPE-3-en-base, CUPE-3-mls7, mbfa-latin, mbfa-latin-benchmark]
     boundary_bonus_weight: [0, 30]
+
+  - name: phoneme CTC baseline (wav2vec2 XLSR-53 eSpeak + torchaudio forced_align)
+    enabled: false
+    dataset: [timit, buckeye]
+    model: [w2v2-xlsr53-espeak]
+
+  - name: Charsiu W2V2-FS (trained without boundary labels)
+    enabled: false
+    dataset: [timit, buckeye]
+    model: [charsiu-fs10]
 
   - name: quick check
     enabled: false

@@ -1427,9 +1427,9 @@ def score_one(manifest, scoring, csv_path):
             # has no file for the clips it did not align.
             PATHS_LISTS[dataset], output_json_path, dataset, experiment,
             limit_clips=scoring["limit_clips"],
-            # MFA and MAPS align the extracted segment audio, so their times are
-            # segment-relative; BFA's are clip-absolute.
-            relative_boundaries=(manifest["method"] in ("MFA", "MAPS")),
+            # MFA, MAPS, the CTC baseline and Charsiu align the extracted segment audio, so their
+            # times are segment-relative; BFA's are clip-absolute.
+            relative_boundaries=(manifest["method"] in ("MFA", "MAPS", "CTC", "CHARSIU")),
             tolerance_ms_list=tolerance_ms_list,
             offset_start=scoring["offset_start"],
             offset_end=scoring["offset_end"],

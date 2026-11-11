@@ -18,7 +18,7 @@ bournemouth_aligner/
   presets.py           phoneme set + language -> model name. The ONLY place model names appear
   hub.py               every download (models, G2P), through huggingface_hub's cache
   extractors.py        load_extractor(): a model on disk -> CupeExtractor | MbfaExtractor
-  chunking.py          VAD, phoneme budgets and derailment detection for segments > 120 s
+  chunking.py          VAD, phoneme budgets and derailment detection for segments > 600 s
   utils.py             confidences, frame -> ms, embedding pooling, TextGrid, mel plot
   cli.py               the `balign` command
   segmental/           what both model families share
@@ -134,7 +134,7 @@ BFA(
     soft_phone_frames=None,       # soft duration frames above the floor; None = the model's (10)
     bad_confidence_threshold=0.6, # share of low-confidence phones that flags a segment
     low_confidence_level=None,    # None = the family's level (0.2 CUPE-3, 0.1 mbfa)
-    segment_max_seconds=120,      # decode whole up to this length, chunk beyond it
+    segment_max_seconds=600,      # decode whole up to this length, chunk beyond it
     chunk_audio=True,             # chunk segments longer than segment_max_seconds
     chunk_seconds=10.0,           # chunk window length
     chunk_max_phonemes=200,       # cap on a window's phoneme budget
@@ -285,11 +285,18 @@ balign AUDIO TEXT_OR_SRT [OUTPUT] [options]
 
 ## Long audio and chunking
 
-Segments up to `segment_max_seconds` (120 s) are decoded in one pass. The decoder has no band
-constraint and does not drift on long audio: on `30s.wav` (32 s, 356 phones) the last phone ends at
-31.88 s of 31.88 s. Chunking exists only to bound Viterbi time and memory.
+Segments up to `segment_max_seconds` (600 s since 2.0.3, 120 s before) are decoded in one pass.
+The decoder has no band constraint and does not drift on long audio: on `30s.wav` (32 s, 356 phones)
+the last phone ends at 31.88 s of 31.88 s, and on a 10 min L2-ARCTIC speaker (150 read sentences back
+to back) every phone but one lands in its own sentence. One pass over 10 min takes about a minute on
+a GPU or 8 CPU threads, with ~7 GB peak memory. Chunking exists only to bound Viterbi time and memory.
 
-Beyond 120 s, `align_segment_chunked` walks overlapping windows (`chunk_seconds`). Each window
+**The walk below is known to drift on real long recordings** and is only a fallback past 600 s until
+it is fixed. On a 10 min L2-ARCTIC speaker and a 10 min Buckeye interview it ran ahead of the audio
+and used up the text with 20-25% of the audio left (CUPE-3-en and mbfa-latin alike; 1-9% of phones in
+their own sentence, against 86-100% for one pass). The time cap described below does not prevent it.
+
+Beyond `segment_max_seconds`, `align_segment_chunked` walks overlapping windows (`chunk_seconds`). Each window
 gets a phoneme budget from its **speech** seconds (`chunk_vad`) at `chunk_phonemes_per_second`, capped by
 `chunk_max_phonemes` and by what its frames can hold at the duration floor. A window is trusted
 only up to `TRUST_WINDOW_FRACTION` (75%) of its audio and up to the first derailment
