@@ -334,6 +334,45 @@ def strip_length(token):
     return unicodedata.normalize('NFC', seg), level
 
 
+# Mandarin and Cantonese write their unaspirated onsets (pinyin and Jyutping
+# b, d, g, z, j, zh) as p, t, k, t s, t ɕ, ʈ ʂ, which puts the stops in one class
+# with Cantonese's unreleased coda stops and splits each affricate in two. They
+# are b, d, ɡ, d͡z, d͡ʑ, d͡ʐ here. A coda is followed by its syllable's tone
+# letter, so "directly before a vowel or glide" finds the onsets, and a coda t
+# followed by an onset s never reads as an affricate. Aspirated onsets (t sʰ,
+# t ɕʰ, ʈ ʂʰ) are unchanged. A word with no tone letter is a foreign word and
+# keeps its spelling. Min Nan is left out: it has a real voiced series.
+VOICED_ONSET_TAGS = frozenset({'zho-s', 'zho-t', 'yue'})
+VOICED_ONSET = {'p': 'b', 't': 'd', 'k': 'ɡ'}
+VOICED_AFFRICATE = {('t', 's'): 'd͡z', ('t', 'ɕ'): 'd͡ʑ', ('ʈ', 'ʂ'): 'd͡ʐ'}
+ONSET_FOLLOWERS = frozenset('wjɥɚ')  # glides, and the ɚ of zhi, which is_vowel excludes
+
+
+def _voice_unaspirated_onsets(toks):
+    """`segment_ipa` tokens with each unaspirated syllable onset written voiced.
+
+    An affricate's two tokens become one, so the result can be shorter.
+    """
+    if not any(t and t[0] in TONE_LETTERS for t in toks):
+        return toks
+
+    def opens_syllable(i):
+        return i < len(toks) and (is_vowel(toks[i])
+                                  or strip_to_base(toks[i]) in ONSET_FOLLOWERS)
+
+    out, i = [], 0
+    while i < len(toks):
+        affricate = VOICED_AFFRICATE.get(tuple(toks[i:i + 2]))
+        if affricate and opens_syllable(i + 2):
+            out.append(affricate)
+            i += 2
+            continue
+        t = toks[i]
+        out.append(VOICED_ONSET[t] if t in VOICED_ONSET and opens_syllable(i + 1) else t)
+        i += 1
+    return out
+
+
 def decompose_ipa(ipa, lang=None, tone_diacritics=False):
     """Split an IPA string into parallel, index-aligned layers.
 
@@ -348,6 +387,8 @@ def decompose_ipa(ipa, lang=None, tone_diacritics=False):
     toks = segment_ipa(ipa, lang=lang, keep_stress=True, keep_tone=True,
                        keep_length=True, keep_diacritics=True,
                        tone_diacritics=tone_diacritics)
+    if lang in VOICED_ONSET_TAGS:
+        toks = _voice_unaspirated_onsets(toks)
 
     segments, length, tone, stress = [], [], [], []
     pending_stress = 0

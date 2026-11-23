@@ -21,8 +21,8 @@ again. Adding a model or a setting to the yaml only costs the new runs.
 
 1. **Corpora.** Set `paths.audio_roots` in `evaluate.yaml` to where TIMIT and Buckeye are.
 2. **Ground truth.** Each parser reads a corpus and writes the transcripts and reference
-   boundaries the other steps use (`tmp/data/<dataset>_data/` and
-   `tmp/paths/<dataset>_paths_all.json`):
+   boundaries the other steps use (`local/data/<dataset>_data/` and
+   `local/paths/<dataset>_paths_all.json`):
 
    ```bash
    python evaluation/dataset/timit_parser.py
@@ -46,6 +46,18 @@ again. Adding a model or a setting to the yaml only costs the new runs.
    The environment's name goes in `mfa.conda_env`. You do not activate it: the sweep runs in
    your usual environment and calls `conda run -n mfa mfa ...` itself. The acoustic model and
    dictionary are downloaded on first use.
+4. **The phoneme CTC baseline**, if it is in your experiments (`method: ctc` models): a wav2vec2
+   model fine-tuned with CTC on eSpeak phonemes (`facebook/wav2vec2-xlsr-53-espeak-cv-ft`),
+   aligned with `torchaudio.functional.forced_align`. It needs `transformers` in your usual
+   environment; the model is downloaded from the Hugging Face Hub on first use. It is given the
+   same ph66 phoneme sequence as CUPE-3-en, and a phoneme's onset is the first frame (20 ms) of
+   its span on the forced path. See `evaluation/align_with_ctc_wav2vec.py`.
+5. **Charsiu**, if it is in your experiments (`method: charsiu` models): the W2V2-FS aligner of
+   Zhu, Zhang & Jurgens (2022), `charsiu/en_w2v2_fs_10ms`, which was trained without boundary
+   labels. It needs `transformers` and `g2p_en` (`pip install g2p_en`, then
+   `python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"`). It uses its own
+   g2p_en ARPAbet transcripts and 10 ms frames, and is scored through the same ARPAbet table as
+   MFA. See `evaluation/align_with_charsiu.py`.
 
 ## evaluate.yaml
 
@@ -54,10 +66,12 @@ Every option is described in the file, with its possible values. The sections ar
 | section | what it holds |
 |---|---|
 | `paths` | corpus audio, the local release directory, the results CSVs |
-| `models` | every model an experiment may name: published BFA models, local checkpoints, MFA |
+| `models` | every model an experiment may name: published BFA models, local checkpoints, MFA, MAPS, the phoneme CTC baseline, Charsiu |
 | `run` | what to do with an experiment that already exists, logging, threads |
 | `bfa` | the value of every BFA setting, for experiments that do not set it themselves |
 | `mfa` | conda environment, number of jobs, extra arguments |
+| `ctc` | the device of the phoneme CTC baseline (only needed when a `method: ctc` model is listed) |
+| `charsiu` | the device of Charsiu (only needed when a `method: charsiu` model is listed) |
 | `experiments` | the list of runs |
 | `scoring` | tolerances, offsets and the other scorer options |
 
@@ -107,6 +121,7 @@ tmp/alignments/timit__mfa-english_us_arpa/
 | `grid` / `subframe` | `sub_frame_onsets` off / on |
 | `n10` | `subset` 10; absent for the full corpus |
 | `dur`, `bs`, `cov`, `lang`, `bct`, `lcl`, `chunk`, `seg` | `duration_max`, `batch_size`, `coverage_min`, `lang`, `bad_confidence_threshold`, `low_confidence_level`, `chunk_audio`, `segment_max_seconds`. Each appears only when it differs from its usual value (30, 16, 0.6, en-us, 0.6, null, true, 120) |
+| `psil1` | `punctuation_sil` true (a SIL at pause punctuation, std models only); absent at false, the benchmarks' setting |
 
 The decoder values in the name are the ones that actually ran. `null` in the yaml means "the
 value the model was released with", so `boundary_bonus_weight: null` and `30` give the same
@@ -170,8 +185,13 @@ python evaluation/compute_metrics.py --rescore --yes    # ... without asking
 
 The scorer does not read the `experiments` list. It looks at every finished run under
 `tmp/alignments/`, reads the CSVs, and scores only what has no row yet. Each dataset has its
-own file, `evaluation/results/results_timit.csv` and `results_buckeye.csv`
+own file, `local/results/results_timit.csv` and `results_buckeye.csv`
 (`paths.results_csv` in the yaml).
+
+`local/` (gitignored, like `tmp/`) holds what is slow to rebuild and what many scripts read:
+the parsed corpora (`local/data/`), the paths lists (`local/paths/`) and the results CSVs. It
+is the one directory to carry along when the checkout moves to another machine; everything
+under `tmp/` (alignments, scoring detail, MFA/MAPS scratch) can be left behind and rebuilt.
 
 A row is replaced in two cases, and in both the scorer asks first:
 
@@ -190,8 +210,10 @@ distances).
 ## Step 3: the figures for the docs
 
 The [evaluation](evaluation.md) page shows the runs in `evaluation/results/` and the plots in
-`evaluation/plots/`. To refresh them after a new full-corpus run, copy that run's `tmp/plots/<experiment>.png`
-and `.json` into `evaluation/plots/`, then redraw the two comparison figures:
+`evaluation/plots/`: published copies, refreshed by hand. After a new full-corpus run, copy
+`local/results/results_<dataset>.csv` into `evaluation/results/`, copy that run's
+`tmp/plots/<experiment>.png` and `.json` into `evaluation/plots/`, then redraw the two
+comparison figures:
 
 ```bash
 python evaluation/plot_summary.py      # evaluation/plots/summary_f1.png, summary_distance.png
@@ -233,6 +255,8 @@ All in `evaluation/`.
 | `evaluate.yaml` | the configuration |
 | `process_alignments.py` | step 1 |
 | `align_with_mfa.py` | the MFA part of step 1; not run directly |
+| `align_with_ctc_wav2vec.py` | the phoneme CTC baseline (wav2vec2 + torchaudio `forced_align`) of step 1; not run directly |
+| `align_with_charsiu.py` | Charsiu W2V2-FS of step 1; not run directly |
 | `compute_metrics.py` | step 2 |
 | `plot_summary.py` | step 3: the comparison figures on the evaluation page |
 | `config.py` | reads and checks the yaml |

@@ -114,9 +114,41 @@ MODELS = {**{name: "std" for name in (*P4MBFA_MODELS.values(), MBFA_LATIN_BENCHM
 # transcript is wrong.
 #   boundary_bonus_weight      β, nats per standard deviation of local acoustic change
 #   boundary_contrast_frames   W, frames of the moving average that change is measured against
+#
+# Pauses and non-speech (2.1.0). Tuned on the hand-reviewed Common Voice en set (real
+# microphones: breath, lip and tongue clicks at the clip edges); see `segmental/aligner.py`.
+#   boundary_bonus_cap         the onset bonus's z-score is clipped here. Unclipped, the clip's
+#                              biggest change (often a click or a breath onset before the first
+#                              word) outbids the posteriors and drags a phone onto the noise
+#   class_prior_scale          the hybrid-HMM prior scale (1 = the plain scaled likelihood)
+#   word_sil                   an optional SIL at every word boundary, not only at punctuation
+#   word_sil_frames            its soft minimum duration, frames
+#   word_sil_cost              nats a visit to one costs
+#   sil_bonus                  whether entering a SIL collects the onset bonus
+#   energy_weight, energy_db   vowels/sonorants lose energy_weight nats per 10 dB a frame lies
+#                              below -energy_db relative to the clip's speech level
+#   energy_db_fric             the same depth for fricatives, affricates and h (None = never);
+#                              stops are never penalised (their closure is silence)
+#   voicing_weight/_threshold  vowels/sonorants lose voicing_weight nats per 0.1 a frame's
+#                              periodicity lies under the threshold (breath, smacks, clicks)
+#   click_penalty              nats per frame a phone of the text pays on an isolated click
+#                              (nonspeech.click_frames: <= 100 ms, >= 50 ms quiet before,
+#                              >= 20 ms after, peak click_max_level_db under speech); None = off
+#   filler_penalty, filler_db  on frames quieter than -filler_db, SIL may take whatever class
+#                              the model prefers at filler_penalty nats (None = off)
+_NONSPEECH_DEFAULTS = {
+    "boundary_bonus_cap": 2.0, "class_prior_scale": 1.0, "word_sil": True,
+    "word_sil_frames": 4, "word_sil_cost": 0.0, "sil_bonus": False,
+    "energy_weight": 2.0, "energy_db": 25.0, "energy_db_fric": 40.0,
+    "filler_penalty": 3.0, "filler_db": 25.0,
+    "voicing_weight": 0.5, "voicing_threshold": 0.4,
+    "click_penalty": None, "click_max_level_db": 10.0,
+}
 DECODER_DEFAULTS = {
-    "ph66": {"boundary_bonus_weight": 15.0, "boundary_contrast_frames": 33},
-    "std": {"boundary_bonus_weight": 15.0, "boundary_contrast_frames": 33},
+    "ph66": {"boundary_bonus_weight": 15.0, "boundary_contrast_frames": 33,
+             **_NONSPEECH_DEFAULTS},
+    "std": {"boundary_bonus_weight": 15.0, "boundary_contrast_frames": 33,
+            **_NONSPEECH_DEFAULTS},
 }
 
 

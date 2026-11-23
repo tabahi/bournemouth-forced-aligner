@@ -61,6 +61,7 @@ from .chunking import (DEFAULT_CHUNK_SECONDS, DEFAULT_MAX_PHONEMES,
                        MIN_KEEP_FRACTION, NO_DERAIL_TRIM_FRACTION,
                        TRUST_WINDOW_FRACTION)
 from . import hub
+from . import nonspeech as _nonspeech
 from . import presets as _presets
 from .extractors import load_extractor
 from .phonemizers import make_phonemizer
@@ -73,7 +74,107 @@ from .utils import (dict_to_textgrid, read_audio, weighted_pool_embeddings, _cal
 # The decoder itself does not degrade on long audio - it has no band constraint and nothing to
 # collapse - so this is purely a time and memory bound: the DP is a python loop over frames at
 # 200 frames per second of audio, which measures ~1.8 s for a 32 s clip of 356 phonemes.
-DEFAULT_SEGMENT_MAX_SECONDS = 120.0
+#
+# 600 s since 2.0.3 (was 120). The chunked walk runs ahead of the audio on real recordings: on
+# a 10 min L2-ARCTIC speaker and a 10 min Buckeye interview it used up the text with 20-25% of
+# the audio left, for CUPE-3-en and mbfa-latin alike, while one pass kept 86-100% of phones in
+# their own sentence. One pass over 602 s: ~53 s on an RTX 5060, 68-86 s on 8 CPU threads,
+# ~7 GB peak memory. Until the walk is fixed, it is only a fallback past 10 min.
+DEFAULT_SEGMENT_MAX_SECONDS = 600.0
+
+
+_SONORANT_GROUPS = ('vowel_close', 'vowel_mid', 'vowel_open', 'nasal', 'lateral', 'rhotic',
+                    'glide')
+_FRICATIVE_GROUPS = ('fricative_vl', 'fricative_vd', 'affricate', 'glottal')
+
+
+def _class_kinds(id_to_label, n_classes):
+    """'son' / 'fric' / None per class id, by phoneme feature group."""
+    from .standard_g2p.phoneme_features import phoneme_group, GROUP_NAMES
+    kinds = [None] * n_classes
+    for i in range(n_classes):
+        label = id_to_label.get(i, '')
+        if label in ('SIL', 'noise', '<unk>', '<blank>', ''):
+            continue
+        try:
+            g = GROUP_NAMES[phoneme_group(label)]
+        except Exception:
+            continue
+        kinds[i] = 'son' if g in _SONORANT_GROUPS else 'fric' if g in _FRICATIVE_GROUPS else None
+    return kinds
+
+
+def _energy_depths(kinds, son_db, fric_db):
+    """Per class, how far (dB) under the speech level a frame may lie before it is penalised."""
+    inf = float('inf')
+    return [son_db if k == 'son' else (fric_db if k == 'fric' and fric_db is not None
+                                       else inf) for k in kinds]
+
+
+def frame_energy_db(wavs, wav_lens, n_frames, frame_stride, window=160, ref_pct=95.0):
+    """
+    Level of each model frame, in dB relative to its clip's speech level.
+
+    Frame t is the `window`-sample (10 ms) stretch centred on the middle of output frame t
+    (`t * frame_stride + frame_stride / 2`). The reference is the clip's `ref_pct` percentile
+    frame level - roughly its loud vowels - so the values are comparable across microphones
+    and gains. [B, n_frames] float; frames past a clip's end are -100.
+    """
+    b = wavs.shape[0]
+    out = torch.full((b, n_frames), -100.0)
+    x = wavs.detach().float().cpu()
+    for i in range(b):
+        n = int(wav_lens[i])
+        sig = x[i, :n].double()
+        c = torch.cat([torch.zeros(1, dtype=torch.float64), torch.cumsum(sig * sig, 0)])
+        centre = torch.arange(n_frames, dtype=torch.long) * int(frame_stride) \
+            + int(frame_stride) // 2
+        a = (centre - window // 2).clamp(0, n)
+        e = (centre + window // 2).clamp(0, n)
+        width = (e - a).clamp(min=1).double()
+        db = 10.0 * torch.log10((c[e] - c[a]) / width + 1e-10)
+        ok = centre < n
+        if ok.any():
+            ref = torch.quantile(db[ok], ref_pct / 100.0)
+            out[i] = torch.where(ok, db - ref, torch.full_like(db, -100.0)).float()
+    return out
+
+
+def frame_voicing(wavs, wav_lens, n_frames, frame_stride, window=400, min_lag=40,
+                  max_lag=320):
+    """
+    Periodicity of each model frame: the peak of the normalised autocorrelation of a
+    `window`-sample (25 ms) Hann-windowed stretch centred on the frame, over lags `min_lag` ..
+    `max_lag` samples (50-400 Hz at 16 kHz). ~0.6 in vowels, ~0.25 in silence, breath and
+    clicks. [B, n_frames] float, 0 past a clip's end.
+    """
+    b = wavs.shape[0]
+    out = torch.zeros(b, n_frames)
+    x = wavs.detach().float().cpu()
+    win = torch.hann_window(window)
+    nfft = 1 << (2 * window - 1).bit_length()
+    for i in range(b):
+        n = int(wav_lens[i])
+        sig = F.pad(x[i, :n], (window // 2, window))
+        centre = torch.arange(n_frames) * int(frame_stride) + int(frame_stride) // 2
+        ok = centre < n
+        m = int(ok.sum())
+        if m == 0:
+            continue
+        idx = centre[:m, None] + torch.arange(window)[None, :]
+        fr = sig[idx]
+        fr = (fr - fr.mean(1, keepdim=True)) * win
+        spec = torch.fft.rfft(fr, nfft)
+        ac = torch.fft.irfft(spec.real ** 2 + spec.imag ** 2, nfft)[:, :max_lag + 1]
+        peak = ac[:, min_lag:max_lag + 1].max(1).values / ac[:, 0].clamp(min=1e-8)
+        out[i, :m] = peak.clamp(0.0, 1.0)
+    return out
+
+
+def word_boundaries(word_num):
+    """[S] bool: True after the last phone of each word (but the sentence's last)."""
+    w = list(word_num or [])
+    return [i + 1 < len(w) and w[i] != w[i + 1] for i in range(len(w))]
 
 
 class BFA:
@@ -90,7 +191,8 @@ class BFA:
                  chunk_phonemes_per_second=DEFAULT_PHONEMES_PER_SECOND, chunk_vad=True,
                  segment_max_seconds=DEFAULT_SEGMENT_MAX_SECONDS, warn_level=1,
                  phoneme_set=None, ckpt_path=None, g2p_model_dir=None, g2p_device=None,
-                 g2p_cache_size=None, punctuation_sil=True, n_jobs=1):
+                 g2p_cache_size=None, punctuation_sil=True, n_jobs=1, decoder=None,
+                 fill_nonspeech=True):
         """
         Initialize the BFA phoneme timestamp extractor.
 
@@ -188,10 +290,11 @@ class BFA:
                 for.
             chunk_vad (bool): Use an energy VAD to measure speech seconds per window and to
                 move a cut into a nearby pause.
-            segment_max_seconds (float): Segments up to this long are decoded whole. Whole
-                decoding is more accurate than chunking - chunk cuts can land mid-phone - so
-                raise it if the hardware allows; the cost is a python-loop DP that runs at
-                roughly 1.8 s per 32 s of audio.
+            segment_max_seconds (float): Segments up to this long are decoded whole (default
+                600, i.e. 10 min). Whole decoding is far more accurate than chunking, which
+                can drift ahead of the audio on long recordings, so raise it further if the
+                hardware allows; the cost is a python-loop DP that runs at roughly 1.8 s per
+                32 s of audio (a 10 min clip: about a minute and ~7 GB of memory).
             warn_level (int): 0 = nothing is printed, a first-time download included.
                 1 (default) = warnings, and one line when a model is downloaded. 2 = also
                 download progress bars and informational output (resolved geometry, decoder
@@ -206,6 +309,18 @@ class BFA:
                 `batch_size`, or several long ones. -1 uses every CPU. Workers are started with
                 "spawn", so a script that sets this must keep its top-level code under
                 `if __name__ == "__main__":`. The pool starts on first use; `close()` stops it.
+            decoder (dict): decoder settings to put over the defaults
+                (`presets.DECODER_DEFAULTS` on top of the checkpoint's own), e.g.
+                `{"word_sil": False}` to offer a SIL only at punctuation, as 2.0.x did. Keys:
+                min_phone_frames, soft_phone_frames, soft_frame_cost, sil_skippable,
+                optional_sil, class_prior_norm, boundary_bonus_weight,
+                boundary_contrast_frames, and the pause/non-speech keys listed in
+                `presets.py`. The dedicated arguments above win over this.
+            fill_nonspeech (bool): label every stretch of the segment no phone of the text
+                covers - before the first phone, after the last, the pauses between words -
+                as `SIL` or `noise` (breath, clicks), from the audio's energy. These entries
+                are `inserted: True` with `target_seq_idx: -1` and belong to no word, the way
+                the web editor marks inserted tokens. False leaves those stretches as gaps.
 
         Parameter priority (highest to lowest): `ckpt_path`, `model_name`, `preset`.
 
@@ -253,6 +368,8 @@ class BFA:
         self._min_phone_frames_override = min_phone_frames
         self._soft_phone_frames_override = soft_phone_frames
         self._contrast_frames_override = boundary_contrast_frames
+        self._decoder_overrides = dict(decoder or {})
+        self.fill_nonspeech = bool(fill_nonspeech)
         self.boundary_bonus_weight = float(boundary_bonus_weight or 0.0)
         self.bad_confidence_threshold = bad_confidence_threshold
         # Settled by `load_model`: the family's own level unless one was given here.
@@ -396,6 +513,8 @@ class BFA:
         # '<blank>'. NOT 'noise' in std, where that is a real label the G2P can produce.
         self.pad_class = inv.pad_id
         self.pad_group = inv.pad_group
+        # Sonorant / fricative / other per class, for the decoder's energy term.
+        self.class_kinds = _class_kinds(inv.id_to_label, len(inv.id_to_label))
 
     def reset_counters(self):
         """Reset the alignment statistics counters. For debugging and reporting only."""
@@ -498,6 +617,11 @@ class BFA:
         """
         hp = dict(self.extractor.decoder_hp)
         hp.update(_presets.decoder_defaults(self.phoneme_set))
+        unknown = set(self._decoder_overrides) - set(hp)
+        if unknown:
+            raise ValueError(f"unknown decoder setting(s) {sorted(unknown)}; known: "
+                             f"{sorted(hp)}")
+        hp.update(self._decoder_overrides)
         if self._min_phone_frames_override is not None:
             hp['min_phone_frames'] = int(self._min_phone_frames_override)
         if self._soft_phone_frames_override is not None:
@@ -518,6 +642,13 @@ class BFA:
             f"({self.extractor.flux_source} flux, contrast window "
             f"{hp['boundary_contrast_frames']} frames), "
             f"sub-frame onsets {'on' if self.sub_frame_onsets else 'off'}")
+        self._info(
+            f"decoder pauses: bonus cap {hp['boundary_bonus_cap']}, prior scale "
+            f"{hp['class_prior_scale']:g}, word SIL {'on' if hp['word_sil'] else 'off'} "
+            f"(soft min {hp['word_sil_frames']} frames), SIL entry bonus "
+            f"{'on' if hp['sil_bonus'] else 'off'}, energy weight {hp['energy_weight']:g} "
+            f"below -{hp['energy_db']:g} dB, filler "
+            f"{'off' if hp['filler_penalty'] is None else hp['filler_penalty']}")
 
     def download_model(self, model_name=None, local_dir=None):
         """
@@ -702,9 +833,21 @@ class BFA:
             soft_cost=hp['soft_frame_cost'], sil_skippable=hp['sil_skippable'],
             optional_sil=hp['optional_sil'], class_prior_norm=hp['class_prior_norm'],
             sil_class=self.silence_class, bonus_weight=self.boundary_bonus_weight,
-            contrast_frames=hp['boundary_contrast_frames'], sub_frame=self.sub_frame_onsets)
+            contrast_frames=hp['boundary_contrast_frames'], sub_frame=self.sub_frame_onsets,
+            bonus_cap=hp['boundary_bonus_cap'], prior_scale=float(hp['class_prior_scale']),
+            word_sil_frames=int(hp['word_sil_frames']), sil_bonus=bool(hp['sil_bonus']),
+            word_sil_cost=float(hp['word_sil_cost']),
+            energy_mask=_energy_depths(self.class_kinds, float(hp['energy_db']),
+                                       hp['energy_db_fric']),
+            energy_weight=float(hp['energy_weight']),
+            energy_db=float(hp['energy_db']), filler_penalty=hp['filler_penalty'],
+            filler_db=float(hp['filler_db']),
+            click_penalty=float(hp['click_penalty'] or 0.0),
+            voicing_weight=float(hp['voicing_weight']),
+            voicing_threshold=float(hp['voicing_threshold']))
 
-    def _decode_batch(self, log_probs, ph_seqs, ph_seq_lens, spectral_lens, flux=None):
+    def _decode_batch(self, log_probs, ph_seqs, ph_seq_lens, spectral_lens, flux=None,
+                      energy=None, sil_after=None, clicks=None, voicing=None):
         """
         Force-align a batch and return framestamps per clip.
 
@@ -713,7 +856,8 @@ class BFA:
                 frame per phone. The chunker catches this and retries with a smaller budget.
         """
         aligned = align_batch(log_probs, ph_seqs, ph_seq_lens, spectral_lens, flux=flux,
-                              **self._align_kwargs())
+                              energy=energy, sil_after=sil_after, clicks=clicks,
+                              voicing=voicing, **self._align_kwargs())
         return self._framestamps_from_batch(aligned, ph_seq_lens, spectral_lens)
 
     def _framestamps_from_batch(self, aligned, ph_seq_lens, spectral_lens):
@@ -755,7 +899,7 @@ class BFA:
     def extract_timestamps_from_segment_batch(self, wavs, wav_lens, phoneme_sequences,
                                               start_offset_times=0, group_sequences=None,
                                               extract_embeddings=True, do_groups=True,
-                                              debug=False):
+                                              debug=False, word_nums=None):
         """
         Extract phoneme and group timestamps for a batch of audio segments.
 
@@ -770,6 +914,9 @@ class BFA:
             extract_embeddings: also return confidence-pooled embeddings per phoneme.
             do_groups: also emit group timestamps.
             debug: print per-segment detail.
+            word_nums: word index per phoneme, one list per segment (the phonemizer's
+                `word_num`), or None. With the decoder's `word_sil` on, an optional SIL is
+                offered at every word boundary.
 
         Returns:
             (timestamp_dicts, pooled_phoneme_embeddings, pooled_group_embeddings) where each
@@ -777,15 +924,17 @@ class BFA:
             `(id, start_frame, end_frame, target_idx, confidence, start_ms, end_ms)`.
         """
         st = self._forward_batch(wavs, wav_lens, phoneme_sequences, group_sequences,
-                                 extract_embeddings)
+                                 extract_embeddings, word_nums=word_nums)
         frame_phonemes = self._decode_batch(st['log_probs_p'], st['ph_seqs'],
                                             st['ph_seq_lens_t'], st['spectral_lens'],
-                                            flux=st['flux'])
+                                            flux=st['flux'], energy=st['energy'],
+                                            sil_after=st['sil_after'], clicks=st['clicks'],
+                                            voicing=st['voicing'])
         return self._finish_batch(st, frame_phonemes, wav_lens, start_offset_times,
                                   extract_embeddings, do_groups, debug)
 
     def _forward_batch(self, wavs, wav_lens, phoneme_sequences, group_sequences,
-                       extract_embeddings):
+                       extract_embeddings, word_nums=None):
         """
         The first third of `extract_timestamps_from_segment_batch`: pad the sequences, run the
         model, and bring everything the Viterbi and the post-processing read to the CPU.
@@ -828,9 +977,32 @@ class BFA:
         grp_seqs = group_sequences.cpu()
         ph_seq_lens_t = torch.tensor(ph_seq_lens, dtype=torch.long)
         spectral_lens = spectral_lens.cpu()
+        hp = self.decoder_hp
+        energy = clicks = None
+        if hp['energy_weight'] or hp['filler_penalty'] is not None or hp['click_penalty']:
+            energy = frame_energy_db(wavs if wavs.dim() == 2 else wavs.unsqueeze(0), wav_lens,
+                                     log_probs_p.shape[1], self.frame_stride_wav)
+        voicing = None
+        if hp['voicing_weight']:
+            voicing = frame_voicing(wavs if wavs.dim() == 2 else wavs.unsqueeze(0), wav_lens,
+                                    log_probs_p.shape[1], self.frame_stride_wav)
+        if hp['click_penalty']:
+            clicks = torch.zeros(energy.shape, dtype=torch.bool)
+            for b in range(energy.shape[0]):
+                clicks[b] = torch.from_numpy(_nonspeech.click_frames(
+                    energy[b].numpy(), int(spectral_lens[b]), self.ms_per_frame,
+                    max_level_db=float(hp['click_max_level_db'])))
+        sil_after = None
+        if hp['word_sil'] and word_nums is not None:
+            sil_after = torch.zeros(ph_seqs.shape, dtype=torch.bool)
+            for b, wn in enumerate(word_nums):
+                flags = word_boundaries(wn)[:ph_seqs.shape[1]]
+                if flags:
+                    sil_after[b, :len(flags)] = torch.tensor(flags, dtype=torch.bool)
         return dict(log_probs_p=log_probs_p, log_probs_g=log_probs_g, ph_seqs=ph_seqs,
                     grp_seqs=grp_seqs, ph_seq_lens=ph_seq_lens, ph_seq_lens_t=ph_seq_lens_t,
                     spectral_lens=spectral_lens, flux=None if flux is None else flux.cpu(),
+                    energy=energy, sil_after=sil_after, clicks=clicks, voicing=voicing,
                     embeddings=(embeddings.cpu() if extract_embeddings and embeddings is not None
                                 else None))
 
@@ -838,7 +1010,9 @@ class BFA:
         """Hand one `_forward_batch` result's Viterbi to the worker pool; returns the future."""
         from .segmental.parallel import pack_job
         return pool.submit(pack_job(st['log_probs_p'], st['ph_seqs'], st['ph_seq_lens_t'],
-                                    st['spectral_lens'], st['flux']),
+                                    st['spectral_lens'], st['flux'], energy=st['energy'],
+                                    sil_after=st['sil_after'], clicks=st['clicks'],
+                                    voicing=st['voicing']),
                            self._align_kwargs())
 
     def _finish_batch(self, st, frame_phonemes, wav_lens, start_offset_times,
@@ -1009,7 +1183,7 @@ class BFA:
     @torch.no_grad()
     def align_segment_whole(self, clip_wav, start_sec, end_sec, phoneme_sequence,
                             group_sequence=None, extract_embeddings=False, do_groups=False,
-                            debug=False):
+                            debug=False, word_num=None):
         '''
         Align one segment in a single decode on its own, UNPADDED audio.
 
@@ -1021,7 +1195,8 @@ class BFA:
             clip_wav, start_sec, end_sec, phoneme_sequence, group_sequence, do_groups)
         res, pe, ge = self.extract_timestamps_from_segment_batch(
             wavs, wav_lens, ph_seqs, start_offset_times=offsets, group_sequences=grp_seqs,
-            extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+            extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug,
+            word_nums=None if word_num is None else [word_num])
         return res[0], pe[0], ge[0]
 
     def _whole_inputs(self, clip_wav, start_sec, end_sec, phoneme_sequence, group_sequence,
@@ -1445,8 +1620,13 @@ class BFA:
                   if not (self.phoneme_set == "std" and seg.get("gold_ph"))])
 
     def post_process_segment(self, segment, ts, phoneme_sequence, phoneme_timestamps,
-                             group_timestamps=None, debug=False):
-        """Turn one segment's framestamps into the output dicts, with coverage and words."""
+                             group_timestamps=None, debug=False, audio=None):
+        """
+        Turn one segment's framestamps into the output dicts, with coverage and words.
+
+        `audio`, the CLIP's waveform (the segment's start/end index it), lets the stretches no
+        phone covers be labelled SIL / noise (`fill_nonspeech`); without it they stay gaps.
+        """
         coverage_analysis = self.analyze_alignment_coverage(
             phoneme_sequence, phoneme_timestamps, self.phoneme_id_to_label)
 
@@ -1493,6 +1673,11 @@ class BFA:
                 ti = item["target_seq_idx"]
                 item[layer] = int(values[ti]) if 0 <= ti < len(values) else 0
 
+        if self.fill_nonspeech and audio is not None and ts_out_segment["phoneme_ts"]:
+            ts_out_segment["phoneme_ts"] = self._fill_nonspeech(
+                ts_out_segment["phoneme_ts"], segment, audio,
+                [layer for layer in ("tone", "stress", "length") if ts.get(layer) is not None])
+
         if debug:
             print(f"\nSegment: '{segment['text']}'")
             n = len(ts_out_segment["phoneme_ts"])
@@ -1523,6 +1708,22 @@ class BFA:
         ts_out_segment["words_ts"] = self._align_words(
             ts_out_segment["phoneme_ts"], ts.get("word_num", []), ts.get("words", []))
         return ts_out_segment
+
+    def _fill_nonspeech(self, phoneme_ts, segment, audio, layers):
+        """`nonspeech.fill_nonspeech` over one segment of `audio` (the clip, any shape)."""
+        sr = self.resampler_sample_rate
+        wav = audio.float()
+        if wav.dim() == 2:
+            wav = wav.mean(dim=0)
+        a = max(0, int(round(float(segment["start"]) * sr)))
+        b = min(wav.shape[0], int(round(float(segment["end"]) * sr)))
+        energy = _nonspeech.energy_db_per_ms(wav[a:b].cpu().numpy(), sr)
+        noise_id = self.phoneme_label_to_id.get("noise")
+        if noise_id == self.pad_class:
+            noise_id = None                     # ph66: its 'noise' slot is the batch filler
+        return _nonspeech.fill_nonspeech(
+            phoneme_ts, a * 1000.0 / sr, b * 1000.0 / sr, energy, self.silence_class,
+            noise_id, layers=layers)
 
     def _result_header(self):
         """
@@ -1665,6 +1866,7 @@ class BFA:
                              "Cannot proceed with timestamp extraction.")
 
         start_times = [seg["start"] for _, seg, _ in flat_items_f]
+        word_nums_f = [ts.get("word_num") for ts in ts_outs_f]
         results = [None] * len(flat_items_f)
         pooled_emb_p_list = [None] * len(flat_items_f)
         pooled_emb_g_list = [None] * len(flat_items_f)
@@ -1705,7 +1907,7 @@ class BFA:
                         clip_wav, float(seg["start"]), float(seg["end"]), ph_seqs_f[i],
                         group_sequence=grp_seqs_f[i] if do_groups else None,
                         extract_embeddings=extract_embeddings, do_groups=do_groups,
-                        debug=debug)
+                        debug=debug, word_num=word_nums_f[i])
                 except ValueError as ex:
                     whole_failed(i, ex)
                     continue
@@ -1728,7 +1930,8 @@ class BFA:
 
             def submit(kind, ids, wavs_b, lens_b, ph_b, offsets_b, grp_b):
                 try:
-                    st = self._forward_batch(wavs_b, lens_b, ph_b, grp_b, extract_embeddings)
+                    st = self._forward_batch(wavs_b, lens_b, ph_b, grp_b, extract_embeddings,
+                                             word_nums=[word_nums_f[j] for j in ids])
                 except ValueError as ex:   # handled in collect(), as the serial path does
                     pending.append((kind, ids, None, lens_b, offsets_b, ex))
                 else:
@@ -1765,7 +1968,8 @@ class BFA:
                 else:
                     store(ids, *self._align_slice(
                         ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times, flat_items_f,
-                        extract_embeddings, do_groups, debug, first=finish))
+                        extract_embeddings, do_groups, debug, first=finish,
+                        word_nums_f=word_nums_f))
 
             with torch.no_grad():
                 for i in whole_ids:
@@ -1805,12 +2009,13 @@ class BFA:
             for ids in slices:
                 store(ids, *self._align_slice(
                     ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times, flat_items_f,
-                    extract_embeddings, do_groups, debug))
+                    extract_embeddings, do_groups, debug, word_nums_f=word_nums_f))
 
         for idx, ((bi, seg, _), result, ts) in enumerate(zip(flat_items_f, results, ts_outs_f)):
             processed = self.post_process_segment(
                 seg, ts, seg[self.phonemes_key], result["phoneme_timestamps"],
-                result["group_timestamps"] if do_groups else None, debug=debug)
+                result["group_timestamps"] if do_groups else None, debug=debug,
+                audio=flat_items_f[idx][2])
             batch_results[bi]["segments"].append(processed)
 
             if extract_embeddings:
@@ -1837,7 +2042,8 @@ class BFA:
         return batch_results
 
     def _align_slice(self, ids, wavs, wav_lens, ph_seqs_f, grp_seqs_f, start_times,
-                     flat_items_f, extract_embeddings, do_groups, debug, first=None):
+                     flat_items_f, extract_embeddings, do_groups, debug, first=None,
+                     word_nums_f=None):
         """
         One batched forward+decode over `ids`, falling back to one segment at a time if any
         of them cannot be aligned.
@@ -1856,7 +2062,8 @@ class BFA:
                 [ph_seqs_f[j] for j in subset],
                 start_offset_times=[start_times[j] for j in subset],
                 group_sequences=[grp_seqs_f[j] for j in subset] if do_groups else None,
-                extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug)
+                extract_embeddings=extract_embeddings, do_groups=do_groups, debug=debug,
+                word_nums=None if word_nums_f is None else [word_nums_f[j] for j in subset])
 
         try:
             return first() if first is not None else run(ids)
@@ -1874,7 +2081,7 @@ class BFA:
         for j in ids:
             r, p, g = self._align_slice([j], wavs, wav_lens, ph_seqs_f, grp_seqs_f,
                                         start_times, flat_items_f, extract_embeddings,
-                                        do_groups, debug)
+                                        do_groups, debug, word_nums_f=word_nums_f)
             r_out += r
             p_out += p
             g_out += g
@@ -1897,6 +2104,8 @@ class BFA:
                     self.total_segments_failed += 1
                     continue
 
+                # Only the text's phones: inserted SIL / noise entries have no confidence.
+                phoneme_ts = [t for t in phoneme_ts if int(t.get("target_seq_idx", -1)) >= 0]
                 predicted_sequence = [t["phoneme_id"] for t in phoneme_ts]
                 if predicted_sequence == seg_out.get(self.phonemes_key):
                     self.perfect_matches += 1

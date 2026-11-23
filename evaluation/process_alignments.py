@@ -39,7 +39,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from evaluation.config import (ALIGNER_KWARGS, BFA_SETTINGS, DECODER_AXES, HP_OVERRIDES,
-                               load_config)
+                               OPTIONAL_KWARGS, load_config)
 from evaluation.layout import (OUTPUT_DIR, PATHS_LISTS, alignment_path, assert_unique_stems,
                                experiment_dir, log_path, manifest_path, resolve_srt)
 
@@ -105,9 +105,21 @@ def is_maps(model_key):
     return CFG["models"][model_key].get("method") == "maps"
 
 
+def is_ctc(model_key):
+    return CFG["models"][model_key].get("method") == "ctc"
+
+
+def is_charsiu(model_key):
+    return CFG["models"][model_key].get("method") == "charsiu"
+
+
 # The aligners that are not BFA. Each aligns the extracted segment audio with its own tool and
 # writes segment-relative times; none of them takes any of the `bfa:` settings.
-EXTERNAL_METHODS = ("MFA", "MAPS")
+EXTERNAL_METHODS = ("MFA", "MAPS", "CTC", "CHARSIU")
+# What a `method: ctc` model entry carries into its experiments (and manifest).
+CTC_MODEL_KEYS = ("hf_model", "revision", "compounds", "lang")
+# ... and a `method: charsiu` one.
+CHARSIU_MODEL_KEYS = ("hf_model", "revision", "decoder")
 
 
 def resolve_model(model_key):
@@ -317,7 +329,7 @@ def _validate_experiment(exp):
         raise ValueError(f"min_phone_frames={mpf}: must be >= 1 (frames are 5 ms).")
     if spf is not None and int(spf) < 0:
         raise ValueError(f"soft_phone_frames={spf}: must be >= 0.")
-    for key in ("sil_skippable", "optional_sil", "class_prior_norm"):
+    for key in ("sil_skippable", "optional_sil", "class_prior_norm", "punctuation_sil"):
         if exp.get(key) is not None and not isinstance(exp[key], bool):
             raise ValueError(f"{key}={exp[key]!r}: must be true, false or null")
     if exp.get("boundary_contrast_frames") is not None and int(exp["boundary_contrast_frames"]) < 1:
@@ -372,6 +384,11 @@ def experiment_id(exp):
         parts += [f"{tag}{_tag_value(exp[key])}" for key, tag, usual in ID_EXTRAS
                   if exp[key] != usual]
         parts += [f"{HP_TAGS[key]}{_tag_value(value)}" for key, value in hp_overrides(exp).items()]
+        if exp.get("punctuation_sil"):
+            parts.append("psil1")
+        # 2.1 changed the library's decoder defaults (pauses, non-speech): those runs must
+        # not reuse a 2.0 run's cached alignments, so they are tagged with the version.
+        parts += _version_and_decoder_tags(exp)
     if exp.get("split", "all") != "all":
         parts.append(exp["split"])
     if int(exp["subset"]) > 0:
@@ -380,6 +397,17 @@ def experiment_id(exp):
     if os.sep in name:
         raise ValueError(f"experiment name {name!r} is not a directory name")
     return name
+
+
+def _version_and_decoder_tags(exp):
+    """`v21` from BFA 2.1 on, and one `<key><value>` tag per `decoder:` override."""
+    import bournemouth_aligner
+    major, minor = (int(x) for x in bournemouth_aligner.__version__.split(".")[:2])
+    tags = [f"v{major}{minor}"] if (major, minor) >= (2, 1) else []
+    for key, value in sorted((exp.get("decoder") or {}).items()):
+        short = "".join(w[0] for w in key.split("_"))
+        tags.append(f"{short}{_tag_value(value) if value is not None else 'none'}")
+    return tags
 
 
 def _as_list(value):
@@ -400,13 +428,21 @@ def build_experiments():
             continue
         group = entry.get("name", f"experiments[{n}]")
         settings = {key: _as_list(entry.get(key, CFG["bfa"].get(key)))
-                    for key in BFA_SETTINGS + HP_OVERRIDES}
+                    for key in BFA_SETTINGS + HP_OVERRIDES + OPTIONAL_KWARGS}
         for dataset, subset, split, model in product(_as_list(entry["dataset"]),
                                                      _as_list(entry.get("subset", -1)),
                                                      _as_list(entry.get("split", "all")),
                                                      _as_list(entry["model"])):
             base = {"dataset": dataset, "subset": int(subset), "split": split, "model": model}
-            if model in CFG["models"] and is_maps(model):
+            if model in CFG["models"] and is_ctc(model):
+                # A phoneme CTC model + torchaudio forced_align: no BFA setting reaches it.
+                grid = [{"method": "CTC",
+                         **{key: CFG["models"][model][key] for key in CTC_MODEL_KEYS}}]
+            elif model in CFG["models"] and is_charsiu(model):
+                # Charsiu's W2V2-FS aligner: no BFA setting reaches it either.
+                grid = [{"method": "CHARSIU",
+                         **{key: CFG["models"][model][key] for key in CHARSIU_MODEL_KEYS}}]
+            elif model in CFG["models"] and is_maps(model):
                 # Like MFA: none of the BFA settings reach it.
                 entry_cfg = CFG["models"][model]
                 grid = [{"method": "MAPS",
@@ -455,6 +491,10 @@ def experiment_label(exp):
             label += "-gridonset"
         for key, value in hp_overrides(exp).items():
             label += f"-{HP_TAGS[key]}{_tag_value(value)}"
+        if exp.get("punctuation_sil"):
+            label += "-psil1"
+        for tag in _version_and_decoder_tags(exp):
+            label += f"-{tag}"
     if exp.get("split", "all") != "all":
         label += f"-{exp['split']}"
     if exp["subset"] > 0:
@@ -496,6 +536,14 @@ def write_manifest(exp, status, extra=None):
         manifest["model"] = {key: exp[key] for key in
                              ("acoustic_model", "dictionary", "g2p_model", "interpolate")}
         manifest["model"]["trained_on"] = CFG["models"][exp["model"]]["trained_on"]
+    elif exp["method"] == "CTC":
+        manifest["model"] = {"model_name": exp["hf_model"],
+                             **{key: exp[key] for key in CTC_MODEL_KEYS if key != "hf_model"}}
+        manifest["phoneme_set"] = "ph66"
+    elif exp["method"] == "CHARSIU":
+        # ARPAbet labels, read by the scorer as it reads MFA's (no phoneme_set stamp).
+        manifest["model"] = {"model_name": exp["hf_model"],
+                             **{key: exp[key] for key in CHARSIU_MODEL_KEYS if key != "hf_model"}}
     else:
         manifest["model"] = {"acoustic_model": exp["acoustic_model"],
                              "dictionary": exp["dictionary"],
@@ -627,11 +675,23 @@ def build_aligner(exp, log_file=None):
         # from what the model was actually trained with.
         **{axis: exp[axis] for axis in DECODER_AXES},
         **{key: exp[key] for key in ALIGNER_KWARGS},
+        punctuation_sil=bool(exp.get("punctuation_sil")),
+        decoder=dict(exp.get("decoder") or {}),
     )
     aligner.warn_level = CFG["run"]["warn_level"]
     # Checkpoint-only settings: BFA reads `decoder_hp` at every decode, so setting them on the
     # built aligner is the same as a checkpoint that carried them.
     overrides = hp_overrides(exp)
+    # A value the yaml sets explicitly must also run when it equals the checkpoint file's (so it
+    # is not in `overrides` and not in the name): the aligner has already put BFA's library
+    # defaults on top of the file, e.g. W 33 over a checkpoint's W 17.
+    for key in HP_OVERRIDES:
+        value = exp.get(key)
+        if value is None or key in overrides or key not in aligner.decoder_hp:
+            continue
+        cast = type(aligner.decoder_hp[key])
+        if cast(value) != aligner.decoder_hp[key]:
+            overrides[key] = cast(value)
     if overrides:
         aligner.decoder_hp.update(overrides)
         log_message(f"[{timestamp_now()}] decoder_hp overrides: {overrides}", log_file)
@@ -838,7 +898,7 @@ def make_bfa_phoneme_dict(paths_list, exp, log_file=None):
                                                "index": -1}
                 phoneme_dict[ipa_label]["count"] += 1
                 phoneme_dict[ipa_label]["total_duration"] += phoneme_ts['end_ms'] - phoneme_ts['start_ms']
-                phoneme_dict[ipa_label]["avg_confidences"] += phoneme_ts['confidence']
+                phoneme_dict[ipa_label]["avg_confidences"] += phoneme_ts['confidence'] or 0.0
 
                 # a following "-" (pause) is charged to the phoneme before it
                 nxt = segment['phoneme_ts'][pi + 1] if pi + 1 < len(segment['phoneme_ts']) else None
@@ -1022,6 +1082,20 @@ def run_experiment(exp, e, n_total, paths_list_cache):
                 for entry in paths_list]
         stats = run_maps(exp, jobs, CFG["maps"], CFG["mfa"],
                          log=lambda message: log_message(message, output_log_file))
+    elif exp["method"] == "CTC":
+        from evaluation.align_with_ctc_wav2vec import run_ctc
+        jobs = [(resolve_audio_path(exp["dataset"], entry["audio"]), resolve_srt(entry["srt"]),
+                 alignment_path(exp["id"], exp["dataset"], entry["srt"]))
+                for entry in paths_list]
+        stats = run_ctc(exp, jobs, CFG["ctc"],
+                        log=lambda message: log_message(message, output_log_file))
+    elif exp["method"] == "CHARSIU":
+        from evaluation.align_with_charsiu import run_charsiu
+        jobs = [(resolve_audio_path(exp["dataset"], entry["audio"]), resolve_srt(entry["srt"]),
+                 alignment_path(exp["id"], exp["dataset"], entry["srt"]))
+                for entry in paths_list]
+        stats = run_charsiu(exp, jobs, CFG["charsiu"],
+                            log=lambda message: log_message(message, output_log_file))
     else:
         if CFG["run"]["vocab_analysis"]:
             analyze_phoneme_vocab_mappings(paths_list, log_file=output_log_file)
@@ -1050,7 +1124,8 @@ if __name__ == "__main__":
                              "shells with K = 0 .. N-1 cover the list between them")
     parser.add_argument("--config", default=None, help="default: evaluation/evaluate.yaml")
     parser.add_argument("--only", default=None, metavar="GLOB",
-                        help="only the experiments whose name matches, e.g. 'timit__*'")
+                        help="only the experiments whose name matches, e.g. 'timit__*' "
+                             "(several globs: comma-separated)")
     parser.add_argument("--list", action="store_true",
                         help="print the experiments and what is cached, then stop")
     args = parser.parse_args()
@@ -1072,7 +1147,7 @@ if __name__ == "__main__":
     all_experiments = build_experiments()
     if args.only:
         all_experiments = [exp for exp in all_experiments
-                           if fnmatch.fnmatch(exp["id"], args.only)]
+                           if any(fnmatch.fnmatch(exp["id"], g) for g in args.only.split(","))]
     # The split is over the whole list, so an experiment belongs to the same shell whichever
     # of them is asked.
     experiments = all_experiments[process_id::total_processes]

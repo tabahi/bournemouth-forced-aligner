@@ -522,11 +522,13 @@ GROUP_NOTES = {
                 "like those of the plain consonant; the soft colour belongs to the consonant. Croatian "
                 "(`hbs`, Latin script) is aligned with this model too, and its accent marks (â, ǎ, ô …) are "
                 "pitch accents: separate tokens, placed like the plain vowel.",
-    "cjk": "Tone is a separate layer, not part of these tokens: see the [tone guide](tones.md). Affricates "
-           "and diphthongs are **split into tokens**: 在 = t s a ɪ, 这 = ʈ ʂ ɤ; an aspirated affricate puts "
-           "the aspiration on its second half (其 = t ɕʰ i, 此 = t sʰ i). Give each part its own span. The "
-           "aspirated stops pʰ tʰ kʰ are the sounds written p t k in pinyin and Jyutping; the plain p t k "
-           "are the ones written b d g.",
+    "cjk": "Tone is a separate layer, not part of these tokens: see the [tone guide](tones.md). The "
+           "unaspirated onsets written b d g z j zh in pinyin (b d g z in Jyutping) are the tokens "
+           "b d ɡ d͡z d͡ʑ d͡ʐ, and each affricate is **one token**: 在 = d͡z a ɪ, 这 = d͡ʐ ɤ. An aspirated "
+           "affricate is **split into two tokens**, with the aspiration on its second half "
+           "(其 = t ɕʰ i, 此 = t sʰ i): give each part its own span. Diphthongs are split too (在 = a ɪ). "
+           "The aspirated stops pʰ tʰ kʰ are the sounds written p t k in pinyin and Jyutping. Plain p t k "
+           "are Cantonese syllable-final stops, which have no audible release, and foreign words.",
     "japanese": "Japanese has no tone layer in this model. A long vowel is one token (its length is a "
                 "separate layer): ドーブツ = d o b ɯ t s ɯ. Affricates are **split into two tokens** "
                 "(ツ = t s, ジ = d ʑ): give the stop and the fricative part their own spans. The "

@@ -18,12 +18,12 @@ Four tones and a neutral tone. The G2P gives each character its dictionary readi
 
 | number | tone | pitch | notes | share | examples |
 |---|---|---|---|---:|---|
-| **55** ˥˥ | Tone 1, high level | high level | ā; yīnpíng 阴平 | 19.7% | 一 /i55/; 它 /tʰ u ɔ55/; 中 /ʈ ʂ ʊ55 ŋ/ |
-| **35** ˧˥ | Tone 2, rising | rising, mid to high | á; yángpíng 阳平 | 26.7% | 的 /t i35/; 和 /x ɤ35/; 人 /ʐ ə35 n/ |
+| **55** ˥˥ | Tone 1, high level | high level | ā; yīnpíng 阴平 | 19.7% | 一 /i55/; 它 /tʰ u ɔ55/; 中 /d͡ʐ ʊ55 ŋ/ |
+| **35** ˧˥ | Tone 2, rising | rising, mid to high | á; yángpíng 阳平 | 26.7% | 的 /d i35/; 和 /x ɤ35/; 人 /ʐ ə35 n/ |
 | **214** ˨˩˦ | Tone 3, dipping | dipping: falls low, then rises | ǎ; shǎngshēng 上声. Before another syllable it is often only low (21). | 17.7% | 了 /l j ɑ ʊ214/; 可以 /kʰ ɤ214 i214/; 有 /j o ʊ214/ |
-| **51** ˥˩ | Tone 4, falling | falling, high to low | à; qùshēng 去声 | 34.8% | 在 /t s a ɪ51/; 是 /ʂ ɚ51/; 不 /p u51/ |
-| **3** ˧ | Neutral tone | mid (one level) | qīngshēng 轻声: short and unstressed; its pitch follows the tone before it | 1.0% | 一个 /i35 k ɤ3/; 他们 /tʰ a55 m ə3 n/; 男子 /n a35 n t s ɯ3/ |
-| **5** ˥ | (rare) | high (one level) | only in spelled-out letters and foreign words | 0.0% | npws /ɛ55 n p j ɑ ʊ55 ɛ5 s/ |
+| **51** ˥˩ | Tone 4, falling | falling, high to low | à; qùshēng 去声 | 34.8% | 在 /d͡z a ɪ51/; 是 /ʂ ɚ51/; 不 /b u51/ |
+| **3** ˧ | Neutral tone | mid (one level) | qīngshēng 轻声: short and unstressed; its pitch follows the tone before it | 1.0% | 一个 /i35 ɡ ɤ3/; 他们 /tʰ a55 m ə3 n/; 男子 /n a35 n d͡z ɯ3/ |
+| **5** ˥ | (rare) | high (one level) | only in spelled-out letters and foreign words | 0.0% | npws /ɛ55 n b j ɑ ʊ55 ɛ5 s/ |
 
 ### Cantonese (`yue`)
 
@@ -31,12 +31,12 @@ Six tones, numbered 1–6 in Jyutping. Level tones are written with one digit. T
 
 | number | tone | pitch | notes | share | examples |
 |---|---|---|---|---:|---|
-| **5** ˥ | Tone 1, high level | high (one level) | Jyutping 1 (and the high entering tone, 7) | 27.6% | 的 /t ɪ5 k/; 都 /t o u5/; 方式 /f ɔ5 ŋ s ɪ5 k/ |
-| **35** ˧˥ | Tone 2, high rising | rising, mid to high | Jyutping 2 | 11.2% | 影響 /j ɪ35 ŋ h œ35 ŋ/; 許多 /h ɵ y35 t ɔ5/; 使 /s i35/ |
-| **3** ˧ | Tone 3, mid level | mid (one level) | Jyutping 3 (and the mid entering tone, 8) | 13.6% | 世界 /s ɐ i3 k a i3/; 個 /k ɔ3/; 國家 /k w ɔ3 k k a5/ |
-| **21** ˨˩ | Tone 4, low falling | low falling | Jyutping 4 | 17.6% | 成為 /s ɪ21 ŋ w ɐ i21/; 人 /j ɐ21 n/; 不同 /p ɐ5 t tʰ ʊ21 ŋ/ |
-| **13** ˩˧ | Tone 5, low rising | low rising | Jyutping 5 | 7.3% | 有 /j ɐ u13/; 以 /j i13/; 這個 /t s ɛ13 k ɔ3/ |
-| **2** ˨ | Tone 6, low level | low (one level) | Jyutping 6 (and the low entering tone, 9) | 22.7% | 動物 /t ʊ2 ŋ m ɐ2 t/; 在 /t s ɔ i2/; 活動 /w u2 t t ʊ2 ŋ/ |
+| **5** ˥ | Tone 1, high level | high (one level) | Jyutping 1 (and the high entering tone, 7) | 27.6% | 的 /d ɪ5 k/; 都 /d o u5/; 方式 /f ɔ5 ŋ s ɪ5 k/ |
+| **35** ˧˥ | Tone 2, high rising | rising, mid to high | Jyutping 2 | 11.2% | 影響 /j ɪ35 ŋ h œ35 ŋ/; 許多 /h ɵ y35 d ɔ5/; 使 /s i35/ |
+| **3** ˧ | Tone 3, mid level | mid (one level) | Jyutping 3 (and the mid entering tone, 8) | 13.6% | 世界 /s ɐ i3 ɡ a i3/; 個 /ɡ ɔ3/; 國家 /ɡ w ɔ3 k ɡ a5/ |
+| **21** ˨˩ | Tone 4, low falling | low falling | Jyutping 4 | 17.6% | 成為 /s ɪ21 ŋ w ɐ i21/; 人 /j ɐ21 n/; 不同 /b ɐ5 t tʰ ʊ21 ŋ/ |
+| **13** ˩˧ | Tone 5, low rising | low rising | Jyutping 5 | 7.3% | 有 /j ɐ u13/; 以 /j i13/; 這個 /d͡z ɛ13 ɡ ɔ3/ |
+| **2** ˨ | Tone 6, low level | low (one level) | Jyutping 6 (and the low entering tone, 9) | 22.7% | 動物 /d ʊ2 ŋ m ɐ2 t/; 在 /d͡z ɔ i2/; 活動 /w u2 t d ʊ2 ŋ/ |
 
 ### Vietnamese (Northern) (`vi`)
 

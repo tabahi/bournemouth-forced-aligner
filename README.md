@@ -262,6 +262,8 @@ Full timings: [evaluation](https://speech-industry.github.io/bournemouth-forced-
 | `n_jobs=4` | Run the alignment search in 4 worker processes when one call aligns many segments (`process_segments`, `process_srt_file`). With a GPU: 2.4× faster on long recordings. Little effect on a CPU. Same output; your script needs `if __name__ == "__main__":`. |
 | `low_confidence_level` | The confidence below which a phoneme counts as doubtful when flagging bad segments. |
 | `punctuation_sil=False` | Stop writing a pause at commas and full stops (on by default; default phoneme set only). Without it, a pause is swallowed by the phone next to it. |
+| `decoder={"word_sil": False}` | Offer a pause only at punctuation, as 2.0 did. Since 2.1 a pause may go between any two words, and breath and clicks around the speech are labelled `noise` instead of being stretched into a phone. |
+| `fill_nonspeech=False` | Leave what no phone covers as gaps instead of `SIL` / `noise` entries (marked `"inserted": true`). |
 | `warn_level=0` | Print nothing, downloads included. |
 
 All options: `balign --help`, and the [developer guide](https://speech-industry.github.io/bournemouth-forced-aligner/developer-guide/).

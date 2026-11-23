@@ -16,7 +16,7 @@ the model code: [`p3cupe/model.py`](../bournemouth_aligner/p3cupe/model.py),
 |---|---|---|
 | phoneme set in BFA | `std` (default) | `ph66` |
 | phonemizer | [standard_g2p](https://github.com/tabahi/CharsiuG2P), a ByT5 G2P for 100 languages | espeak-ng, reduced to 66 phonemes |
-| phoneme head | one **language group's** tokens (208 for `latin`, 127 `cyrillic`, 48 `cjk`, 28 `japanese`) | 66 phonemes + 1 reserved slot, the same for every language |
+| phoneme head | one **language group's** tokens (208 for `latin`, 127 `cyrillic`, 54 `cjk`, 28 `japanese`) | 66 phonemes + 1 reserved slot, the same for every language |
 | group head | 15 phoneme groups, shared by every language | 16 groups + 1 reserved slot |
 | tone head | 22 tone contours (0 = no tone) | — |
 | silence id | 1 (`<blank>` is 0 and is never a target) | 0 |
@@ -142,7 +142,9 @@ positions, and they move smoothly between steps instead of jumping a frame.
 p3cupe also had `soft_target_mix`, which mixed the occupancy into the class distribution
 itself. `CUPE-3-en` and `CUPE-3-mls7` were trained with it (`CUPE-3-en-base` was not). At 1.0 it
 removes the hat, and over a long run TIMIT boundary F1 drifted down while the training metrics improved.
-That is why `CUPE-3-mls7` is its run's first epoch, and why p4mbfa does not have this option.
+`CUPE-3-mls7`'s run fell on English TIMIT every epoch (held-out f1@25 74.2 after the first, 71.7
+after the last); the release is the final epoch, the one that saw the most of its seven languages.
+This drift is why p4mbfa does not have this option.
 
 **The tone mask.** A language with no tone layer (all of `latin`) has tone 0 everywhere by
 construction. Training the tone head toward 0 there would teach it that 0 means "this language",
@@ -200,7 +202,7 @@ fine-tuned with the onset bonus off and is published with `boundary_bonus_weight
 contrast window 33 frames for every model, `mbfa-other-alphabetic` included. The window was
 chosen by a decode-time sweep on TIMIT and Buckeye. The bonus is chosen for conversational
 speech: on full Buckeye, 15 beats 30 for every model scored, while on read TIMIT the two are
-within about half a point. Pass
+within about one point. Pass
 `boundary_bonus_weight=30, boundary_contrast_frames=17` to decode as before.
 
 ### The onset bonus
@@ -212,7 +214,7 @@ Whether that helps depends on what you score:
 |---|---:|---:|---:|---:|
 | `CUPE-3-en` | 73.8 | **75.6** | **73.1%** | 68.7% |
 | `CUPE-3-en-base` | 73.8 | **76.0** | **74.6%** | 68.6% |
-| `CUPE-3-mls7` | 70.9 | **74.2** | **71.1%** | 66.4% |
+| `CUPE-3-mls7` | 65.1 | **71.7** | **64.2%** | 62.1% |
 | `mbfa-latin` | 65.2 | **71.7** | | |
 | `mbfa-latin-benchmark` | 68.8 | **72.9** | | |
 
@@ -232,7 +234,7 @@ quality.
 
 Confidences are **not on a common scale across models**. Mean confidence on the full TIMIT / Buckeye
 runs at the defaults: `CUPE-3-en` 0.54 / 0.43, `CUPE-3-en-base` 0.40 / 0.32, `CUPE-3-mls7`
-0.26 / 0.21, `mbfa-latin` 0.25 / 0.20, `mbfa-latin-benchmark` 0.17 / 0.16. `low_confidence_level` therefore
+0.28 / 0.23, `mbfa-latin` 0.25 / 0.20, `mbfa-latin-benchmark` 0.17 / 0.16. `low_confidence_level` therefore
 defaults to each family's own level: 0.2 for CUPE-3 and 0.1 for mbfa. A segment of more than 60
 phones is flagged `bad_alignment` when more than `bad_confidence_threshold` (60%) of its phones fall below that level.
 
@@ -252,7 +254,7 @@ why it was picked, is
 | [`mbfa-latin`](https://huggingface.co/Tabahi/mbfa-latin) | std/latin | ma04a, 6 | FLEURS latin, 36 languages, 273.5 h | 0.05 | TIMIT f1@25 71.22 tune / 71.70 held-out, best at the highest noise |
 | [`mbfa-latin-benchmark`](https://huggingface.co/Tabahi/mbfa-latin-benchmark) | std/latin | ma02a, 8 | FLEURS latin, 62% sample, ~170 h | 0.02 | TIMIT f1@25 73.33 / 72.93, best of every latin run |
 | [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | std/cyrillic | mr01a, 10 | FLEURS be bg hr kk mk ru sr uk, ~40 h | 0.02 | FLEURS val_loss 2.652 |
-| [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std/cjk | mc01a, 13 | FLEURS Mandarin + Cantonese, ~9 h | 0.02 | FLEURS val_loss 2.596 |
+| [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std/cjk | mc02a, 9 | FLEURS Mandarin + Cantonese, 14.9 h | 0.02 | FLEURS val_loss 2.830 |
 | [`mbfa-latin-noEnglish`](https://huggingface.co/Tabahi/mbfa-latin-noEnglish) | std/latin | ma05a, 4 | FLEURS latin without English, 35 languages, 266.4 h | 0.05 | TIMIT f1@25 71.90 / 71.77, best of 9 epochs |
 | [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | std/japanese | mj01a, 8 | FLEURS Japanese, 7 h | 0.02 | FLEURS val_loss 2.349 + frame accuracy |
 | [`mbfa-vietnamese`](https://huggingface.co/Tabahi/mbfa-vietnamese) | std/vietnamese | mv01a, 6 | FLEURS Vietnamese, 8.7 h | 0.02 | FLEURS val_loss 3.347 |
@@ -262,22 +264,22 @@ why it was picked, is
 | [`mbfa-other-alphabetic`](https://huggingface.co/Tabahi/mbfa-other-alphabetic) | std/other_alphabetic | mo01b, 3 | FLEURS am el hy ka ko, 39.8 h | 0.02 | FLEURS val_loss 2.628 |
 | [`CUPE-3-en`](https://huggingface.co/Tabahi/CUPE-3-en) | ph66 | pa07f, 0 | LibriSpeech, ~500 h | 0.01 | TIMIT f1@25 76.10 / 75.58 |
 | [`CUPE-3-en-base`](https://huggingface.co/Tabahi/CUPE-3-en-base) | ph66 | pa01d, 3 | LibriSpeech, ~500 h | 0.01 | TIMIT f1@25 76.20 / 76.00 |
-| [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7) | ph66 | pa07a, 0 | `CUPE-3-en-base` + MLS de es fr it nl pl pt, 100 h each | 0.01 | TIMIT f1@25 74.79 / 74.15 |
+| [`CUPE-3-mls7`](https://huggingface.co/Tabahi/CUPE-3-mls7) | ph66 | pa07a, final (after 4 epochs) | MLS de es fr it nl pl pt, 100 h each, no English | 0.01 | TIMIT f1@25 70.96 / 71.70 (not used to select it) |
 
 TIMIT numbers here are from the training repo's 400-clip probe, on two halves: one picked the
-checkpoint, the other is held out. The full-corpus scores are on the [Evaluation](evaluation.md) page.
+checkpoint (except for `CUPE-3-mls7`, its run's final epoch), the other is held out. The full-corpus scores are on the [Evaluation](evaluation.md) page.
 
 - **Which latin model.** `mbfa-latin` was trained with the most noise and is the one meant for real
   recordings, which is why every latin preset uses it. `mbfa-latin-benchmark` scores higher on clean
   speech and is selected by name only. `mbfa-latin-noEnglish` is the `mbfa-latin` recipe trained from
   random weights without English, released to show transfer to a language a model never heard; it
   is selected by name only.
-- **Which English ph66 model.** `CUPE-3-en` and `CUPE-3-en-base` are from the same lineage
-  (pa01d → pa07a → … → pa07f) and score within noise of each other. `CUPE-3-en` is the
+- **Which English ph66 model.** `CUPE-3-en` (pa07a → … → pa07f, starting from `CUPE-3-mls7`) and
+  `CUPE-3-en-base` (LibriSpeech only) are separate runs and score within noise of each other. `CUPE-3-en` is the
   preset. `CUPE-3-en-base` is selected by name.
-- **`CUPE-3-mls7`** is `CUPE-3-en-base` trained for one more epoch on seven MLS languages, with no English.
-  It is the only p3cupe model that has heard anything but English, so every non-English ph66 preset
-  uses it. The epoch cost about two points of English TIMIT F1.
+- **`CUPE-3-mls7`** was trained from random weights for four epochs on seven MLS languages, with no
+  English. It is the only p3cupe model that has heard anything but English, so every non-English ph66
+  preset uses it. On English TIMIT it scores about five points of F1 @25 below `CUPE-3-en`.
 - **The non-latin groups** were selected on validation loss over the model's own alignments, because no
   boundary labels exist outside English. `vietnamese`, `thai_khmer` (Thai only), `abjad` and `brahmic`
   were added on 2026-10-27, `other_alphabetic` on 2026-10-28.

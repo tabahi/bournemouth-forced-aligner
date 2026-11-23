@@ -11,10 +11,15 @@ sweep ends up scoring an empty set and reporting every run as "never aligned".
     tmp/mfa/                                      MFA's scratch corpus, removed after a run
     tmp/maps/                                     MAPS's scratch corpus, removed after a run
     tmp/plots/<experiment>.json / .png            the scorer's detail and error histogram
-    evaluation/results/results_<dataset>.csv      the scores, one row per experiment (the
+    local/results/results_<dataset>.csv           the scores, one row per experiment (the
                                                   path is `paths.results_csv` in the yaml)
-    tmp/data/<dataset>_data/…                     THE CORPUS: the SRT transcripts. Nothing
+    local/data/<dataset>_data/…                   THE CORPUS: the SRT transcripts. Nothing
                                                   this pipeline writes ever lands here.
+    local/paths/<dataset>_paths_all.json          the paths lists the parsers wrote
+
+`tmp/` holds what can be thrown away and rebuilt by running the pipeline again. `local/` holds
+what is slow to rebuild and what many scripts read: it is the directory to carry along when the
+checkout moves to another machine. Both are gitignored.
 
 `<experiment>` names the run by what it is - `<dataset>__<model>__<key settings>`, built by
 `process_alignments.experiment_id` - so the directory is the cache key: the same configuration
@@ -25,6 +30,9 @@ together with its record.
 import os
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Kept when the checkout moves: the parsed corpora, the paths lists, the results CSVs.
+LOCAL_DIR = os.path.join(REPO_ROOT, "local")
 
 # Every alignment file, one directory per experiment.
 OUTPUT_DIR = os.path.join(REPO_ROOT, "tmp", "alignments")
@@ -43,18 +51,28 @@ PLOTS_DIR = os.path.join(REPO_ROOT, "tmp", "plots")
 
 # The corpus trees the parsers wrote. Read-only as far as this pipeline is concerned.
 DATASET_SRT_ROOTS = {
-    "timit": os.path.join(REPO_ROOT, "tmp", "data", "timit_data"),
-    "buckeye": os.path.join(REPO_ROOT, "tmp", "data", "buckeye_data"),
+    "timit": os.path.join(LOCAL_DIR, "data", "timit_data"),
+    "buckeye": os.path.join(LOCAL_DIR, "data", "buckeye_data"),
     # non-native English: read sentences, and spontaneous narratives (l2arctic_parser.py)
-    "l2arctic": os.path.join(REPO_ROOT, "tmp", "data", "l2arctic_data"),
-    "l2arctic_suitcase": os.path.join(REPO_ROOT, "tmp", "data", "l2arctic_suitcase_data"),
+    "l2arctic": os.path.join(LOCAL_DIR, "data", "l2arctic_data"),
+    "l2arctic_suitcase": os.path.join(LOCAL_DIR, "data", "l2arctic_suitcase_data"),
 }
+
+# The Common Voice selection, one dataset per language (cv_selection_parser.py):
+# harness dataset name -> the set's language directory. cv_zh is zh-CN (the name predates the rest).
+CV_DATASETS = {
+    "cv_en": "en", "cv_es": "es", "cv_fr": "fr", "cv_ru": "ru", "cv_el": "el", "cv_ko": "ko",
+    "cv_vi": "vi", "cv_th": "th", "cv_ta": "ta", "cv_ar": "ar", "cv_ur": "ur", "cv_ja": "ja",
+    "cv_yue": "yue", "cv_zh": "zh-CN",
+}
+DATASET_SRT_ROOTS.update({ds: os.path.join(LOCAL_DIR, "data", "cv_selection_data", lang)
+                          for ds, lang in CV_DATASETS.items()})
 
 # The paths lists, as written by `evaluation/dataset/*_parser.py`. Scoring only reads `text`
 # and `boundaries` from the SRTs they point at, which no phoneme set has a say in, so one list
 # serves ph66 and std runs alike.
 PATHS_LISTS = {
-    dataset: os.path.join(REPO_ROOT, "tmp", "paths", f"{dataset}_paths_all.json")
+    dataset: os.path.join(LOCAL_DIR, "paths", f"{dataset}_paths_all.json")
     for dataset in DATASET_SRT_ROOTS
 }
 

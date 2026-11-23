@@ -358,6 +358,8 @@ def _is_speech_phone(phone, phoneme_set=None):
     the language group's list) that the aligner placed like any other, and the training-side
     probe counts their onsets too.
     """
+    if phone.get("inserted"):
+        return False    # BFA >= 2.1 labels what the text does not cover: SIL / noise, no phone
     if _is_std(phoneme_set):
         return str(phone.get("phoneme_label", "")) != "SIL"
     if phone.get("phoneme_id") == 0:
@@ -1427,9 +1429,9 @@ def score_one(manifest, scoring, csv_path):
             # has no file for the clips it did not align.
             PATHS_LISTS[dataset], output_json_path, dataset, experiment,
             limit_clips=scoring["limit_clips"],
-            # MFA and MAPS align the extracted segment audio, so their times are
-            # segment-relative; BFA's are clip-absolute.
-            relative_boundaries=(manifest["method"] in ("MFA", "MAPS")),
+            # MFA, MAPS, the CTC baseline and Charsiu align the extracted segment audio, so their
+            # times are segment-relative; BFA's are clip-absolute.
+            relative_boundaries=(manifest["method"] in ("MFA", "MAPS", "CTC", "CHARSIU")),
             tolerance_ms_list=tolerance_ms_list,
             offset_start=scoring["offset_start"],
             offset_end=scoring["offset_end"],

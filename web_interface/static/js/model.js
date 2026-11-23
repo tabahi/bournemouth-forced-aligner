@@ -5,6 +5,10 @@
 // TARGET phoneme in `word_num`, and after an insert or delete the targets are simply the
 // phonemes as they now stand, so `_w` is what carries a phoneme's word across edits.
 //
+// Entries BFA marks `inserted` (the SIL / noise it labels where the text has no phone: before the
+// first word, after the last, at pauses between words) belong to NO word: their `_w` is null,
+// they keep `target_seq_idx` -1, and they are left out of the target lists and `words_ts`.
+//
 // After every edit `rebuildSegment` regenerates what BFA derives from `phoneme_ts`: the id,
 // group, IPA, word and tone/stress/length lists, `words_ts`, and each phone's confidence (the
 // peak posterior of its id over its own frames, as `utils._calculate_confidences` computes it).
@@ -28,9 +32,9 @@ export function prepareVs(vs) {
     for (const p of ph) {
       if (p._w === undefined) {
         const ti = p.target_seq_idx;
-        p._w = (ti >= 0 && ti < wn.length) ? wn[ti] : last;
+        p._w = p.inserted ? null : (ti >= 0 && ti < wn.length) ? wn[ti] : last;
       }
-      last = p._w;
+      if (p._w !== null) last = p._w;
     }
     if (!Array.isArray(seg.words)) seg.words = [];
   }
@@ -132,9 +136,22 @@ export function rebuildSegment(clip, si) {
   const an = clip.analysis && clip.analysis.segments[si];
   const pk = inv.phonemes_key, gk = inv.groups_key;
 
+  let ti = 0;
   ph.forEach((p, i) => {
+    if (p._w === null || p._w === undefined) {
+      // An inserted SIL / noise: not one of the text's phonemes.
+      p._w = null;
+      p.inserted = true;
+      p.index = -1;
+      p.target_seq_idx = -1;
+      p.phoneme_label = inv.tokens[p.phoneme_id] ?? p.phoneme_label;
+      p.confidence = null;
+      for (const k of ["tone", "stress", "length"]) if (p[k] === undefined) p[k] = 0;
+      return;
+    }
+    delete p.inserted;
     p.index = i;
-    p.target_seq_idx = i;
+    p.target_seq_idx = ti++;
     p.phoneme_label = inv.tokens[p.phoneme_id] ?? `UNK_${p.phoneme_id}`;
     if (an) {
       const [f0, f1] = frameSpan(an, p.start_ms, p.end_ms);
@@ -143,14 +160,15 @@ export function rebuildSegment(clip, si) {
     for (const k of ["tone", "stress", "length"]) if (p[k] === undefined) p[k] = 0;
   });
 
-  seg[pk] = ph.map((p) => p.phoneme_id);
-  seg[gk] = ph.map((p) => inv.group_of[p.phoneme_id] ?? 0);
-  seg.ipa = ph.map((p) => p.ipa_label);
-  seg.word_num = ph.map((p) => p._w);
-  for (const k of ["tone", "stress", "length"]) seg[k] = ph.map((p) => p[k]);
+  const lex = ph.filter((p) => p._w !== null);
+  seg[pk] = lex.map((p) => p.phoneme_id);
+  seg[gk] = lex.map((p) => inv.group_of[p.phoneme_id] ?? 0);
+  seg.ipa = lex.map((p) => p.ipa_label);
+  seg.word_num = lex.map((p) => p._w);
+  for (const k of ["tone", "stress", "length"]) seg[k] = lex.map((p) => p[k]);
 
   const byWord = new Map();
-  for (const p of ph) {
+  for (const p of lex) {
     if (!byWord.has(p._w)) byWord.set(p._w, []);
     byWord.get(p._w).push(p);
   }
@@ -168,7 +186,7 @@ export function rebuildSegment(clip, si) {
 
   const ca = seg.coverage_analysis || {};
   seg.coverage_analysis = {
-    ...ca, target_count: ph.length, aligned_count: ph.length, missing_count: 0,
+    ...ca, target_count: lex.length, aligned_count: lex.length, missing_count: 0,
     extra_count: 0, coverage_ratio: 1.0, missing_phonemes: [], extra_phonemes: [],
     bad_alignment: false,
   };
@@ -349,6 +367,7 @@ export function fillGap(clip, si, gap) {
     start_ms: gap.t0, end_ms: gap.t1, confidence: 0, target_seq_idx: 0, index: 0,
     tone: 0, stress: 0, length: 0, edited: true, _w: neighbour ? neighbour._w : 0,
   };
+  if (p._w === null) p.inserted = true;     // next to an inserted SIL / noise: one too
   ph.splice(gap.after + 1, 0, p);
   rebuildSegment(clip, si);
   return gap.after + 1;
@@ -394,6 +413,7 @@ export function isUniformSeeded(vs) {
 function wordUnits(seg) {
   const byWord = new Map();
   for (const p of seg.phoneme_ts) {
+    if (p._w === null) continue;
     if (!byWord.has(p._w)) byWord.set(p._w, []);
     byWord.get(p._w).push(p);
   }

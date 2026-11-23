@@ -34,10 +34,14 @@ def align_batch_job(arrays, kwargs):
     """
     tensors = {k: (None if v is None else torch.from_numpy(v)) for k, v in arrays.items()}
     return align_batch(tensors['log_probs'], tensors['seqs'], tensors['seq_lens'],
-                       tensors['spectral_lens'], flux=tensors['flux'], **kwargs)
+                       tensors['spectral_lens'], flux=tensors['flux'],
+                       energy=tensors.get('energy'), sil_after=tensors.get('sil_after'),
+                       clicks=tensors.get('clicks'), voicing=tensors.get('voicing'),
+                       **kwargs)
 
 
-def pack_job(log_probs, seqs, seq_lens, spectral_lens, flux):
+def pack_job(log_probs, seqs, seq_lens, spectral_lens, flux, energy=None, sil_after=None,
+             clicks=None, voicing=None):
     """
     CPU tensors -> numpy arrays for `align_batch_job`, cut to the batch's longest clip. The DP
     never reads a frame past `max(spectral_lens)` (`_segmental_topology`, `path_to_onsets`,
@@ -45,7 +49,10 @@ def pack_job(log_probs, seqs, seq_lens, spectral_lens, flux):
     """
     t = max(1, min(int(log_probs.shape[1]), int(spectral_lens.max())))
     arrays = dict(log_probs=log_probs[:, :t], seqs=seqs, seq_lens=seq_lens,
-                  spectral_lens=spectral_lens, flux=None if flux is None else flux[:, :t])
+                  spectral_lens=spectral_lens, flux=None if flux is None else flux[:, :t],
+                  energy=None if energy is None else energy[:, :t], sil_after=sil_after,
+                  clicks=None if clicks is None else clicks[:, :t],
+                  voicing=None if voicing is None else voicing[:, :t])
     return {k: (None if v is None else v.detach().cpu().contiguous().numpy())
             for k, v in arrays.items()}
 

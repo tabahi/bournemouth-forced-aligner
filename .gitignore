@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 tmp/
+local/
 __pycache__/
 wandb/
 models/
@@ -240,3 +241,5 @@ evaluation/plots/*.json
 
 # Research notes, the paper and its experiment scripts: a separate private repo, nested here.
 bfa_research/
+jobs_extra.txt.next
+jobs_extra.txt.lock

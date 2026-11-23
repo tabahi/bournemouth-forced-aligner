@@ -79,7 +79,7 @@ MIN_BOUNDARIES = 5
 
 
 def default_out(dataset, n, lang_group):
-    return os.path.join(REPO_ROOT, "tmp", "data", f"{dataset}_probe_{n}_{lang_group}.json")
+    return os.path.join(REPO_ROOT, "local", "data", f"{dataset}_probe_{n}_{lang_group}.json")
 
 
 def _audio_path(dataset, stored):
@@ -263,7 +263,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("dataset", choices=["timit", "buckeye"])
     ap.add_argument("--n", type=int, default=DEFAULT_N, help="clips to keep")
-    ap.add_argument("--out", default=None, help="default: tmp/data/<dataset>_probe_<n>_<group>.json")
+    ap.add_argument("--out", default=None, help="default: local/data/<dataset>_probe_<n>_<group>.json")
     ap.add_argument("--like", default=None, help="reuse the clips of this existing cache")
     ap.add_argument("--device", default=None, help="device for the G2P model")
     ap.add_argument("--seed", type=int, default=SEED)

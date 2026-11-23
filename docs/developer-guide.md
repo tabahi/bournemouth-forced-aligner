@@ -18,7 +18,7 @@ bournemouth_aligner/
   presets.py           phoneme set + language -> model name. The ONLY place model names appear
   hub.py               every download (models, G2P), through huggingface_hub's cache
   extractors.py        load_extractor(): a model on disk -> CupeExtractor | MbfaExtractor
-  chunking.py          VAD, phoneme budgets and derailment detection for segments > 120 s
+  chunking.py          VAD, phoneme budgets and derailment detection for segments > 600 s
   utils.py             confidences, frame -> ms, embedding pooling, TextGrid, mel plot
   cli.py               the `balign` command
   segmental/           what both model families share
@@ -125,6 +125,8 @@ BFA(
     g2p_device=None,              # std: device for the G2P (default: `device`)
     g2p_cache_size=None,          # std: word -> IPA entries remembered (default 500k; 0 = unbounded)
     punctuation_sil=True,         # std: write a SIL at pause punctuation
+    decoder=None,                 # dict of decoder settings over the defaults (see below)
+    fill_nonspeech=True,          # label uncovered stretches as inserted SIL / noise
     duration_max=30,              # padding width (s) of the batched path; longer segments run alone
     device="auto",                # "auto" | "cpu" | "cuda" | "mps"
     boundary_bonus_weight=None,   # onset bonus; None = 15; 0 = off
@@ -134,7 +136,7 @@ BFA(
     soft_phone_frames=None,       # soft duration frames above the floor; None = the model's (10)
     bad_confidence_threshold=0.6, # share of low-confidence phones that flags a segment
     low_confidence_level=None,    # None = the family's level (0.2 CUPE-3, 0.1 mbfa)
-    segment_max_seconds=120,      # decode whole up to this length, chunk beyond it
+    segment_max_seconds=600,      # decode whole up to this length, chunk beyond it
     chunk_audio=True,             # chunk segments longer than segment_max_seconds
     chunk_seconds=10.0,           # chunk window length
     chunk_max_phonemes=200,       # cap on a window's phoneme budget
@@ -232,7 +234,12 @@ r["pg16"]      # [7, 2, 14, 2, 8, 13, 5]
   number is a different phoneme in each.
 - ph66 segments use `ph66` / `pg16` instead of `local_ph` / `gold_phg`, have no `tone` /
   `stress` / `length`, and `words_ts[].ph66` instead of `words_ts[].local_ph`.
-- Phones tile the segment with no gaps: each phone ends where the next placed phone starts.
+- With `fill_nonspeech=True` (the default since 2.1) `phoneme_ts` tiles the whole segment: what no
+  phone of the text covers - before the first word, after the last, a pause between words - is
+  labelled `SIL` or `noise` (breath, lip and tongue clicks; decided from the audio's energy, since
+  no model predicts its `noise` class). These entries have `"inserted": true`,
+  `"auto": "nonspeech"`, `target_seq_idx: -1`, `index: -1`, `confidence: null`, and belong to no
+  word - the convention of the web editor. Filter on `inserted` to get the text's phones only.
 - `target_seq_idx` is the phone's index in the phonemized sequence. A position that is missing from
   `phoneme_ts` is a `SIL` the path skipped (the speaker did not pause there). Words are matched to phones by
   `target_seq_idx`, not by position.
@@ -242,6 +249,28 @@ r["pg16"]      # [7, 2, 14, 2, 8, 13, 5]
   healthy at the start of a segment and collapses at the end (an alignment that ran away from its audio).
 - `phoneme_label` is the model's token, and `ipa_label` is what the phonemizer wrote. ph66 splits a
   compound phoneme into two entries, and the second has `ipa_label: "-"`.
+
+
+## Pauses and non-speech (2.1)
+
+The decoder offers an optional SIL at **every word boundary**, not only at punctuation, and
+treats audio that is not speech explicitly. All of it is set through `decoder={...}`
+(defaults in `presets.DECODER_DEFAULTS`):
+
+| key | default | |
+|---|---|---|
+| `word_sil` | `True` | an optional SIL between every two words; `False` = only at punctuation (2.0) |
+| `word_sil_frames` | 4 | its soft minimum duration (5 ms frames) |
+| `boundary_bonus_cap` | 2.0 | ceiling on the onset bonus's z-score; `None` = unbounded (2.0). A click or breath onset before the first word was worth ~100 nats and dragged the first phone onto it |
+| `sil_bonus` | `False` | whether entering a SIL collects the onset bonus |
+| `energy_weight`, `energy_db`, `energy_db_fric` | 2, 25, 40 | vowels/sonorants lose `energy_weight` nats per 10 dB a frame lies more than `energy_db` dB under the clip's speech level (fricatives and h: `energy_db_fric`; stops never) |
+| `voicing_weight`, `voicing_threshold` | 0.5, 0.4 | vowels/sonorants lose `voicing_weight` nats per 0.1 of periodicity under the threshold |
+| `filler_penalty`, `filler_db` | 3, 25 | on frames quieter than `-filler_db` dB, SIL may take the model's best class at that many nats less |
+| `class_prior_scale` | 1.0 | hybrid-HMM prior scale |
+| `click_penalty` | `None` | penalty for text phones on isolated clicks (≤100 ms, ≥50 ms quiet before, ≥20 ms after); off |
+
+`decoder={"word_sil": False, "boundary_bonus_cap": None, "sil_bonus": True, "energy_weight": 0,
+"voicing_weight": 0, "filler_penalty": None}` with `fill_nonspeech=False` reproduces 2.0.2.
 
 ## Command line
 
@@ -285,11 +314,18 @@ balign AUDIO TEXT_OR_SRT [OUTPUT] [options]
 
 ## Long audio and chunking
 
-Segments up to `segment_max_seconds` (120 s) are decoded in one pass. The decoder has no band
-constraint and does not drift on long audio: on `30s.wav` (32 s, 356 phones) the last phone ends at
-31.88 s of 31.88 s. Chunking exists only to bound Viterbi time and memory.
+Segments up to `segment_max_seconds` (600 s since 2.0.3, 120 s before) are decoded in one pass.
+The decoder has no band constraint and does not drift on long audio: on `30s.wav` (32 s, 356 phones)
+the last phone ends at 31.88 s of 31.88 s, and on a 10 min L2-ARCTIC speaker (150 read sentences back
+to back) every phone but one lands in its own sentence. One pass over 10 min takes about a minute on
+a GPU or 8 CPU threads, with ~7 GB peak memory. Chunking exists only to bound Viterbi time and memory.
 
-Beyond 120 s, `align_segment_chunked` walks overlapping windows (`chunk_seconds`). Each window
+**The walk below is known to drift on real long recordings** and is only a fallback past 600 s until
+it is fixed. On a 10 min L2-ARCTIC speaker and a 10 min Buckeye interview it ran ahead of the audio
+and used up the text with 20-25% of the audio left (CUPE-3-en and mbfa-latin alike; 1-9% of phones in
+their own sentence, against 86-100% for one pass). The time cap described below does not prevent it.
+
+Beyond `segment_max_seconds`, `align_segment_chunked` walks overlapping windows (`chunk_seconds`). Each window
 gets a phoneme budget from its **speech** seconds (`chunk_vad`) at `chunk_phonemes_per_second`, capped by
 `chunk_max_phonemes` and by what its frames can hold at the duration floor. A window is trusted
 only up to `TRUST_WINDOW_FRACTION` (75%) of its audio and up to the first derailment

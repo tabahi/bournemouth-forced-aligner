@@ -10,7 +10,7 @@
 # Where things are
 # ---------------------------------------------------------------------------------------------
 paths:
-  # Corpus audio. The paths lists (tmp/paths/<dataset>_paths_all.json, written by
+  # Corpus audio. The paths lists (local/paths/<dataset>_paths_all.json, written by
   # evaluation/dataset/<dataset>_parser.py) store audio as `~/...`, with `~` standing for
   # these directories. The datasets are: timit | buckeye | l2arctic | l2arctic_suitcase
   audio_roots:
@@ -22,6 +22,23 @@ paths:
     # suitcase_corpus/. Non-native English; only the hand-annotated clips are used.
     l2arctic: /my_datasets/speech_data/l2arctic_release_v5.0
     l2arctic_suitcase: /my_datasets/speech_data/l2arctic_release_v5.0
+    # The Common Voice selection (multilingual, hand-reviewed word edges): one dataset per
+    # reviewed language, all under the same root (<root>/<lang>/<clip>.wav). SRTs and paths lists
+    # from evaluation/dataset/cv_selection_parser.py, which also imports the set's MFA runs.
+    cv_en: /my_datasets/speech_data/common_voice_selection
+    cv_es: /my_datasets/speech_data/common_voice_selection
+    cv_fr: /my_datasets/speech_data/common_voice_selection
+    cv_ru: /my_datasets/speech_data/common_voice_selection
+    cv_el: /my_datasets/speech_data/common_voice_selection
+    cv_ko: /my_datasets/speech_data/common_voice_selection
+    cv_vi: /my_datasets/speech_data/common_voice_selection
+    cv_th: /my_datasets/speech_data/common_voice_selection
+    cv_ta: /my_datasets/speech_data/common_voice_selection
+    cv_ar: /my_datasets/speech_data/common_voice_selection
+    cv_ur: /my_datasets/speech_data/common_voice_selection
+    cv_ja: /my_datasets/speech_data/common_voice_selection
+    cv_yue: /my_datasets/speech_data/common_voice_selection
+    cv_zh: /my_datasets/speech_data/common_voice_selection
 
   # Where `export_hf.py release` builds a release before it is pushed. `{releases_dir}` in a
   # model's ckpt_path below is replaced by this.
@@ -29,7 +46,8 @@ paths:
 
   # The scores: one file per dataset, one row per experiment. `{dataset}` is replaced by the
   # dataset's name and has to be in the path. Relative paths start at the repository root.
-  results_csv: evaluation/results/results_{dataset}.csv
+  # local/ is kept when the checkout moves; evaluation/results/ holds the published copies.
+  results_csv: local/results/results_{dataset}.csv
 
 
 # ---------------------------------------------------------------------------------------------
@@ -44,6 +62,19 @@ paths:
 #                              `speaker_folders`: true puts each speaker's segments in its own
 #                              folder (per-speaker fMLLR, work split over num_jobs); false is one
 #                              flat folder, which MFA treats as a single speaker run as one job
+#   method: ctc                a phoneme CTC model with torchaudio's forced_align (needs the `ctc:`
+#                              section): `hf_model` + `revision` a Hugging Face wav2vec2 CTC model
+#                              with an eSpeak phoneme vocabulary, `lang` the eSpeak language the
+#                              text is phonemized in (BFA's ph66 phonemizer, so the phonemes are
+#                              CUPE-3-en's), `compounds` split | native: what happens to an eSpeak
+#                              compound such as `ɑːɹ` that ph66 counts as two phonemes (split: two
+#                              model tokens, each placed; native: the model's one token, its span
+#                              divided evenly). See evaluation/align_with_ctc_wav2vec.py
+#   method: charsiu            Charsiu's W2V2-FS aligner (needs the `charsiu:` section and g2p_en):
+#                              `hf_model` + `revision` a Charsiu FS checkpoint, `decoder` viterbi
+#                              (best monotonic path through its attention) | argmax (Charsiu's own
+#                              per-frame argmax). Its own g2p_en ARPAbet transcripts, 10 ms frames.
+#                              See evaluation/align_with_charsiu.py
 #   method: maps               the Mason-Alberta Phonetic Segmenter (needs the `maps:` section):
 #                              `acoustic_model` a .tf model of the MAPS repo, `dictionary` an MFA
 #                              dictionary name or a CMU/MFA-format file, `g2p_model` an MFA G2P
@@ -56,7 +87,7 @@ models:
   # ---- p3cupe (ph66 phoneme set)
   CUPE-3-en:            {model_name: CUPE-3-en}             # English, LibriSpeech 500 h: the English ph66 preset
   CUPE-3-en-base:       {model_name: CUPE-3-en-base}        # English, the root of the lineage
-  CUPE-3-mls7:          {model_name: CUPE-3-mls7}           # CUPE-3-en-base + 7 MLS languages
+  CUPE-3-mls7:          {model_name: CUPE-3-mls7}           # 7 MLS languages, no English, from random weights
   # ---- p4mbfa (std phoneme set), one per language group
   mbfa-latin:           {model_name: mbfa-latin}            # the std default
   mbfa-latin-benchmark: {model_name: mbfa-latin-benchmark}  # best latin model on TIMIT
@@ -66,6 +97,11 @@ models:
   mbfa-cyrillic:        {model_name: mbfa-cyrillic}
   mbfa-cjk:             {model_name: mbfa-cjk}
   mbfa-japanese:        {model_name: mbfa-japanese}
+  mbfa-abjad:           {model_name: mbfa-abjad}
+  mbfa-other-alphabetic: {model_name: mbfa-other-alphabetic}    # el, ko
+  mbfa-vietnamese:      {model_name: mbfa-vietnamese}
+  mbfa-thai:            {model_name: mbfa-thai}
+  mbfa-brahmic:         {model_name: mbfa-brahmic}          # ta
 
   # ---- the same releases from the local build, for checking one BEFORE it is pushed.
   # Identical weights once pushed, so run one source or the other, not both.
@@ -97,6 +133,34 @@ models:
     acoustic_model: english_mfa
     dictionary: english_us_mfa
     speaker_folders: true
+
+  # ---- Phoneme CTC baseline: wav2vec2 XLSR-53 fine-tuned on Common Voice eSpeak phonemes,
+  # aligned with torchaudio.functional.forced_align (no training of ours)
+  w2v2-xlsr53-espeak:
+    method: ctc
+    hf_model: facebook/wav2vec2-xlsr-53-espeak-cv-ft
+    revision: 2c733782da5604684829819a5eb744c193fe9398
+    compounds: split
+    lang: en-us
+  w2v2-xlsr53-espeak-native:
+    method: ctc
+    hf_model: facebook/wav2vec2-xlsr-53-espeak-cv-ft
+    revision: 2c733782da5604684829819a5eb744c193fe9398
+    compounds: native
+    lang: en-us
+
+  # ---- Charsiu W2V2-FS (Zhu, Zhang & Jurgens 2022): trained with a forward-sum loss, without
+  # boundary labels. (Charsiu's W2V2-FC models are trained on MFA alignments; not listed.)
+  charsiu-fs10:
+    method: charsiu
+    hf_model: charsiu/en_w2v2_fs_10ms
+    revision: 72d5cc831f141cd15b3c9921a8f12a3c62f422ad
+    decoder: viterbi
+  charsiu-fs10-argmax:
+    method: charsiu
+    hf_model: charsiu/en_w2v2_fs_10ms
+    revision: 72d5cc831f141cd15b3c9921a8f12a3c62f422ad
+    decoder: argmax
 
   # ---- Mason-Alberta Phonetic Segmenter (Kelley, Perry & Tucker 2024). Its English model was
   # trained on TIMIT's training set and on Buckeye apart from s27, s38, s39, s40.
@@ -146,6 +210,7 @@ bfa:
   low_confidence_level: null        # null = the model family's own level (0.2 CUPE-3, 0.1 mbfa) | a number
   chunk_audio: true                 # true | false: split segments longer than segment_max_seconds
   segment_max_seconds: 120          # corpus segments are far shorter, so nothing is split
+  punctuation_sil: false            # false = no SIL at pause punctuation (the paper; BFA 2.0.2 defaults to true) | true
 
   # ---- the sweep
   duration_max: 30                  # seconds every segment is padded to; a longer segment is cut
@@ -177,6 +242,21 @@ maps:
   repo_dir: /my_tools/MAPS          # the clone: maps.py is run from here, unmodified
   num_jobs: 4                       # maps.py processes side by side (~1.5 GB RAM each; capped by free memory)
   keep_workdir: false               # true keeps tmp/maps/<experiment>/ (segments, TextGrids, logs)
+
+
+# ---------------------------------------------------------------------------------------------
+# Phoneme CTC baseline (optional section: only needed when a `method: ctc` model is listed)
+# ---------------------------------------------------------------------------------------------
+# Needs `transformers` beside torchaudio; the model is downloaded from the Hub on first use.
+ctc:
+  device: cuda                      # cpu | cuda | cuda:N   (the network and forced_align both run here)
+
+# ---------------------------------------------------------------------------------------------
+# Charsiu W2V2-FS (optional section: only needed when a `method: charsiu` model is listed)
+# ---------------------------------------------------------------------------------------------
+# Needs `transformers`, and `g2p_en` with NLTK's averaged_perceptron_tagger_eng and cmudict.
+charsiu:
+  device: cuda                      # cpu | cuda | cuda:N
 
 
 # ---------------------------------------------------------------------------------------------
@@ -224,6 +304,147 @@ experiments:
     dataset: [timit, buckeye]
     model: [CUPE-3-en, CUPE-3-en-base, CUPE-3-mls7, mbfa-latin, mbfa-latin-benchmark]
     boundary_bonus_weight: [0, 30]
+
+  - name: phoneme CTC baseline (wav2vec2 XLSR-53 eSpeak + torchaudio forced_align)
+    enabled: false
+    dataset: [timit, buckeye]
+    model: [w2v2-xlsr53-espeak]
+
+  - name: Charsiu W2V2-FS (trained without boundary labels)
+    enabled: false
+    dataset: [timit, buckeye]
+    model: [charsiu-fs10]
+
+  - name: 2.1 pause / non-speech decoder, new defaults (regression vs 2.0.2 below)
+    enabled: false
+    dataset: [timit]
+    subset: 1000
+    model: [mbfa-latin, CUPE-3-en]
+
+  - name: 2.1 code with the 2.0.2 decoder (same subsets)
+    enabled: false
+    dataset: [timit]
+    subset: 1000
+    model: [mbfa-latin, CUPE-3-en]
+    decoder: {boundary_bonus_cap: null, word_sil: false, sil_bonus: true, energy_weight: 0,
+              filler_penalty: null, voicing_weight: 0}
+
+  - name: 2.1 pause / non-speech decoder on Buckeye
+    enabled: false
+    dataset: [buckeye]
+    subset: 10
+    model: [mbfa-latin, CUPE-3-en]
+
+  - name: 2.1 code with the 2.0.2 decoder on Buckeye
+    enabled: false
+    dataset: [buckeye]
+    subset: 10
+    model: [mbfa-latin, CUPE-3-en]
+    decoder: {boundary_bonus_cap: null, word_sil: false, sil_bonus: true, energy_weight: 0,
+              filler_penalty: null, voicing_weight: 0}
+
+  # The Common Voice selection (cv_selection_parser.py), all 14 languages. Run them with
+  # `python evaluation/cv_eval.py`, which rebuilds the reference, aligns (cached runs are
+  # skipped), imports MFA (cv_<x>__mfa-cv) and appends dated rows to the dataset's _results/.
+  # BFA's own defaults for this text: punctuation SIL on (as the reference's seeds were made).
+  # device `cuda`: cv_eval.py picks the GPU per shell with CUDA_VISIBLE_DEVICES.
+  - name: Common Voice selection, English
+    dataset: cv_en
+    model: [mbfa-latin, CUPE-3-en]
+    lang: en-us
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Spanish
+    dataset: cv_es
+    model: [mbfa-latin]
+    lang: es
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, French
+    dataset: cv_fr
+    model: [mbfa-latin]
+    lang: fr
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Russian
+    dataset: cv_ru
+    model: [mbfa-cyrillic]
+    lang: ru
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Greek
+    dataset: cv_el
+    model: [mbfa-other-alphabetic]
+    lang: el
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Korean
+    dataset: cv_ko
+    model: [mbfa-other-alphabetic]
+    lang: ko
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Vietnamese
+    dataset: cv_vi
+    model: [mbfa-vietnamese]
+    lang: vi
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Thai
+    dataset: cv_th
+    model: [mbfa-thai]
+    lang: th
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Tamil
+    dataset: cv_ta
+    model: [mbfa-brahmic]
+    lang: ta
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Arabic
+    dataset: cv_ar
+    model: [mbfa-abjad]
+    lang: ar
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Urdu
+    dataset: cv_ur
+    model: [mbfa-abjad]
+    lang: ur
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Japanese
+    dataset: cv_ja
+    model: [mbfa-japanese]
+    lang: ja
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Cantonese
+    dataset: cv_yue
+    model: [mbfa-cjk]
+    lang: yue
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Mandarin
+    dataset: cv_zh
+    model: [mbfa-cjk]
+    lang: zh
+    device: cuda
+    punctuation_sil: true
 
   - name: quick check
     enabled: false

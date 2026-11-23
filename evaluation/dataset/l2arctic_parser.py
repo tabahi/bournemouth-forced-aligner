@@ -8,10 +8,10 @@ Spanish, Vietnamese), four speakers each. Two datasets come out of it:
 
   l2arctic           the 3,599 read CMU-ARCTIC sentences that have a manual annotation
                      (about 150 per speaker). One clip = one sentence = one segment, as TIMIT.
-                     -> tmp/data/l2arctic_data/<SPK>/<utt>.srt.json, tmp/paths/l2arctic_paths_all.json
+                     -> local/data/l2arctic_data/<SPK>/<utt>.srt.json, local/paths/l2arctic_paths_all.json
   l2arctic_suitcase  the 22 retellings of the "suitcase story", spontaneous, about a minute
                      each. Cut into segments at pauses, as Buckeye (`split_narrative`).
-                     -> tmp/data/l2arctic_suitcase_data/<spk>.srt.json, tmp/paths/l2arctic_suitcase_paths_all.json
+                     -> local/data/l2arctic_suitcase_data/<spk>.srt.json, local/paths/l2arctic_suitcase_paths_all.json
 
 The ~23,000 sentences WITHOUT a manual annotation are not used: their only labels are the
 corpus's own forced alignment, made with MFA 1.0, which cannot be a reference for scoring an
@@ -70,10 +70,10 @@ from evaluation.dataset.std_labels import (L2ARCTIC_TO_STD, StdLabels,      # no
 # base dir: expect <SPK>/{wav,transcript,annotation,textgrid}/ and suitcase_corpus/{wav,transcript,annotation}/
 l2arctic_base_dir = '/my_datasets/speech_data/l2arctic_release_v5.0'
 
-SENTENCES = {"name": "l2arctic", "srt_dir": "tmp/data/l2arctic_data",
-             "paths_list": "tmp/paths/l2arctic_paths_all.json"}
-SUITCASE = {"name": "l2arctic_suitcase", "srt_dir": "tmp/data/l2arctic_suitcase_data",
-            "paths_list": "tmp/paths/l2arctic_suitcase_paths_all.json"}
+SENTENCES = {"name": "l2arctic", "srt_dir": "local/data/l2arctic_data",
+             "paths_list": "local/paths/l2arctic_paths_all.json"}
+SUITCASE = {"name": "l2arctic_suitcase", "srt_dir": "local/data/l2arctic_suitcase_data",
+            "paths_list": "local/paths/l2arctic_suitcase_paths_all.json"}
 
 # The README's speaker table: sex and first language.
 SPEAKERS = {
