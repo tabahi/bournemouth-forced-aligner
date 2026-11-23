@@ -154,14 +154,48 @@ def click_frames(rel_db, n_valid, ms_per_frame=5.0, params=None, max_level_db=10
     return out
 
 
-def _entry(label, class_id, start_ms, end_ms):
+EDGE_FRAMES = 10        # how far past a posterior track a span may start and still be scored
+
+
+def span_confidence(sil_tracks, start_ms, end_ms, ms_per_frame):
+    '''
+    Confidence of an inserted entry: the peak SIL posterior over its span, 0.0 if no track
+    covers it.
+
+    The same peak, over the same frames, as a text phone's confidence
+    (`utils._calculate_confidences`). A `noise` entry is scored on SIL too: no released model
+    predicts its `noise` class, and SIL is what they call these stretches, so the number reads
+    as "the model agrees nothing is being said here".
+
+    `sil_tracks`: list of `(track_start_ms, per-frame SIL posterior)`; chunked segments have
+    one per window, and where windows overlap the higher peak counts.
+    '''
+    best = 0.0
+    for track_start_ms, post in sil_tracks or ():
+        n = len(post)
+        if n == 0:
+            continue
+        f0 = int(np.floor((start_ms - track_start_ms) / ms_per_frame))
+        f1 = int(np.ceil((end_ms - track_start_ms) / ms_per_frame))
+        # The model's frames stop a little short of the audio's end, so a span just past a
+        # track reads its nearest frame. Farther away, the track says nothing about it.
+        if f1 <= -EDGE_FRAMES or f0 >= n + EDGE_FRAMES:
+            continue
+        f0 = max(0, min(f0, n - 1))
+        f1 = max(f0 + 1, min(f1, n))
+        best = max(best, float(np.max(post[f0:f1])))
+    return best
+
+
+def _entry(label, class_id, start_ms, end_ms, confidence=0.0):
     return {"phoneme_id": class_id, "phoneme_label": label, "ipa_label": label,
-            "start_ms": float(start_ms), "end_ms": float(end_ms), "confidence": None,
+            "start_ms": float(start_ms), "end_ms": float(end_ms),
+            "confidence": float(confidence),
             "target_seq_idx": -1, "index": -1, "inserted": True, "auto": "nonspeech"}
 
 
 def fill_nonspeech(phoneme_ts, seg_start_ms, seg_end_ms, energy, sil_id, noise_id,
-                   params=None, layers=()):
+                   params=None, layers=(), sil_tracks=None, ms_per_frame=5.0):
     '''
     `phoneme_ts` with every gap filled by SIL / noise entries, in time order.
 
@@ -171,6 +205,7 @@ def fill_nonspeech(phoneme_ts, seg_start_ms, seg_end_ms, energy, sil_id, noise_i
         energy: per-ms dB over the segment (`energy_db_per_ms`).
         sil_id, noise_id: the class ids to stamp on the new entries (noise_id may be None).
         layers: extra per-entry keys to set to 0 on new entries (`tone`, `stress`, `length`).
+        sil_tracks, ms_per_frame: the SIL posteriors that score new entries (`span_confidence`).
     '''
     p = dict(DEFAULTS)
     p.update(params or {})
@@ -254,7 +289,8 @@ def fill_nonspeech(phoneme_ts, seg_start_ms, seg_end_ms, energy, sil_id, noise_i
             out[1][1] = out[0][1]
             out.pop(0)
         for label, s, e in out:
-            entry = _entry(label, sil_id if label == "SIL" else noise_id, s, e)
+            entry = _entry(label, sil_id if label == "SIL" else noise_id, s, e,
+                           span_confidence(sil_tracks, s, e, ms_per_frame))
             for layer in layers:
                 entry[layer] = 0
             new.append(entry)

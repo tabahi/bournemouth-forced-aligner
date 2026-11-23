@@ -2,8 +2,6 @@
 tmp/
 local/
 __pycache__/
-wandb/
-models/
 bournemouth_aligner/cpp_onnx
 **/results/*
 **/bournemouth_forced_aligner.egg-info/
@@ -11,12 +9,11 @@ bournemouth_aligner/cpp_onnx
 bournemouth_aligner/cpp_onnx/*.tgz
 bournemouth_aligner/cpp_onnx/onnxruntime-*
 *.csv
-memory.md
-MEMORY.md
 *.pyc
 *.pt
 *.sh
-*.wav
+!web_interface/static/demo/butterfly.wav
+30s.wav
 *.py[codz]
 *$py.class
 
@@ -239,7 +236,5 @@ plan-for-improvements.md
 !evaluation/results/*.csv
 evaluation/plots/*.json
 
-# Research notes, the paper and its experiment scripts: a separate private repo, nested here.
+# Research notes, experiment scripts
 bfa_research/
-jobs_extra.txt.next
-jobs_extra.txt.lock

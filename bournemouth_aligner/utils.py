@@ -369,7 +369,7 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
             end_time = word['end_ms'] / 1000.0
             label = word['word']
             if include_confidence:
-                confidence = word.get('confidence', 0)
+                confidence = word.get('confidence') or 0.0
                 label += f" ({confidence:.2f})"
             
             textgrid_content.append(f'        intervals [{i}]:')
@@ -393,9 +393,8 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
             end_time = phoneme['end_ms'] / 1000.0
             label = phoneme['ipa_label']
             if include_confidence:
-                confidence = phoneme.get('confidence', 0)
-                if confidence is not None:      # None: an inserted SIL / noise entry
-                    label += f" ({confidence:.2f})"
+                confidence = phoneme.get('confidence') or 0.0   # None in files from before 2.1
+                label += f" ({confidence:.2f})"
             
             textgrid_content.append(f'        intervals [{i}]:')
             textgrid_content.append(f'            xmin = {start_time}')
@@ -418,7 +417,7 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
             end_time = group['end_ms'] / 1000.0
             label = group['group_label']
             if include_confidence:
-                confidence = group.get('confidence', 0)
+                confidence = group.get('confidence') or 0.0
                 label += f" ({confidence:.2f})"
             
             textgrid_content.append(f'        intervals [{i}]:')

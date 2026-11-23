@@ -238,7 +238,7 @@ r["pg16"]      # [7, 2, 14, 2, 8, 13, 5]
   phone of the text covers - before the first word, after the last, a pause between words - is
   labelled `SIL` or `noise` (breath, lip and tongue clicks; decided from the audio's energy, since
   no model predicts its `noise` class). These entries have `"inserted": true`,
-  `"auto": "nonspeech"`, `target_seq_idx: -1`, `index: -1`, `confidence: null`, and belong to no
+  `"auto": "nonspeech"`, `target_seq_idx: -1`, `index: -1`, `confidence` = peak SIL posterior, and belong to no
   word - the convention of the web editor. Filter on `inserted` to get the text's phones only.
 - `target_seq_idx` is the phone's index in the phonemized sequence. A position that is missing from
   `phoneme_ts` is a `SIL` the path skipped (the speaker did not pause there). Words are matched to phones by

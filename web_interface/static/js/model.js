@@ -145,7 +145,11 @@ export function rebuildSegment(clip, si) {
       p.index = -1;
       p.target_seq_idx = -1;
       p.phoneme_label = inv.tokens[p.phoneme_id] ?? p.phoneme_label;
-      p.confidence = null;
+      // Peak SIL posterior, for noise too: no model predicts its `noise` class.
+      if (an) {
+        const [f0, f1] = frameSpan(an, p.start_ms, p.end_ms);
+        p.confidence = peakProbs(an.phoneme, f0, f1)[inv.sil_id] ?? 0;
+      } else p.confidence = p.confidence ?? 0;
       for (const k of ["tone", "stress", "length"]) if (p[k] === undefined) p[k] = 0;
       return;
     }

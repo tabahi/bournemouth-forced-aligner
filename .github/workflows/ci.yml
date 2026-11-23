@@ -1,0 +1,96 @@
+# Runs the tests and checks the package that would be released. Publishes nothing.
+# Real-model tests run on CUPE-3-en-base (ph66, ~54 MB). HF_HUB_OFFLINE stops anything else from
+# downloading, so tests that need the 1.2 GB G2P model or a std checkpoint skip.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HF_HUB_OFFLINE: "1"
+  TORCH_INDEX: https://download.pytorch.org/whl/cpu
+  BFA_TEST_PH66_MODEL: CUPE-3-en-base
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install espeak-ng
+        run: sudo apt-get update && sudo apt-get install -y espeak-ng
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchaudio --index-url "$TORCH_INDEX" --extra-index-url https://pypi.org/simple
+          pip install -e ".[test,web,ja,ph66]"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-${{ env.BFA_TEST_PH66_MODEL }}-v1
+      - name: Download the test model
+        env:
+          HF_HUB_OFFLINE: "0"
+        run: python -c "from bournemouth_aligner import hub; print(hub.resolve_model('$BFA_TEST_PH66_MODEL'))"
+      - name: Test
+        run: python -m pytest
+
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Install the wheel
+        run: |
+          pip install torch torchaudio --index-url "$TORCH_INDEX" --extra-index-url https://pypi.org/simple
+          pip install "$(ls dist/*.whl)[web]"
+      - name: Check the installed package
+        # Run outside the checkout so the import can only find the installed wheel.
+        working-directory: ${{ runner.temp }}
+        run: |
+          balign --help > /dev/null
+          python - <<'PY'
+          import bournemouth_aligner
+          from bournemouth_aligner.web_interface.server import create_app
+
+          print("Testing", bournemouth_aligner.__file__)
+          assert "site-packages" in bournemouth_aligner.__file__
+          client = create_app(device="cpu").test_client()
+          assert client.get("/").status_code == 200
+          demo = client.get(client.get("/api/info").get_json()["demo"]["audio"])
+          assert demo.status_code == 200, f"demo clip: HTTP {demo.status_code}"
+          assert demo.data[:4] == b"RIFF", "demo clip is not a WAV file"
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

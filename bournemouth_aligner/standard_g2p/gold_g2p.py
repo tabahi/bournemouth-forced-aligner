@@ -649,7 +649,9 @@ class goldG2P:
         # scripts/ generators work without transformers installed.
         from transformers import T5ForConditionalGeneration, AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(G2P_TOKENIZER_local_dir)
-        self.model = T5ForConditionalGeneration.from_pretrained(G2P_MODEL_local_dir)
+        # This checkpoint stores different input and output embeddings: they must stay untied.
+        self.model = T5ForConditionalGeneration.from_pretrained(G2P_MODEL_local_dir,
+                                                                tie_word_embeddings=False)
         self.model.to(self.device)
         self.model.eval()
 

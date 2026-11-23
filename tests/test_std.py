@@ -436,7 +436,8 @@ class TestStdAligner:
         every = seg["phoneme_ts"]
         extra = [p for p in every if p.get("inserted")]
         assert all(p["target_seq_idx"] == -1 and p["phoneme_label"] in ("SIL", "noise")
-                   and p["confidence"] is None for p in extra)
+                   and isinstance(p["confidence"], float) and 0.0 <= p["confidence"] <= 1.0
+                   for p in extra)
         assert all(a["end_ms"] <= b["start_ms"] + 1e-6 for a, b in zip(every, every[1:]))
         phones = [p for p in every if not p.get("inserted")]
         # forced alignment: every target placed exactly once, in order, inside the audio

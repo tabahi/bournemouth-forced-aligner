@@ -1045,6 +1045,9 @@ class BFA:
                                        self.resampler_sample_rate,
                                        frame_stride_samples=self.frame_stride_wav)
                 rows[key] = sorted(stamps, key=lambda x: x[5])
+            # What scores the SIL / noise entries `post_process_segment` inserts later.
+            rows['sil_tracks'] = [(float(offset) * 1000.0, torch.exp(
+                log_probs_p[b][:int(spectral_lens[b]), self.silence_class]).numpy())]
             timestamp_dicts.append(rows)
 
         pooled_p, pooled_g = [None] * len(frame_phonemes), [None] * len(frame_phonemes)
@@ -1263,7 +1266,7 @@ class BFA:
         # Each entry is `(framestamp, pooled_embedding_row_or_None)` - the two travel together
         # because the final sort can reorder them, and sorting only one list would silently
         # pair each embedding with a different phoneme.
-        ph_rows, grp_rows = [], []
+        ph_rows, grp_rows, sil_tracks = [], [], []
         ph_cursor = 0
         t_cursor = 0.0
         # One window always consumes at least one phoneme, so `n_total` iterations is a hard
@@ -1351,6 +1354,7 @@ class BFA:
                 if snapped > cut_rel:
                     cut_rel = snapped
 
+            sil_tracks.extend(res.get('sil_tracks') or [])
             keep_ids = [i for i, m in enumerate(keep_mask) if m]
             ph_rows.extend(zip(
                 self._reindex_stamps(kept, ph_cursor, frame_offset),
@@ -1397,7 +1401,8 @@ class BFA:
         self.total_phonemes_aligned += len(ph_stamps)
         self.total_phonemes_missed += max(0, n_total - len(covered))
 
-        result = {'phoneme_timestamps': ph_stamps, 'group_timestamps': grp_stamps}
+        result = {'phoneme_timestamps': ph_stamps, 'group_timestamps': grp_stamps,
+                  'sil_tracks': sil_tracks}
         return result, self._stack_rows(ph_rows), self._stack_rows(grp_rows)
 
     @staticmethod
@@ -1568,7 +1573,7 @@ class BFA:
                          else f"UNK_WORD_{word_idx}"),
                 "start_ms": phones[0]["start_ms"],
                 "end_ms": phones[-1]["end_ms"],
-                "confidence": sum(p["confidence"] for p in phones) / len(phones),
+                "confidence": sum(p.get("confidence") or 0.0 for p in phones) / len(phones),
                 self.phonemes_key: [p["phoneme_id"] for p in phones],
                 "ipa": [p["ipa_label"] for p in phones],
             })
@@ -1620,12 +1625,14 @@ class BFA:
                   if not (self.phoneme_set == "std" and seg.get("gold_ph"))])
 
     def post_process_segment(self, segment, ts, phoneme_sequence, phoneme_timestamps,
-                             group_timestamps=None, debug=False, audio=None):
+                             group_timestamps=None, debug=False, audio=None, sil_tracks=None):
         """
         Turn one segment's framestamps into the output dicts, with coverage and words.
 
         `audio`, the CLIP's waveform (the segment's start/end index it), lets the stretches no
         phone covers be labelled SIL / noise (`fill_nonspeech`); without it they stay gaps.
+        `sil_tracks` are the SIL posteriors that score those entries (`nonspeech.span_confidence`);
+        without them an inserted entry's confidence is 0.0.
         """
         coverage_analysis = self.analyze_alignment_coverage(
             phoneme_sequence, phoneme_timestamps, self.phoneme_id_to_label)
@@ -1676,7 +1683,8 @@ class BFA:
         if self.fill_nonspeech and audio is not None and ts_out_segment["phoneme_ts"]:
             ts_out_segment["phoneme_ts"] = self._fill_nonspeech(
                 ts_out_segment["phoneme_ts"], segment, audio,
-                [layer for layer in ("tone", "stress", "length") if ts.get(layer) is not None])
+                [layer for layer in ("tone", "stress", "length") if ts.get(layer) is not None],
+                sil_tracks=sil_tracks)
 
         if debug:
             print(f"\nSegment: '{segment['text']}'")
@@ -1686,7 +1694,7 @@ class BFA:
                     print(f"{tsi}  Phoneme ID: {item['phoneme_id']}, "
                           f"label: {item['phoneme_label']}, IPA: {item['ipa_label']}, "
                           f"Start: {int(item['start_ms'])} ms, End: {int(item['end_ms'])} ms, "
-                          f"Confidence: {item['confidence']:.3f}")
+                          f"Confidence: {item.get('confidence') or 0.0:.3f}")
                 elif tsi == 20:
                     print("... (omitting middle phonemes for brevity) ...")
 
@@ -1709,7 +1717,7 @@ class BFA:
             ts_out_segment["phoneme_ts"], ts.get("word_num", []), ts.get("words", []))
         return ts_out_segment
 
-    def _fill_nonspeech(self, phoneme_ts, segment, audio, layers):
+    def _fill_nonspeech(self, phoneme_ts, segment, audio, layers, sil_tracks=None):
         """`nonspeech.fill_nonspeech` over one segment of `audio` (the clip, any shape)."""
         sr = self.resampler_sample_rate
         wav = audio.float()
@@ -1723,7 +1731,7 @@ class BFA:
             noise_id = None                     # ph66: its 'noise' slot is the batch filler
         return _nonspeech.fill_nonspeech(
             phoneme_ts, a * 1000.0 / sr, b * 1000.0 / sr, energy, self.silence_class,
-            noise_id, layers=layers)
+            noise_id, layers=layers, sil_tracks=sil_tracks, ms_per_frame=self.ms_per_frame)
 
     def _result_header(self):
         """
@@ -2015,7 +2023,7 @@ class BFA:
             processed = self.post_process_segment(
                 seg, ts, seg[self.phonemes_key], result["phoneme_timestamps"],
                 result["group_timestamps"] if do_groups else None, debug=debug,
-                audio=flat_items_f[idx][2])
+                audio=flat_items_f[idx][2], sil_tracks=result.get("sil_tracks"))
             batch_results[bi]["segments"].append(processed)
 
             if extract_embeddings:
@@ -2104,7 +2112,7 @@ class BFA:
                     self.total_segments_failed += 1
                     continue
 
-                # Only the text's phones: inserted SIL / noise entries have no confidence.
+                # Only the text's phones: inserted SIL / noise entries are not targets.
                 phoneme_ts = [t for t in phoneme_ts if int(t.get("target_seq_idx", -1)) >= 0]
                 predicted_sequence = [t["phoneme_id"] for t in phoneme_ts]
                 if predicted_sequence == seg_out.get(self.phonemes_key):
@@ -2113,7 +2121,7 @@ class BFA:
                 if len(phoneme_ts) <= 60:
                     continue
 
-                confidences = [t["confidence"] for t in phoneme_ts]
+                confidences = [t.get("confidence") or 0.0 for t in phoneme_ts]
                 avg_confidence = sum(confidences) / len(confidences)
                 low = sum(1 for c in confidences if c < self.low_confidence_level)
                 low_ratio = low / len(confidences)

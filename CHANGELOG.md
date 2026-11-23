@@ -1,7 +1,8 @@
 # Changelog
-## [2.1.0] - 2026-11-??
+## [2.1.0] - 2026-11-23
 
 ### Changed
+- **Python 3.10 or newer is required**, which the `matplotlib>=3.10` dependency already needed.
 - **Pauses between words are found without punctuation.** The decoder may now place a SIL at
   every word boundary (`decoder={"word_sil": True}`, the default), with a soft minimum length of
   4 frames so a 1-2 frame dip does not split a word pair. Before, a pause the text did not mark
@@ -17,7 +18,7 @@
   pauses) are filled with `SIL` and `noise` entries labelled from the audio's energy (new
   module `bournemouth_aligner/nonspeech.py`). They are marked like the review UI marks them:
   `inserted: true`, `auto: "nonspeech"`, `target_seq_idx: -1`, `index: -1`,
-  `confidence: None`, and belong to no word. Gaps under 40 ms go to the neighbouring phone; a
+  `confidence` = the peak SIL posterior over the entry, and belong to no word. Gaps under 40 ms go to the neighbouring phone; a
   gap under 120 ms next to a stop becomes that stop's closure. `fill_nonspeech=False` turns
   this off. The model's own `noise` class is not used: no released model was trained on noise.
 - These are the new defaults for every model. The 2.0.2 decoder is
@@ -294,7 +295,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - click>=8.0.0
 - phonemizer>=3.3.0
 
-
+[2.1.0]: https://github.com/speech-industry/bournemouth-forced-aligner/releases/tag/v2.1.0
 [2.0.2]: https://github.com/speech-industry/bournemouth-forced-aligner/releases/tag/v2.0.2
 [2.0.1]: https://github.com/speech-industry/bournemouth-forced-aligner/releases/tag/v2.0.1
 [2.0.0]: https://github.com/speech-industry/bournemouth-forced-aligner/releases/tag/v2.0.0

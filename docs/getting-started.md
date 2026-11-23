@@ -2,7 +2,7 @@
 
 ## 1. Install
 
-You need [Python](https://www.python.org/downloads/) 3.8 or newer. Then, in a terminal
+You need [Python](https://www.python.org/downloads/) 3.10 or newer. Then, in a terminal
 (Command Prompt or PowerShell on Windows):
 
 ```bash

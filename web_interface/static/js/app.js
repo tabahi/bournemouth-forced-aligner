@@ -1371,11 +1371,21 @@ async function restoreClips() {
 
 async function loadDemo(c) {
   const d = info.demo;
-  const blob = await (await fetch(d.audio)).blob();
-  await setAudio(c, blob, d.name);
+  const res = await fetch(d.audio);
+  // Checked before anything is stored: an error page kept as the clip's audio would be
+  // restored on every later visit.
+  if (!res.ok) throw new Error(`demo clip ${d.audio}: HTTP ${res.status}`);
+  await setAudio(c, await res.blob(), d.name);
   c.text = d.text;
   c.segMode = "text";
   scheduleSave(c);
+}
+
+/** The single clip still needs the demo: its load failed, or stored an error page as audio. */
+function demoMissing(c) {
+  const stored = c.audioBlob;
+  if (stored) return c.name === info.demo.name && stored.type.startsWith("text/");
+  return !c.name && !c.text.trim() && !c.vs;
 }
 
 async function main() {
@@ -1388,8 +1398,9 @@ async function main() {
   if (!clips.has("single")) {
     const c = newClip("single", "single");
     clips.set("single", c);
-    await loadDemo(c).catch((e) => console.error(e));
   }
+  const single = clips.get("single");
+  if (demoMissing(single)) await loadDemo(single).catch((e) => console.error(e));
   await setMode(settings.mode === "batch" ? "batch" : "single");
   refreshUsage();
 }
