@@ -83,6 +83,100 @@ from .utils import (dict_to_textgrid, read_audio, weighted_pool_embeddings, _cal
 DEFAULT_SEGMENT_MAX_SECONDS = 600.0
 
 
+_SONORANT_GROUPS = ('vowel_close', 'vowel_mid', 'vowel_open', 'nasal', 'lateral', 'rhotic',
+                    'glide')
+_FRICATIVE_GROUPS = ('fricative_vl', 'fricative_vd', 'affricate', 'glottal')
+
+
+def _class_kinds(id_to_label, n_classes):
+    """'son' / 'fric' / None per class id, by phoneme feature group."""
+    from .standard_g2p.phoneme_features import phoneme_group, GROUP_NAMES
+    kinds = [None] * n_classes
+    for i in range(n_classes):
+        label = id_to_label.get(i, '')
+        if label in ('SIL', 'noise', '<unk>', '<blank>', ''):
+            continue
+        try:
+            g = GROUP_NAMES[phoneme_group(label)]
+        except Exception:
+            continue
+        kinds[i] = 'son' if g in _SONORANT_GROUPS else 'fric' if g in _FRICATIVE_GROUPS else None
+    return kinds
+
+
+def _energy_depths(kinds, son_db, fric_db):
+    """Per class, how far (dB) under the speech level a frame may lie before it is penalised."""
+    inf = float('inf')
+    return [son_db if k == 'son' else (fric_db if k == 'fric' and fric_db is not None
+                                       else inf) for k in kinds]
+
+
+def frame_energy_db(wavs, wav_lens, n_frames, frame_stride, window=160, ref_pct=95.0):
+    """
+    Level of each model frame, in dB relative to its clip's speech level.
+
+    Frame t is the `window`-sample (10 ms) stretch centred on the middle of output frame t
+    (`t * frame_stride + frame_stride / 2`). The reference is the clip's `ref_pct` percentile
+    frame level - roughly its loud vowels - so the values are comparable across microphones
+    and gains. [B, n_frames] float; frames past a clip's end are -100.
+    """
+    b = wavs.shape[0]
+    out = torch.full((b, n_frames), -100.0)
+    x = wavs.detach().float().cpu()
+    for i in range(b):
+        n = int(wav_lens[i])
+        sig = x[i, :n].double()
+        c = torch.cat([torch.zeros(1, dtype=torch.float64), torch.cumsum(sig * sig, 0)])
+        centre = torch.arange(n_frames, dtype=torch.long) * int(frame_stride) \
+            + int(frame_stride) // 2
+        a = (centre - window // 2).clamp(0, n)
+        e = (centre + window // 2).clamp(0, n)
+        width = (e - a).clamp(min=1).double()
+        db = 10.0 * torch.log10((c[e] - c[a]) / width + 1e-10)
+        ok = centre < n
+        if ok.any():
+            ref = torch.quantile(db[ok], ref_pct / 100.0)
+            out[i] = torch.where(ok, db - ref, torch.full_like(db, -100.0)).float()
+    return out
+
+
+def frame_voicing(wavs, wav_lens, n_frames, frame_stride, window=400, min_lag=40,
+                  max_lag=320):
+    """
+    Periodicity of each model frame: the peak of the normalised autocorrelation of a
+    `window`-sample (25 ms) Hann-windowed stretch centred on the frame, over lags `min_lag` ..
+    `max_lag` samples (50-400 Hz at 16 kHz). ~0.6 in vowels, ~0.25 in silence, breath and
+    clicks. [B, n_frames] float, 0 past a clip's end.
+    """
+    b = wavs.shape[0]
+    out = torch.zeros(b, n_frames)
+    x = wavs.detach().float().cpu()
+    win = torch.hann_window(window)
+    nfft = 1 << (2 * window - 1).bit_length()
+    for i in range(b):
+        n = int(wav_lens[i])
+        sig = F.pad(x[i, :n], (window // 2, window))
+        centre = torch.arange(n_frames) * int(frame_stride) + int(frame_stride) // 2
+        ok = centre < n
+        m = int(ok.sum())
+        if m == 0:
+            continue
+        idx = centre[:m, None] + torch.arange(window)[None, :]
+        fr = sig[idx]
+        fr = (fr - fr.mean(1, keepdim=True)) * win
+        spec = torch.fft.rfft(fr, nfft)
+        ac = torch.fft.irfft(spec.real ** 2 + spec.imag ** 2, nfft)[:, :max_lag + 1]
+        peak = ac[:, min_lag:max_lag + 1].max(1).values / ac[:, 0].clamp(min=1e-8)
+        out[i, :m] = peak.clamp(0.0, 1.0)
+    return out
+
+
+def word_boundaries(word_num):
+    """[S] bool: True after the last phone of each word (but the sentence's last)."""
+    w = list(word_num or [])
+    return [i + 1 < len(w) and w[i] != w[i + 1] for i in range(len(w))]
+
+
 class BFA:
     """
     Align phoneme-level timestamps from audio and text.

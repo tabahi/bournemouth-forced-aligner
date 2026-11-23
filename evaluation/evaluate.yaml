@@ -315,6 +315,137 @@ experiments:
     dataset: [timit, buckeye]
     model: [charsiu-fs10]
 
+  - name: 2.1 pause / non-speech decoder, new defaults (regression vs 2.0.2 below)
+    enabled: false
+    dataset: [timit]
+    subset: 1000
+    model: [mbfa-latin, CUPE-3-en]
+
+  - name: 2.1 code with the 2.0.2 decoder (same subsets)
+    enabled: false
+    dataset: [timit]
+    subset: 1000
+    model: [mbfa-latin, CUPE-3-en]
+    decoder: {boundary_bonus_cap: null, word_sil: false, sil_bonus: true, energy_weight: 0,
+              filler_penalty: null, voicing_weight: 0}
+
+  - name: 2.1 pause / non-speech decoder on Buckeye
+    enabled: false
+    dataset: [buckeye]
+    subset: 10
+    model: [mbfa-latin, CUPE-3-en]
+
+  - name: 2.1 code with the 2.0.2 decoder on Buckeye
+    enabled: false
+    dataset: [buckeye]
+    subset: 10
+    model: [mbfa-latin, CUPE-3-en]
+    decoder: {boundary_bonus_cap: null, word_sil: false, sil_bonus: true, energy_weight: 0,
+              filler_penalty: null, voicing_weight: 0}
+
+  # The Common Voice selection (cv_selection_parser.py), all 14 languages. Run them with
+  # `python evaluation/cv_eval.py`, which rebuilds the reference, aligns (cached runs are
+  # skipped), imports MFA (cv_<x>__mfa-cv) and appends dated rows to the dataset's _results/.
+  # BFA's own defaults for this text: punctuation SIL on (as the reference's seeds were made).
+  # device `cuda`: cv_eval.py picks the GPU per shell with CUDA_VISIBLE_DEVICES.
+  - name: Common Voice selection, English
+    dataset: cv_en
+    model: [mbfa-latin, CUPE-3-en]
+    lang: en-us
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Spanish
+    dataset: cv_es
+    model: [mbfa-latin]
+    lang: es
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, French
+    dataset: cv_fr
+    model: [mbfa-latin]
+    lang: fr
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Russian
+    dataset: cv_ru
+    model: [mbfa-cyrillic]
+    lang: ru
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Greek
+    dataset: cv_el
+    model: [mbfa-other-alphabetic]
+    lang: el
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Korean
+    dataset: cv_ko
+    model: [mbfa-other-alphabetic]
+    lang: ko
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Vietnamese
+    dataset: cv_vi
+    model: [mbfa-vietnamese]
+    lang: vi
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Thai
+    dataset: cv_th
+    model: [mbfa-thai]
+    lang: th
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Tamil
+    dataset: cv_ta
+    model: [mbfa-brahmic]
+    lang: ta
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Arabic
+    dataset: cv_ar
+    model: [mbfa-abjad]
+    lang: ar
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Urdu
+    dataset: cv_ur
+    model: [mbfa-abjad]
+    lang: ur
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Japanese
+    dataset: cv_ja
+    model: [mbfa-japanese]
+    lang: ja
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Cantonese
+    dataset: cv_yue
+    model: [mbfa-cjk]
+    lang: yue
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Mandarin
+    dataset: cv_zh
+    model: [mbfa-cjk]
+    lang: zh
+    device: cuda
+    punctuation_sil: true
+
   - name: quick check
     enabled: false
     dataset: timit

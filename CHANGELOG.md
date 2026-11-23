@@ -1,7 +1,37 @@
 # Changelog
-## [2.0.3] - 2026-11-??
+## [2.1.0] - 2026-11-23
 
 ### Changed
+- **Python 3.10 or newer is required**, which the `matplotlib>=3.10` dependency already needed.
+- **Pauses between words are found without punctuation.** The decoder may now place a SIL at
+  every word boundary (`decoder={"word_sil": True}`, the default), with a soft minimum length of
+  4 frames so a 1-2 frame dip does not split a word pair. Before, a pause the text did not mark
+  was absorbed into the phone next to it.
+- **Breath, lip and tongue noise no longer pulls phones away from the speech.** The onset bonus
+  is capped (`boundary_bonus_cap=2.0`, in z units), SIL gets no onset bonus (`sil_bonus=False`),
+  and the emissions are shaped from the audio: phones far below the clip's speech level are
+  penalised (`energy_weight`, sonorants under -25 dB, fricatives under -40 dB, stops never),
+  sonorants without periodicity are penalised (`voicing_weight`), and SIL is kept within 3 nats
+  of the best class on very quiet frames (`filler_penalty`). An uncapped noise onset used to be
+  worth ~100 nats at one frame, more than stretching the first phone over the noise cost.
+- **Output covers the whole segment.** Gaps the text does not cover (clip edges, word-boundary
+  pauses) are filled with `SIL` and `noise` entries labelled from the audio's energy (new
+  module `bournemouth_aligner/nonspeech.py`). They are marked like the review UI marks them:
+  `inserted: true`, `auto: "nonspeech"`, `target_seq_idx: -1`, `index: -1`,
+  `confidence` = the peak SIL posterior over the entry, and belong to no word. Gaps under 40 ms go to the neighbouring phone; a
+  gap under 120 ms next to a stop becomes that stop's closure. `fill_nonspeech=False` turns
+  this off. The model's own `noise` class is not used: no released model was trained on noise.
+- These are the new defaults for every model. The 2.0.2 decoder is
+  `BFA(..., decoder={"boundary_bonus_cap": None, "word_sil": False, "sil_bonus": True,
+  "energy_weight": 0, "filler_penalty": None, "voicing_weight": 0}, fill_nonspeech=False)`;
+  with those settings 2.1.0 gives the same timestamps as 2.0.2.
+- On the hand-reviewed Common Voice en clips (95 clips, bad microphones, breath and clicks at the
+  edges), mean error of the first word's start: 171 ms → 67 ms (errors over 200 ms: 18 → 8);
+  inner word edges off by more than 200 ms: 84 → 29; pauses of 60 ms or more found: 0/75 →
+  64/75; hand-marked noise covered by phones: 72% → 17%.
+- Onset F1 at 25 ms also improves on the benchmarks (2.0.2 decoder → 2.1.0 defaults):
+  TIMIT (1000 files) mbfa-latin 72.44 → 73.26, CUPE-3-en 76.72 → 77.99; Buckeye (10 files)
+  mbfa-latin 69.74 → 72.38, CUPE-3-en 75.19 → 77.33. Inserted SIL/noise entries are not scored.
 - **`segment_max_seconds` default raised from 120 s to 600 s** (`BFA`, `balign
   --segment-max-seconds`): recordings up to 10 minutes are now aligned in one pass instead of
   by the chunked walk. The walk drifts on real long recordings: on a 10 min L2-ARCTIC speaker
@@ -12,8 +42,27 @@
   the interview, whose untranscribed stretches (interviewer, laughter) were muted for the
   test. Cost of one pass over 10 minutes: about a minute on a GPU or 8 CPU threads, and ~7 GB
   of peak memory. Lower `segment_max_seconds` if memory is tight.
+- **Chinese unaspirated onsets are their own phonemes, and `mbfa-cjk` is retrained on them.**
+  Mandarin and Cantonese onsets written b d g z j zh in pinyin are now `b d ɡ d͡z d͡ʑ d͡ʐ`
+  instead of `p t k`, `t s`, `t ɕ`, `ʈ ʂ`, so they no longer share a class with Cantonese's
+  unreleased final stops. The cjk token list grows from 48 to 54, and this version refuses the
+  earlier 48-token `mbfa-cjk`. BFA does not replace a model it already has, so a machine that
+  downloaded it must delete `~/.cache/huggingface/hub/models--Tabahi--mbfa-cjk` once.
+- **Russian `к` as a word** is read `k`, or `ɡ` before a voiced obstruent, instead of being
+  spelled out as "километр".
+
+### Added
+- `BFA(decoder={...})` overrides any decoder setting (unknown keys raise), and
+  `BFA(fill_nonspeech=...)`. See "Pauses and non-speech" in the developer guide.
+- Web interface: inserted SIL/noise entries show "inserted, no word" and no confidence bar;
+  the word menu has a "no word" choice.
+- Evaluation: experiments take a `decoder:` key; 2.1 run names carry `v21` and the decoder
+  settings; scoring skips inserted entries.
 
 ### Known issues
+- Short first words ("a", "the") can still be placed on a loud breath or lip burst that is
+  followed by a real silence before the speech starts.
+- The chunked walk has no word-boundary SILs.
 - The chunked walk (`chunk_audio`, segments longer than `segment_max_seconds`) still drifts as
   above and will be fixed in a later release. For recordings over 10 minutes, cut the audio
   and transcript at pauses into pieces under 10 minutes, or raise `segment_max_seconds` if

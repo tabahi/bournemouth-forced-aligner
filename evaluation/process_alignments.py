@@ -386,6 +386,9 @@ def experiment_id(exp):
         parts += [f"{HP_TAGS[key]}{_tag_value(value)}" for key, value in hp_overrides(exp).items()]
         if exp.get("punctuation_sil"):
             parts.append("psil1")
+        # 2.1 changed the library's decoder defaults (pauses, non-speech): those runs must
+        # not reuse a 2.0 run's cached alignments, so they are tagged with the version.
+        parts += _version_and_decoder_tags(exp)
     if exp.get("split", "all") != "all":
         parts.append(exp["split"])
     if int(exp["subset"]) > 0:
@@ -490,6 +493,8 @@ def experiment_label(exp):
             label += f"-{HP_TAGS[key]}{_tag_value(value)}"
         if exp.get("punctuation_sil"):
             label += "-psil1"
+        for tag in _version_and_decoder_tags(exp):
+            label += f"-{tag}"
     if exp.get("split", "all") != "all":
         label += f"-{exp['split']}"
     if exp["subset"] > 0:
@@ -671,6 +676,7 @@ def build_aligner(exp, log_file=None):
         **{axis: exp[axis] for axis in DECODER_AXES},
         **{key: exp[key] for key in ALIGNER_KWARGS},
         punctuation_sil=bool(exp.get("punctuation_sil")),
+        decoder=dict(exp.get("decoder") or {}),
     )
     aligner.warn_level = CFG["run"]["warn_level"]
     # Checkpoint-only settings: BFA reads `decoder_hp` at every decode, so setting them on the
