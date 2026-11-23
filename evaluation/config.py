@@ -31,9 +31,7 @@ RUN_SETTINGS = ("duration_max", "batch_size", "coverage_min")
 BFA_SETTINGS = DECODER_AXES + ALIGNER_KWARGS + RUN_SETTINGS
 # Passed to `BFA`, but optional: absent or `null` = False, what every run before v2.0.2 used
 # (BFA's own default became True then), so older yamls and run names are unchanged.
-OPTIONAL_KWARGS = ("punctuation_sil", "decoder")
-# `decoder:` (optional, a mapping) goes to `BFA(decoder=...)`: any decoder setting, e.g. the
-# pause / non-speech ones of 2.1 (`{word_sil: false}`). It is not swept: one mapping per entry.
+OPTIONAL_KWARGS = ("punctuation_sil",)
 
 SECTIONS = {
     "paths": ("audio_roots", "releases_dir", "results_csv"),
