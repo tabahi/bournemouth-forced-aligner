@@ -48,6 +48,68 @@ _EXPLICIT_SIL_RE = re.compile(re.escape(SIL_WORD))
 # two language groups would otherwise each hold a copy of the same 100-language model.
 _G2P_INSTANCES = {}
 
+# Post-G2P corrections: language -> whole word -> the phonemes to use instead of the G2P's.
+# Words are matched as `word_segmentation` writes them (lower case). The G2P reads a lone Russian
+# "к" as the abbreviation of "километр". Each entry is (phonemes, phonemes when the next word
+# starts with a voiced obstruent with no pause between): "к дому" is said with a /ɡ/.
+_WORD_PHONES = {
+    "ru": {"к": (("k",), ("ɡ",))},
+}
+_VOICED_OBSTRUENTS = frozenset("b bʲ d dʲ ɡ ɡʲ ɣ z zʲ ʐ ʒ ʒʲ ʑ d͡z d͡zʲ d͡ʐ d͡ʒ d͡ʑ".split())
+
+
+def _apply_word_phones(d, language, items):
+    """
+    A `phonemize_words` result with the language's `_WORD_PHONES` applied. `items` is the
+    `_split` output the words came from, where None marks a pause.
+    """
+    rules = _WORD_PHONES.get(language)
+    if not rules or not any(w in rules for w in d["words"]):
+        return d
+
+    pause_after, n_words = set(), 0
+    for item in items:
+        if item is None:
+            pause_after.add(n_words - 1)
+        else:
+            n_words += 1
+
+    spans, gold_at = {}, 0
+    for i, (wi, n) in enumerate(zip(d["word_num"], d["gold_ph_count"])):
+        spans.setdefault(wi, []).append((i, gold_at, n))
+        gold_at += n
+
+    per_phoneme = ("phonemes", "tone", "stress", "length", "word_num", "gold_ph_count")
+    out = {k: [] for k in per_phoneme + ("gold_ph", "gold_phg")}
+    ipa = list(d["ipa"])
+    for wi, word in enumerate(d["words"]):
+        rule = rules.get(word)
+        if rule is None:
+            for i, g, n in spans.get(wi, ()):
+                for k in per_phoneme:
+                    out[k].append(d[k][i])
+                out["gold_ph"].extend(d["gold_ph"][g:g + n])
+                out["gold_phg"].extend(d["gold_phg"][g:g + n])
+            continue
+        next_word = spans.get(wi + 1) if wi not in pause_after else None
+        voiced = bool(next_word) and d["phonemes"][next_word[0][0]] in _VOICED_OBSTRUENTS
+        phones = rule[1] if voiced else rule[0]
+        ipa[wi] = "".join(phones)
+        for phone in phones:
+            gold = PI.map_phoneme(phone)
+            out["phonemes"].append(phone)
+            out["tone"].append(0)
+            out["stress"].append(0)
+            out["length"].append(0)
+            out["word_num"].append(wi)
+            out["gold_ph_count"].append(len(gold))
+            out["gold_ph"].extend(PI.TOKEN_INDEX[m] for m in gold)
+            out["gold_phg"].extend(int(PF.GROUPS.get(m, 0)) for m in gold)
+
+    kept = set(out["phonemes"])
+    return {**d, **out, "ipa": ipa,
+            "gold_unmapped": [p for p in d.get("gold_unmapped", []) if p in kept]}
+
 
 def std_inventory(lang_group):
     """The label space of one language group's `ph_head`, plus the 15 shared phoneme groups."""
@@ -209,6 +271,8 @@ class StdPhonemizer:
         items = self._split(text)
         words = [w for w in items if w is not None]
         d = self.g2p.phonemize_words(words, lang=self.language) if words else None
+        if d:
+            d = _apply_word_phones(d, self.language, items)
         layers = self._expand(d) if d else self._empty_layers()
         return self._assemble(text, items, layers, d.get("gold_unmapped", []) if d else [])
 

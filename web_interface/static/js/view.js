@@ -219,7 +219,7 @@ export class Editor {
       }
       if (row === "word") {
         const p = seg.phoneme_ts.find((q) => tm >= q.start_ms && tm < q.end_ms);
-        if (p) return { row, t, sel: { type: "word", si, w: p._w } };
+        if (p && p._w !== null) return { row, t, sel: { type: "word", si, w: p._w } };
       }
     }
     return { row, t };
@@ -553,9 +553,11 @@ export class Editor {
       const [y, h] = R.ph;
       g.fillStyle = j === selPh ? col.sel : (j % 2 ? col.a : col.b);
       g.fillRect(x0, y, x1 - x0, h);
-      // confidence bar
-      g.fillStyle = confColor(p.confidence || 0);
-      g.fillRect(x0 + 1, y + h - 4, Math.max(1, x1 - x0 - 2), 3);
+      // confidence bar (none on an inserted SIL / noise: it is not one of the text's phones)
+      if (!p.inserted) {
+        g.fillStyle = confColor(p.confidence || 0);
+        g.fillRect(x0 + 1, y + h - 4, Math.max(1, x1 - x0 - 2), 3);
+      }
       if (p.edited) {
         g.fillStyle = col.edited;
         g.beginPath(); g.arc(x1 - 5, y + 5, 2.5, 0, 7); g.fill();

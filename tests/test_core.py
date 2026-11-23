@@ -26,15 +26,30 @@ class TestBFA:
         error codes - which is the same for both, so every test runs twice. A set whose
         checkpoint, G2P model or espeak-ng is not available on this machine is skipped.
         """
+        # $BFA_TEST_PH66_MODEL: run the ph66 tests on this model instead of the preset's (CI).
+        ph66_model = os.environ.get("BFA_TEST_PH66_MODEL") if request.param == "ph66" else None
+        model = {"model_name": ph66_model, "lang": "en-us"} if ph66_model else {"preset": "en-us"}
         try:
             return BFA(
-                preset="en-us",
                 phoneme_set=request.param,
                 duration_max=10,
-                device='cpu'
+                device='cpu',
+                **model
             )
         except Exception as e:
             pytest.skip(f"Cannot initialize the {request.param} aligner: {e}")
+
+    def test_real_clip_has_a_confidence_on_every_entry(self, aligner, capsys):
+        """Inserted SIL / noise entries are scored too, so formatting them cannot fail."""
+        audio = aligner.load_audio(SAMPLE_AUDIO)
+        result = aligner.process_sentence("butterfly", audio, debug=True)
+        entries = result["segments"][0]["phoneme_ts"]
+        phones = [p for p in entries if not p.get("inserted")]
+        assert phones and len(entries) > len(phones)
+        assert all(isinstance(p["confidence"], float) and 0.0 <= p["confidence"] <= 1.0
+                   for p in entries)
+        assert "Confidence:" in capsys.readouterr().out
+        assert aligner.convert_to_textgrid(result, include_confidence=True)
 
     @pytest.fixture
     def dummy_audio(self):

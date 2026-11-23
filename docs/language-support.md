@@ -32,8 +32,8 @@ A language outside the nine groups below raises `UnsupportedLanguageError`, and 
 ## Supported: 82 languages in 9 language groups
 
 **Trained** means the language was in the model's FLEURS training data; the hours are the
-FLEURS training audio for that language. `mbfa-latin` and the models of the newer groups
-(vietnamese, thai_khmer, abjad, brahmic, other_alphabetic) used all of it. `mbfa-cyrillic` and `mbfa-cjk` used a
+FLEURS training audio for that language. `mbfa-latin`, `mbfa-cjk` and the models of the newer groups
+(vietnamese, thai_khmer, abjad, brahmic, other_alphabetic) used all of it. `mbfa-cyrillic` used a
 62% sample. A language the G2P covers but the model never heard is still aligned, through
 the phonemes it shares with the trained ones. Expect it to be less accurate.
 
@@ -118,7 +118,7 @@ Serbo-Croatian language with a tag for each script, and the language takes the g
 `BFA(preset="hr")` loads `mbfa-cyrillic`, which was trained on Croatian. Bosnian (`bs`) is its
 own G2P language and stays in `latin`.
 
-### `cjk` → `mbfa-cjk` (48 tokens)
+### `cjk` → `mbfa-cjk` (54 tokens)
 
 Han script. These languages need word segmentation, and they carry lexical tone.
 
@@ -234,7 +234,7 @@ inventory stays small and the phonemes are shared with other languages.
 - Each phone carries a `tone` index into a fixed vocabulary of 22 Chao contours
   (`'' 35 21 33 45 51 32 214 55 24 3 312 5 13 2 212 42 44 53 22 4 114`). 0 means no tone. The tone sits
   on the syllable's vowel, on the last token when the vowel is split into two
-  (`知道` → `ʈ ʂ ɚ⁵⁵ t ɑ ʊ⁵¹`), and consonants carry 0.
+  (`知道` → `d͡ʐ ɚ⁵⁵ d ɑ ʊ⁵¹`), and consonants carry 0.
 - The tone comes **from the G2P's dictionary pronunciation**, not from the audio. It is the
   word's lexical tone, with tone sandhi not applied, so a speaker's realised contour can differ
   from it. The tone's *timing* is the timing of the vowel it sits on. The tonal models have a
@@ -262,7 +262,7 @@ with `length` 2. Length has three values, not two, because the half-long mark is
 
 The token lists are small, so a phoneme that is not in its group's list backs off: to its
 nearest neighbour (`phoneme_label` then differs from `ipa_label`), to **two** tokens, or as a last resort to
-`<unk>`. Affricates and diphthongs are the usual two-token cases: Mandarin `ʈ͡ʂ` → `ʈ ʂ`, English
+`<unk>`. Affricates and diphthongs are the usual two-token cases: Mandarin `ʈ͡ʂʰ` → `ʈ ʂʰ`, English
 /aɪ/ → `a ɪ`, /tʃ/ → `t ʃ`. Both tokens get their own timestamp, and both carry the phoneme's
 tone, stress, length and word. If you need one interval per phoneme, merge them by
 `target_seq_idx` and word. (This is also why the std models place more onsets than a corpus

@@ -192,7 +192,7 @@ so a phone is taken as inside a segment with 2 ms of tolerance.
 `mbfa-latin`, published decoder settings (boundary bonus 30) unless a column says bonus 0,
 frame-grid onsets. Scored with `compute_metrics.check_method_alignment`, aligned with
 `process_alignments.task_bfa_align`, all in a scratch directory so the running sweeps and
-`tmp/data` were not touched.
+`local/data` were not touched.
 
 ### Buckeye: 4 random interviews (s0402b, s1201a, s1902a, s3901b), ~15 000 boundaries
 
@@ -280,7 +280,7 @@ got right from the text it was given.
 
 ## What has to be re-run
 
-Nothing under `tmp/data` was regenerated, because sweeps were reading it. When they finish:
+Nothing under `local/data` was regenerated, because sweeps were reading it. When they finish:
 
 ```bash
 python evaluation/dataset/timit_parser.py

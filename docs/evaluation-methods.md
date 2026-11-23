@@ -21,8 +21,8 @@ again. Adding a model or a setting to the yaml only costs the new runs.
 
 1. **Corpora.** Set `paths.audio_roots` in `evaluate.yaml` to where TIMIT and Buckeye are.
 2. **Ground truth.** Each parser reads a corpus and writes the transcripts and reference
-   boundaries the other steps use (`tmp/data/<dataset>_data/` and
-   `tmp/paths/<dataset>_paths_all.json`):
+   boundaries the other steps use (`local/data/<dataset>_data/` and
+   `local/paths/<dataset>_paths_all.json`):
 
    ```bash
    python evaluation/dataset/timit_parser.py
@@ -185,8 +185,13 @@ python evaluation/compute_metrics.py --rescore --yes    # ... without asking
 
 The scorer does not read the `experiments` list. It looks at every finished run under
 `tmp/alignments/`, reads the CSVs, and scores only what has no row yet. Each dataset has its
-own file, `evaluation/results/results_timit.csv` and `results_buckeye.csv`
+own file, `local/results/results_timit.csv` and `results_buckeye.csv`
 (`paths.results_csv` in the yaml).
+
+`local/` (gitignored, like `tmp/`) holds what is slow to rebuild and what many scripts read:
+the parsed corpora (`local/data/`), the paths lists (`local/paths/`) and the results CSVs. It
+is the one directory to carry along when the checkout moves to another machine; everything
+under `tmp/` (alignments, scoring detail, MFA/MAPS scratch) can be left behind and rebuilt.
 
 A row is replaced in two cases, and in both the scorer asks first:
 
@@ -205,8 +210,10 @@ distances).
 ## Step 3: the figures for the docs
 
 The [evaluation](evaluation.md) page shows the runs in `evaluation/results/` and the plots in
-`evaluation/plots/`. To refresh them after a new full-corpus run, copy that run's `tmp/plots/<experiment>.png`
-and `.json` into `evaluation/plots/`, then redraw the two comparison figures:
+`evaluation/plots/`: published copies, refreshed by hand. After a new full-corpus run, copy
+`local/results/results_<dataset>.csv` into `evaluation/results/`, copy that run's
+`tmp/plots/<experiment>.png` and `.json` into `evaluation/plots/`, then redraw the two
+comparison figures:
 
 ```bash
 python evaluation/plot_summary.py      # evaluation/plots/summary_f1.png, summary_distance.png

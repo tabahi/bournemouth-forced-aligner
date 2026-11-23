@@ -2,7 +2,7 @@
 "group": "cjk",
 "model": "mbfa-cjk",
 "source": "FLEURS dev transcripts, through bournemouth_aligner's std G2P",
-"note": "Tone is a separate layer, not part of these tokens: see the tone guide. Affricates and diphthongs are split into tokens: 在 = t s a ɪ, 这 = ʈ ʂ ɤ; an aspirated affricate puts the aspiration on its second half (其 = t ɕʰ i, 此 = t sʰ i). Give each part its own span. The aspirated stops pʰ tʰ kʰ are the sounds written p t k in pinyin and Jyutping; the plain p t k are the ones written b d g.",
+"note": "Tone is a separate layer, not part of these tokens: see the tone guide. The unaspirated onsets written b d g z j zh in pinyin (b d g z in Jyutping) are the tokens b d ɡ d͡z d͡ʑ d͡ʐ, and each affricate is one token: 在 = d͡z a ɪ, 这 = d͡ʐ ɤ. An aspirated affricate is split into two tokens, with the aspiration on its second half (其 = t ɕʰ i, 此 = t sʰ i): give each part its own span. Diphthongs are split too (在 = a ɪ). The aspirated stops pʰ tʰ kʰ are the sounds written p t k in pinyin and Jyutping. Plain p t k are Cantonese syllable-final stops, which have no audible release, and foreign words.",
 "lang_names": {
 "zh": "Mandarin",
 "yue": "Cantonese"
@@ -43,22 +43,22 @@
 [
 "zh",
 "在",
-"t s a ɪ"
+"d͡z a ɪ"
 ],
 [
 "yue",
 "國家",
-"k w ɔ k k a"
+"ɡ w ɔ k ɡ a"
 ]
 ],
 "langs": [
 [
 "zh",
-5.07
+5.36
 ],
 [
 "yue",
-3.79
+3.94
 ]
 ],
 "also": [],
@@ -71,27 +71,27 @@
 "examples": [
 [
 "yue",
-"在",
-"t s ɔ i"
+"是",
+"s i"
 ],
 [
 "zh",
-"在",
-"t s a ɪ"
+"斯",
+"s ɯ"
 ]
 ],
 "langs": [
 [
 "yue",
-7.66
+4.08
 ],
 [
 "zh",
-1.83
+0.68
 ]
 ],
 "also": [],
-"count": 3342
+"count": 1601
 },
 "i": {
 "name": "close front unrounded vowel",
@@ -101,22 +101,22 @@
 [
 "yue",
 "世界",
-"s ɐ i k a i"
+"s ɐ i ɡ a i"
 ],
 [
 "zh",
 "的",
-"t i"
+"d i"
 ]
 ],
 "langs": [
 [
 "yue",
-9.5
+9.87
 ],
 [
 "zh",
-4.89
+5.17
 ]
 ],
 "also": [],
@@ -141,11 +141,11 @@
 "langs": [
 [
 "zh",
-1.97
+2.08
 ],
 [
 "yue",
-1.45
+1.51
 ]
 ],
 "also": [],
@@ -170,11 +170,11 @@
 "langs": [
 [
 "zh",
-6.29
+6.65
 ],
 [
 "yue",
-4.92
+5.11
 ]
 ],
 "also": [],
@@ -187,27 +187,27 @@
 "examples": [
 [
 "yue",
-"的",
-"t ɪ k"
+"滑雪",
+"w a t s y t"
 ],
 [
 "zh",
-"的",
-"t i"
+"其",
+"t ɕʰ i"
 ]
 ],
 "langs": [
 [
 "yue",
-11.28
+3.68
 ],
 [
 "zh",
-8.84
+1.5
 ]
 ],
 "also": [],
-"count": 7296
+"count": 1764
 },
 "l": {
 "name": "alveolar lateral approximant",
@@ -228,11 +228,11 @@
 "langs": [
 [
 "yue",
-2.11
+2.19
 ],
 [
 "zh",
-1.81
+1.92
 ]
 ],
 "also": [],
@@ -246,26 +246,26 @@
 [
 "yue",
 "的",
-"t ɪ k"
+"d ɪ k"
 ],
 [
 "zh",
-"个",
-"k ɤ"
+"kashiwazaki",
+"k a <unk> i w a <unk> a k i"
 ]
 ],
 "langs": [
 [
 "yue",
-7.0
+4.09
 ],
 [
 "zh",
-1.71
+0.07
 ]
 ],
 "also": [],
-"count": 3068
+"count": 1380
 },
 "o": {
 "name": "close-mid back rounded vowel",
@@ -275,7 +275,7 @@
 [
 "yue",
 "都",
-"t o u"
+"d o u"
 ],
 [
 "zh",
@@ -286,11 +286,11 @@
 "langs": [
 [
 "yue",
-1.42
+1.47
 ],
 [
 "zh",
-1.39
+1.47
 ]
 ],
 "also": [],
@@ -304,7 +304,7 @@
 [
 "yue",
 "動物",
-"t ʊ ŋ m ɐ t"
+"d ʊ ŋ m ɐ t"
 ],
 [
 "zh",
@@ -315,15 +315,44 @@
 "langs": [
 [
 "yue",
-2.14
+2.22
 ],
 [
 "zh",
-1.25
+1.32
 ]
 ],
 "also": [],
 "count": 1220
+},
+"d": {
+"name": "voiced alveolar stop",
+"class": "stop",
+"plain": "d as in “dog”",
+"examples": [
+[
+"zh",
+"的",
+"d i"
+],
+[
+"yue",
+"的",
+"d ɪ k"
+]
+],
+"langs": [
+[
+"zh",
+4.39
+],
+[
+"yue",
+4.17
+]
+],
+"also": [],
+"count": 2986
 },
 "u": {
 "name": "close back rounded vowel",
@@ -338,17 +367,17 @@
 [
 "zh",
 "不",
-"p u"
+"b u"
 ]
 ],
 "langs": [
 [
 "yue",
-4.78
+4.97
 ],
 [
 "zh",
-3.86
+4.08
 ]
 ],
 "also": [],
@@ -362,22 +391,22 @@
 [
 "zh",
 "在",
-"t s a ɪ"
+"d͡z a ɪ"
 ],
 [
 "yue",
 "的",
-"t ɪ k"
+"d ɪ k"
 ]
 ],
 "langs": [
 [
 "zh",
-5.41
+5.72
 ],
 [
 "yue",
-3.77
+3.91
 ]
 ],
 "also": [],
@@ -402,11 +431,11 @@
 "langs": [
 [
 "yue",
-1.23
+1.28
 ],
 [
 "zh",
-0.96
+1.01
 ]
 ],
 "also": [],
@@ -431,11 +460,11 @@
 "langs": [
 [
 "zh",
-4.36
+4.61
 ],
 [
 "yue",
-4.26
+4.43
 ]
 ],
 "also": [],
@@ -460,11 +489,40 @@
 "langs": [
 [
 "zh",
-1.4
+1.49
 ]
 ],
 "also": [],
 "count": 545
+},
+"b": {
+"name": "voiced bilabial stop",
+"class": "stop",
+"plain": "b as in “bed”",
+"examples": [
+[
+"zh",
+"不",
+"b u"
+],
+[
+"yue",
+"不同",
+"b ɐ t tʰ ʊ ŋ"
+]
+],
+"langs": [
+[
+"zh",
+1.84
+],
+[
+"yue",
+1.75
+]
+],
+"also": [],
+"count": 1250
 },
 "p": {
 "name": "voiceless bilabial stop",
@@ -473,27 +531,27 @@
 "examples": [
 [
 "yue",
-"不同",
-"p ɐ t tʰ ʊ ŋ"
+"以及",
+"j i kʰ ɐ p"
 ],
 [
 "zh",
-"不",
-"p u"
+"chhappan",
+"ʈ ʂʰ a p ə n"
 ]
 ],
 "langs": [
 [
 "yue",
-2.26
+0.6
 ],
 [
 "zh",
-1.76
+0.05
 ]
 ],
 "also": [],
-"count": 1458
+"count": 219
 },
 "ɛ": {
 "name": "open-mid front unrounded vowel",
@@ -508,17 +566,17 @@
 [
 "yue",
 "這個",
-"t s ɛ k ɔ"
+"d͡z ɛ ɡ ɔ"
 ]
 ],
 "langs": [
 [
 "zh",
-1.82
+1.92
 ],
 [
 "yue",
-0.82
+0.85
 ]
 ],
 "also": [],
@@ -537,17 +595,17 @@
 [
 "yue",
 "國家",
-"k w ɔ k k a"
+"ɡ w ɔ k ɡ a"
 ]
 ],
 "langs": [
 [
 "zh",
-2.51
+2.65
 ],
 [
 "yue",
-2.27
+2.36
 ]
 ],
 "also": [],
@@ -572,11 +630,40 @@
 "langs": [
 [
 "zh",
-3.83
+4.05
 ]
 ],
 "also": [],
 "count": 1482
+},
+"ɡ": {
+"name": "voiced velar stop",
+"class": "stop",
+"plain": "g as in “go”",
+"examples": [
+[
+"yue",
+"國家",
+"ɡ w ɔ k ɡ a"
+],
+[
+"zh",
+"个",
+"ɡ ɤ"
+]
+],
+"langs": [
+[
+"yue",
+3.18
+],
+[
+"zh",
+1.75
+]
+],
+"also": [],
+"count": 1693
 },
 "ɔ": {
 "name": "open-mid back rounded vowel",
@@ -586,7 +673,7 @@
 [
 "yue",
 "個",
-"k ɔ"
+"ɡ ɔ"
 ],
 [
 "zh",
@@ -597,11 +684,11 @@
 "langs": [
 [
 "yue",
-4.14
+4.3
 ],
 [
 "zh",
-1.68
+1.78
 ]
 ],
 "also": [],
@@ -626,11 +713,11 @@
 "langs": [
 [
 "yue",
-6.06
+6.3
 ],
 [
 "zh",
-5.65
+5.97
 ]
 ],
 "also": [],
@@ -649,17 +736,17 @@
 [
 "yue",
 "不同",
-"p ɐ t tʰ ʊ ŋ"
+"b ɐ t tʰ ʊ ŋ"
 ]
 ],
 "langs": [
 [
 "zh",
-4.83
+5.1
 ],
 [
 "yue",
-1.79
+1.86
 ]
 ],
 "also": [],
@@ -679,7 +766,7 @@
 "langs": [
 [
 "zh",
-0.45
+0.48
 ]
 ],
 "also": [],
@@ -693,7 +780,7 @@
 [
 "yue",
 "許多",
-"h ɵ y t ɔ"
+"h ɵ y d ɔ"
 ],
 [
 "zh",
@@ -704,7 +791,7 @@
 "langs": [
 [
 "yue",
-1.76
+1.83
 ],
 [
 "zh",
@@ -728,7 +815,7 @@
 "langs": [
 [
 "yue",
-6.72
+6.98
 ]
 ],
 "also": [],
@@ -748,7 +835,7 @@
 "langs": [
 [
 "zh",
-1.65
+1.74
 ]
 ],
 "also": [],
@@ -768,11 +855,11 @@
 "langs": [
 [
 "zh",
-4.55
+2.46
 ]
 ],
 "also": [],
-"count": 1757
+"count": 899
 },
 "y": {
 "name": "close front rounded vowel",
@@ -782,7 +869,7 @@
 [
 "yue",
 "最",
-"t s ɵ y"
+"d͡z ɵ y"
 ],
 [
 "zh",
@@ -793,11 +880,11 @@
 "langs": [
 [
 "yue",
-2.43
+2.52
 ],
 [
 "zh",
-1.03
+1.09
 ]
 ],
 "also": [],
@@ -810,18 +897,18 @@
 "examples": [
 [
 "zh",
-"进行",
-"t ɕ ɪ n ɕ ɪ ŋ"
+"新",
+"ɕ ɪ n"
 ]
 ],
 "langs": [
 [
 "zh",
-3.78
+1.75
 ]
 ],
 "also": [],
-"count": 1461
+"count": 640
 },
 "ɵ": {
 "name": "close-mid central rounded vowel",
@@ -831,13 +918,13 @@
 [
 "yue",
 "最",
-"t s ɵ y"
+"d͡z ɵ y"
 ]
 ],
 "langs": [
 [
 "yue",
-1.36
+1.41
 ]
 ],
 "also": [],
@@ -862,11 +949,11 @@
 "langs": [
 [
 "yue",
-1.2
+1.25
 ],
 [
 "zh",
-0.78
+0.83
 ]
 ],
 "also": [],
@@ -879,18 +966,18 @@
 "examples": [
 [
 "zh",
-"这",
-"ʈ ʂ ɤ"
+"车",
+"ʈ ʂʰ ɤ"
 ]
 ],
 "langs": [
 [
 "zh",
-3.13
+0.97
 ]
 ],
 "also": [],
-"count": 1211
+"count": 353
 },
 "tʰ": {
 "name": "voiceless alveolar stop, aspirated",
@@ -905,17 +992,17 @@
 [
 "yue",
 "不同",
-"p ɐ t tʰ ʊ ŋ"
+"b ɐ t tʰ ʊ ŋ"
 ]
 ],
 "langs": [
 [
 "zh",
-1.23
+1.31
 ],
 [
 "yue",
-1.11
+1.15
 ]
 ],
 "also": [],
@@ -935,7 +1022,7 @@
 "langs": [
 [
 "zh",
-0.79
+0.83
 ]
 ],
 "also": [],
@@ -960,11 +1047,11 @@
 "langs": [
 [
 "zh",
-0.9
+0.95
 ],
 [
 "yue",
-0.8
+0.83
 ]
 ],
 "also": [],
@@ -984,7 +1071,7 @@
 "langs": [
 [
 "zh",
-3.19
+3.38
 ]
 ],
 "also": [],
@@ -1009,11 +1096,11 @@
 "langs": [
 [
 "yue",
-1.61
+1.67
 ],
 [
 "zh",
-0.38
+0.4
 ]
 ],
 "also": [],
@@ -1038,15 +1125,64 @@
 "langs": [
 [
 "zh",
-0.38
+0.4
 ],
 [
 "yue",
-0.34
+0.35
 ]
 ],
 "also": [],
 "count": 262
+},
+"d͡ʑ": {
+"name": "voiced alveolo-palatal affricate",
+"class": "affricate",
+"plain": "a soft j (Polish “dź”)",
+"examples": [
+[
+"zh",
+"国家",
+"ɡ u ɔ d͡ʑ j a"
+]
+],
+"langs": [
+[
+"zh",
+2.25
+]
+],
+"also": [],
+"count": 821
+},
+"d͡z": {
+"name": "voiced alveolar affricate",
+"class": "affricate",
+"plain": "ds as in “beds”",
+"examples": [
+[
+"yue",
+"在",
+"d͡z ɔ i"
+],
+[
+"zh",
+"在",
+"d͡z a ɪ"
+]
+],
+"langs": [
+[
+"yue",
+3.87
+],
+[
+"zh",
+1.26
+]
+],
+"also": [],
+"count": 1741
 },
 "ɥ": {
 "name": "labial-palatal approximant",
@@ -1062,7 +1198,7 @@
 "langs": [
 [
 "zh",
-0.78
+0.83
 ]
 ],
 "also": [],
@@ -1082,7 +1218,7 @@
 "langs": [
 [
 "zh",
-1.0
+1.05
 ]
 ],
 "also": [],
@@ -1102,7 +1238,7 @@
 "langs": [
 [
 "zh",
-0.91
+0.97
 ]
 ],
 "also": [],
@@ -1122,7 +1258,7 @@
 "langs": [
 [
 "zh",
-1.8
+1.91
 ]
 ],
 "also": [],
@@ -1142,11 +1278,31 @@
 "langs": [
 [
 "zh",
-0.14
+0.15
 ]
 ],
 "also": [],
 "count": 55
+},
+"d͡ʐ": {
+"name": "voiced retroflex affricate",
+"class": "affricate",
+"plain": "a hard j (Polish “dż”)",
+"examples": [
+[
+"zh",
+"这",
+"d͡ʐ ɤ"
+]
+],
+"langs": [
+[
+"zh",
+2.35
+]
+],
+"also": [],
+"count": 858
 },
 "m̩": {
 "name": "bilabial nasal, syllabic",

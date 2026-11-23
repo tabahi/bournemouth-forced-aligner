@@ -38,6 +38,8 @@ jobs:
           path: site
 
   deploy:
+    # Only the public repository has a Pages site. Forks still run the build as a check.
+    if: github.repository == 'speech-industry/bournemouth-forced-aligner'
     needs: build
     runs-on: ubuntu-latest
     environment:

@@ -40,7 +40,8 @@ numbers is described in [evaluation methods](evaluation-methods.md). The raw sco
   [Why Buckeye favours MFA](#why-buckeye-favours-mfa). TIMIT was labelled by hand, so it is the
   fairer comparison.
 - **On a CPU, MFA is faster on long conversational recordings.** On 10 Buckeye interviews, BFA
-  on a CPU at its default padding takes 2.2-3.8× as long as MFA. See [Cost](#cost).
+  on a CPU at its default padding takes 2.2-3.8× as long as MFA; with `duration_max=10`,
+  0.8-1.3×. See [Cost](#cost).
 
 For English alone, the ph66 models (`CUPE-3-en`, `CUPE-3-en-base`) beat the multilingual std
 models by 4.2-5.8 points. See [Why the std models score lower](#why-the-std-models-score-lower).
@@ -294,12 +295,14 @@ real time.
 | BFA `CUPE-3-en` | GPU | 10 s | 45.9 s | 47.5 s | 12.9 / **10.7 s** | **0.002** |
 | BFA `CUPE-3-en` | GPU | 30 s | 60.1 s | 60.9 s | 25.7 / 25.1 s | 0.005 |
 | BFA `mbfa-latin` | GPU | 30 s | 71.9 s | 69.7 s | 33.5 / 33.1 s | 0.006 |
+| BFA `CUPE-3-en` | CPU | 10 s | 215 s | 245 s | 188 / 211 s | 0.035 |
 | BFA `CUPE-3-en-base` | CPU | 30 s | 578 s | 590 s | 566 / 535 s | 0.099 |
 | BFA `mbfa-latin` | CPU | 30 s | 648 s | 579 s | 562 / 555 s | 0.103 |
 | MFA `english_mfa` (flat / per speaker) | CPU | | | | 206.2 / 149.3 s | 0.028 |
 | MFA `english_us_arpa` (flat / per speaker) | CPU | | | | 243.0 / 185.9 s | 0.034 |
 
-`CUPE-3-en-base` has the same network as `CUPE-3-en` and costs the same.
+`CUPE-3-en-base` has the same network as `CUPE-3-en` and costs the same. The CPU rows at 10 s
+were timed later (2026-11-03) on the same machine.
 
 **Start-up.** A BFA process needs 3-9 s before its first clip, once: imports, loading the
 model, and starting the `n_jobs` workers. The std models also load their G2P model with the
@@ -310,7 +313,7 @@ first clip (~4 s). MFA spends 59-100 s on start-up and setup in every call.
 | | BFA with a GPU | BFA on a CPU |
 |---|---|---|
 | 100 TIMIT clips | 8-21× sooner | 1.7-7.1× sooner |
-| 10 Buckeye interviews | 3.6-15× sooner | 2.2-3.8× **slower** (30 s padding) |
+| 10 Buckeye interviews | 3.6-15× sooner | 0.8-1.3× MFA's time (10 s padding); 2.2-3.8× **slower** (30 s padding) |
 | one 32 s clip (`30s.wav`) | 1.3-1.5 s + start-up, against MFA's 79-120 s | 1.7-3.3 s + start-up |
 
 **What to choose**
@@ -323,13 +326,14 @@ first clip (~4 s). MFA spends 59-100 s on start-up and setup in every call.
   8 workers help only at `duration_max=10`.
 - **On a CPU, lower `duration_max` instead.** The network is almost all of the time, so
   `n_jobs` changes little. Every segment is padded to `duration_max`, so 10 s instead of 30 s
-  makes short clips 2.6× faster (TIMIT: 39.8 → 15.4 s) with identical onsets. Segments longer
-  than `duration_max` are decoded whole, never cut.
+  makes short clips 2.6× faster (TIMIT: 39.8 → 15.4 s) with identical onsets, and Buckeye's
+  2.2 s segments 2.8× faster (535 → 188 s). Segments longer than `duration_max` are decoded
+  whole, never cut.
 - **The std models cost 1.0-1.6× the ph66 models** at the same padding. Their G2P runs once
   per call over every new word.
 - **MFA is faster on a CPU for long conversational recordings** at the default 30 s padding:
-  each 2.2 s Buckeye segment is padded to 30 s. The effect of 10 s padding on Buckeye's scores
-  was not measured.
+  each 2.2 s Buckeye segment is padded to 30 s. At `duration_max=10` BFA is level with MFA
+  (0.8-1.3× its time). The effect of 10 s padding on Buckeye's scores was not measured.
 
 ## Analysis
 
@@ -514,7 +518,7 @@ per run. These are written by `compute_metrics.py`.
 python evaluation/dataset/timit_parser.py       # ground truth, once
 python evaluation/dataset/buckeye_parser.py
 python evaluation/process_alignments.py         # align (the experiments in evaluate.yaml)
-python evaluation/compute_metrics.py            # score into evaluation/results/results_<dataset>.csv
+python evaluation/compute_metrics.py            # score into local/results/results_<dataset>.csv
 python evaluation/plot_summary.py               # the two comparison figures above
 ```
 

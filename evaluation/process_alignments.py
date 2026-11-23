@@ -386,6 +386,9 @@ def experiment_id(exp):
         parts += [f"{HP_TAGS[key]}{_tag_value(value)}" for key, value in hp_overrides(exp).items()]
         if exp.get("punctuation_sil"):
             parts.append("psil1")
+        # 2.1 changed the library's decoder defaults (pauses, non-speech): those runs must
+        # not reuse a 2.0 run's cached alignments, so they are tagged with the version.
+        parts += _version_and_decoder_tags(exp)
     if exp.get("split", "all") != "all":
         parts.append(exp["split"])
     if int(exp["subset"]) > 0:
@@ -394,6 +397,17 @@ def experiment_id(exp):
     if os.sep in name:
         raise ValueError(f"experiment name {name!r} is not a directory name")
     return name
+
+
+def _version_and_decoder_tags(exp):
+    """`v21` from BFA 2.1 on, and one `<key><value>` tag per `decoder:` override."""
+    import bournemouth_aligner
+    major, minor = (int(x) for x in bournemouth_aligner.__version__.split(".")[:2])
+    tags = [f"v{major}{minor}"] if (major, minor) >= (2, 1) else []
+    for key, value in sorted((exp.get("decoder") or {}).items()):
+        short = "".join(w[0] for w in key.split("_"))
+        tags.append(f"{short}{_tag_value(value) if value is not None else 'none'}")
+    return tags
 
 
 def _as_list(value):
@@ -479,6 +493,8 @@ def experiment_label(exp):
             label += f"-{HP_TAGS[key]}{_tag_value(value)}"
         if exp.get("punctuation_sil"):
             label += "-psil1"
+        for tag in _version_and_decoder_tags(exp):
+            label += f"-{tag}"
     if exp.get("split", "all") != "all":
         label += f"-{exp['split']}"
     if exp["subset"] > 0:
@@ -660,6 +676,7 @@ def build_aligner(exp, log_file=None):
         **{axis: exp[axis] for axis in DECODER_AXES},
         **{key: exp[key] for key in ALIGNER_KWARGS},
         punctuation_sil=bool(exp.get("punctuation_sil")),
+        decoder=dict(exp.get("decoder") or {}),
     )
     aligner.warn_level = CFG["run"]["warn_level"]
     # Checkpoint-only settings: BFA reads `decoder_hp` at every decode, so setting them on the
@@ -881,7 +898,7 @@ def make_bfa_phoneme_dict(paths_list, exp, log_file=None):
                                                "index": -1}
                 phoneme_dict[ipa_label]["count"] += 1
                 phoneme_dict[ipa_label]["total_duration"] += phoneme_ts['end_ms'] - phoneme_ts['start_ms']
-                phoneme_dict[ipa_label]["avg_confidences"] += phoneme_ts['confidence']
+                phoneme_dict[ipa_label]["avg_confidences"] += phoneme_ts['confidence'] or 0.0
 
                 # a following "-" (pause) is charged to the phoneme before it
                 nxt = segment['phoneme_ts'][pi + 1] if pi + 1 < len(segment['phoneme_ts']) else None
@@ -1107,7 +1124,8 @@ if __name__ == "__main__":
                              "shells with K = 0 .. N-1 cover the list between them")
     parser.add_argument("--config", default=None, help="default: evaluation/evaluate.yaml")
     parser.add_argument("--only", default=None, metavar="GLOB",
-                        help="only the experiments whose name matches, e.g. 'timit__*'")
+                        help="only the experiments whose name matches, e.g. 'timit__*' "
+                             "(several globs: comma-separated)")
     parser.add_argument("--list", action="store_true",
                         help="print the experiments and what is cached, then stop")
     args = parser.parse_args()
@@ -1129,7 +1147,7 @@ if __name__ == "__main__":
     all_experiments = build_experiments()
     if args.only:
         all_experiments = [exp for exp in all_experiments
-                           if fnmatch.fnmatch(exp["id"], args.only)]
+                           if any(fnmatch.fnmatch(exp["id"], g) for g in args.only.split(","))]
     # The split is over the whole list, so an experiment belongs to the same shell whichever
     # of them is asked.
     experiments = all_experiments[process_id::total_processes]

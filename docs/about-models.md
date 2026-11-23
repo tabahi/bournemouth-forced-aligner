@@ -16,7 +16,7 @@ the model code: [`p3cupe/model.py`](../bournemouth_aligner/p3cupe/model.py),
 |---|---|---|
 | phoneme set in BFA | `std` (default) | `ph66` |
 | phonemizer | [standard_g2p](https://github.com/tabahi/CharsiuG2P), a ByT5 G2P for 100 languages | espeak-ng, reduced to 66 phonemes |
-| phoneme head | one **language group's** tokens (208 for `latin`, 127 `cyrillic`, 48 `cjk`, 28 `japanese`) | 66 phonemes + 1 reserved slot, the same for every language |
+| phoneme head | one **language group's** tokens (208 for `latin`, 127 `cyrillic`, 54 `cjk`, 28 `japanese`) | 66 phonemes + 1 reserved slot, the same for every language |
 | group head | 15 phoneme groups, shared by every language | 16 groups + 1 reserved slot |
 | tone head | 22 tone contours (0 = no tone) | — |
 | silence id | 1 (`<blank>` is 0 and is never a target) | 0 |
@@ -254,7 +254,7 @@ why it was picked, is
 | [`mbfa-latin`](https://huggingface.co/Tabahi/mbfa-latin) | std/latin | ma04a, 6 | FLEURS latin, 36 languages, 273.5 h | 0.05 | TIMIT f1@25 71.22 tune / 71.70 held-out, best at the highest noise |
 | [`mbfa-latin-benchmark`](https://huggingface.co/Tabahi/mbfa-latin-benchmark) | std/latin | ma02a, 8 | FLEURS latin, 62% sample, ~170 h | 0.02 | TIMIT f1@25 73.33 / 72.93, best of every latin run |
 | [`mbfa-cyrillic`](https://huggingface.co/Tabahi/mbfa-cyrillic) | std/cyrillic | mr01a, 10 | FLEURS be bg hr kk mk ru sr uk, ~40 h | 0.02 | FLEURS val_loss 2.652 |
-| [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std/cjk | mc01a, 13 | FLEURS Mandarin + Cantonese, ~9 h | 0.02 | FLEURS val_loss 2.596 |
+| [`mbfa-cjk`](https://huggingface.co/Tabahi/mbfa-cjk) | std/cjk | mc02a, 9 | FLEURS Mandarin + Cantonese, 14.9 h | 0.02 | FLEURS val_loss 2.830 |
 | [`mbfa-latin-noEnglish`](https://huggingface.co/Tabahi/mbfa-latin-noEnglish) | std/latin | ma05a, 4 | FLEURS latin without English, 35 languages, 266.4 h | 0.05 | TIMIT f1@25 71.90 / 71.77, best of 9 epochs |
 | [`mbfa-japanese`](https://huggingface.co/Tabahi/mbfa-japanese) | std/japanese | mj01a, 8 | FLEURS Japanese, 7 h | 0.02 | FLEURS val_loss 2.349 + frame accuracy |
 | [`mbfa-vietnamese`](https://huggingface.co/Tabahi/mbfa-vietnamese) | std/vietnamese | mv01a, 6 | FLEURS Vietnamese, 8.7 h | 0.02 | FLEURS val_loss 3.347 |

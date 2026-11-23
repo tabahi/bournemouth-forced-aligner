@@ -229,7 +229,8 @@ function canvasTip(h) {
   if (s.type === "phoneme") {
     const p = seg.phoneme_ts[s.j];
     const tone = p.tone ? `\nTone: ${toneLabel(clip.vs.lang || clip.lang, info.tone_vocab[p.tone])}` : "";
-    const extra = `In “${seg.words[p._w] ?? "?"}”, ${ms(p.start_ms)} – ${ms(p.end_ms)} ` +
+    const where = p._w === null ? "Inserted (no word)" : `In “${seg.words[p._w] ?? "?"}”`;
+    const extra = `${where}, ${ms(p.start_ms)} – ${ms(p.end_ms)} ` +
       `(${ms(p.end_ms - p.start_ms)}), confidence ${(p.confidence ?? 0).toFixed(2)}${p.edited ? ", edited" : ""}.${tone}\n` +
       "Click to select · double-click to zoom in";
     return { key: `p${s.si}:${s.j}:${p.phoneme_id}`, text: phonemeTip(clip.inventory, p.phoneme_label, extra) };
@@ -377,7 +378,8 @@ function renderInspector(timesOnly = false) {
 
   const seg = segs[s.si];
   const p = seg.phoneme_ts[s.j];
-  $("insp-title").textContent = `/${p.phoneme_label}/  in “${seg.words[p._w] ?? "?"}”` +
+  $("insp-title").textContent = `/${p.phoneme_label}/  ` +
+    (p._w === null ? "inserted, no word" : `in “${seg.words[p._w] ?? "?"}”`) +
     (p.edited ? "  · edited" : "");
   const pi = phonemeInfo(clip.inventory, p.phoneme_label);
   if (pi) {
@@ -400,8 +402,9 @@ function renderInspector(timesOnly = false) {
 
   const wsel = $("insp-word");
   wsel.innerHTML = "";
+  wsel.add(new Option("— no word (inserted SIL / noise) —", ""));
   seg.words.forEach((w, i) => wsel.add(new Option(`${i + 1}. ${w}`, i)));
-  wsel.value = p._w;
+  wsel.value = p._w === null ? "" : p._w;
 
   // Tone: only for tonal languages (or a phone that already has one). The tones the language
   // uses come first, named; ranked by the tone head when the model has one.
@@ -505,7 +508,8 @@ $("insp-start").addEventListener("change", onTimeInput);
 $("insp-end").addEventListener("change", onTimeInput);
 $("insp-word").addEventListener("change", (e) => {
   const s = editor.sel;
-  edit(() => M.setWord(clip, s.si, s.j, Number(e.target.value)));
+  const v = e.target.value;
+  edit(() => M.setWord(clip, s.si, s.j, v === "" ? null : Number(v)));
   renderInspector();
 });
 $("insp-tone").addEventListener("change", (e) => {
@@ -545,6 +549,7 @@ function spreadSelected() {
   if (!clip || !clip.vs || !s || (s.type !== "phoneme" && s.type !== "word")) return;
   const seg = clip.vs.segments[s.si];
   const w = s.type === "word" ? s.w : seg.phoneme_ts[s.j]._w;
+  if (w === null) return;
   pushUndo();
   if (!M.spreadWord(clip, s.si, w)) { clip.undo.pop(); updateUndoButtons(); return; }
   editor.draw(); scheduleSave(); renderBatchList(); renderInspector();
@@ -609,7 +614,10 @@ function alignSelectedWord() {
   const s = editor.sel;
   if (!clip || !clip.vs || !s) return;
   if (s.type === "word") return alignWord(s.si, s.w);
-  if (s.type === "phoneme") return alignWord(s.si, clip.vs.segments[s.si].phoneme_ts[s.j]._w);
+  if (s.type === "phoneme") {
+    const w = clip.vs.segments[s.si].phoneme_ts[s.j]._w;
+    return w === null ? undefined : alignWord(s.si, w);
+  }
   if (s.type === "range" && !$("insp-range").hidden) {
     const [si, w] = $("insp-range-word").value.split(":").map(Number);
     return alignWord(si, w, [s.t0 * 1000, s.t1 * 1000]);
@@ -1363,11 +1371,21 @@ async function restoreClips() {
 
 async function loadDemo(c) {
   const d = info.demo;
-  const blob = await (await fetch(d.audio)).blob();
-  await setAudio(c, blob, d.name);
+  const res = await fetch(d.audio);
+  // Checked before anything is stored: an error page kept as the clip's audio would be
+  // restored on every later visit.
+  if (!res.ok) throw new Error(`demo clip ${d.audio}: HTTP ${res.status}`);
+  await setAudio(c, await res.blob(), d.name);
   c.text = d.text;
   c.segMode = "text";
   scheduleSave(c);
+}
+
+/** The single clip still needs the demo: its load failed, or stored an error page as audio. */
+function demoMissing(c) {
+  const stored = c.audioBlob;
+  if (stored) return c.name === info.demo.name && stored.type.startsWith("text/");
+  return !c.name && !c.text.trim() && !c.vs;
 }
 
 async function main() {
@@ -1380,8 +1398,9 @@ async function main() {
   if (!clips.has("single")) {
     const c = newClip("single", "single");
     clips.set("single", c);
-    await loadDemo(c).catch((e) => console.error(e));
   }
+  const single = clips.get("single");
+  if (demoMissing(single)) await loadDemo(single).catch((e) => console.error(e));
   await setMode(settings.mode === "batch" ? "batch" : "single");
   refreshUsage();
 }

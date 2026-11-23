@@ -3,7 +3,7 @@ p4mbfa: the multilingual phoneme model behind the `std` phoneme set.
 
 Inference-only port of `bfa_models/p4mbfa/`. p3cupe's trunk with three heads on it:
 
-    ph_head     one LANGUAGE GROUP's phoneme tokens (208 for 'latin', 48 for 'cjk', ...)
+    ph_head     one LANGUAGE GROUP's phoneme tokens (208 for 'latin', 54 for 'cjk', ...)
     phg_head    15 phoneme groups, the same in every language
     tone_head   22 tone values, the same in every language
 

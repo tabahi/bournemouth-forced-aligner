@@ -168,9 +168,13 @@ class TestStdPresets:
             presets.get_std_preset("km")
 
     def test_decoder_defaults_are_the_same_for_every_set(self):
+        first = presets.decoder_defaults(presets.PHONEME_SETS[0])
+        assert first["boundary_bonus_weight"] == 15.0
+        assert first["boundary_contrast_frames"] == 33
+        # 2.1: the pause / non-speech settings
+        assert first["boundary_bonus_cap"] == 2.0 and first["word_sil"] is True
         for name in presets.PHONEME_SETS:
-            assert presets.decoder_defaults(name) == {"boundary_bonus_weight": 15.0,
-                                                      "boundary_contrast_frames": 33}
+            assert presets.decoder_defaults(name) == first
 
     def test_phoneme_set(self):
         assert presets.resolve_phoneme_set() == presets.DEFAULT_PHONEME_SET == "std"
@@ -262,6 +266,35 @@ class TestStdInventory:
         p._g2p = StubG2P()
         p.prefetch(["Hello world", "world, again", "hello"])
         assert p._g2p.calls == [["world", "again"]]
+
+    @pytest.mark.parametrize("lang, text, expected", [
+        ("ru", "К до", ["ɡ", "d", "o"]),            # voiced obstruent next
+        ("ru", "к со", ["ɡ", "z", "o"]),            # judged by its sound, not its spelling
+        ("ru", "к на", ["k", "n", "a"]),            # sonorant next
+        ("ru", "к, до", ["k", "SIL", "d", "o"]),    # a pause stops the assimilation
+        ("ru", "до к", ["d", "o", "k"]),            # nothing next
+        ("uk", "к до", ["k", "i", "ɫ", "d", "o"]),  # same group, another language keeps it
+        ("en", "к до", ["k", "i", "ɫ", "d", "o"]),  # another group keeps it
+    ])
+    def test_word_phones_apply_by_language(self, lang, text, expected):
+        class StubG2P:
+            def phonemize_words(self, words, lang=None):
+                phones = {"к": ["k", "i", "ɫ"], "до": ["d", "o"], "со": ["z", "o"],
+                          "на": ["n", "a"]}
+                seq = [(p, wi) for wi, w in enumerate(words) for p in phones[w]]
+                gold = [PI.map_phoneme(p) for p, _ in seq]
+                return {"words": list(words), "ipa": ["".join(phones[w]) for w in words],
+                        "phonemes": [p for p, _ in seq], "word_num": [wi for _, wi in seq],
+                        "tone": [0] * len(seq), "stress": [1] * len(seq),
+                        "length": [0] * len(seq), "gold_ph_count": [len(g) for g in gold],
+                        "gold_ph": [PI.TOKEN_INDEX[m] for g in gold for m in g],
+                        "gold_phg": [0 for g in gold for _ in g], "gold_unmapped": []}
+        p = StdPhonemizer(lang)
+        p._g2p = StubG2P()
+        d = p.phonemize_sentence(text)
+        assert d["eipa"] == expected
+        assert [w for w in d["words"] if w != "<SIL>"] == text.lower().replace(",", "").split()
+        assert len(d["local_ph"]) == len(d["word_num"]) == len(expected)
 
     def test_gold_token_outside_the_group_folds_to_unk(self):
         # A Mandarin retroflex is in gold but not on Japanese's 28-token list.
@@ -398,7 +431,15 @@ class TestStdAligner:
         assert result["phoneme_set"] == "std/latin" and result["lang"] == "en"
 
         seg = result["segments"][0]
-        phones = seg["phoneme_ts"]
+        # 2.1: what the text does not cover is labelled too, as inserted SIL / noise that
+        # belongs to no target and no word; together they tile the segment without overlap.
+        every = seg["phoneme_ts"]
+        extra = [p for p in every if p.get("inserted")]
+        assert all(p["target_seq_idx"] == -1 and p["phoneme_label"] in ("SIL", "noise")
+                   and isinstance(p["confidence"], float) and 0.0 <= p["confidence"] <= 1.0
+                   for p in extra)
+        assert all(a["end_ms"] <= b["start_ms"] + 1e-6 for a, b in zip(every, every[1:]))
+        phones = [p for p in every if not p.get("inserted")]
         # forced alignment: every target placed exactly once, in order, inside the audio
         assert [p["target_seq_idx"] for p in phones] == list(range(8))
         assert [p["phoneme_label"] for p in phones] == ["h", "ɛ", "l", "o", "w", "ɝ", "l", "d"]
@@ -421,7 +462,8 @@ class TestStdAligner:
         short = gold_segment([("hi", ["h", "a"])], end=1.0)
         long = gold_segment(HELLO_WORLD, start=1.0, end=3.0)
         result = aligner.process_segments([{"segments": [short, long]}], [torch.randn(1, 48000)])[0]
-        assert [len(s["phoneme_ts"]) for s in result["segments"]] == [2, 8]
+        assert [len([p for p in s["phoneme_ts"] if not p.get("inserted")])
+                for s in result["segments"]] == [2, 8]
 
     def test_low_level_batch_takes_local_ids(self, aligner):
         ids = [PI.TOKEN_INDEX[p] for p in ("h", "ɛ", "l", "o")]

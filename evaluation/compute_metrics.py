@@ -358,6 +358,8 @@ def _is_speech_phone(phone, phoneme_set=None):
     the language group's list) that the aligner placed like any other, and the training-side
     probe counts their onsets too.
     """
+    if phone.get("inserted"):
+        return False    # BFA >= 2.1 labels what the text does not cover: SIL / noise, no phone
     if _is_std(phoneme_set):
         return str(phone.get("phoneme_label", "")) != "SIL"
     if phone.get("phoneme_id") == 0:

@@ -369,7 +369,7 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
             end_time = word['end_ms'] / 1000.0
             label = word['word']
             if include_confidence:
-                confidence = word.get('confidence', 0)
+                confidence = word.get('confidence') or 0.0
                 label += f" ({confidence:.2f})"
             
             textgrid_content.append(f'        intervals [{i}]:')
@@ -393,7 +393,7 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
             end_time = phoneme['end_ms'] / 1000.0
             label = phoneme['ipa_label']
             if include_confidence:
-                confidence = phoneme.get('confidence', 0)
+                confidence = phoneme.get('confidence') or 0.0   # None in files from before 2.1
                 label += f" ({confidence:.2f})"
             
             textgrid_content.append(f'        intervals [{i}]:')
@@ -417,7 +417,7 @@ def dict_to_textgrid_with_confidence(data, output_file=None, include_confidence=
             end_time = group['end_ms'] / 1000.0
             label = group['group_label']
             if include_confidence:
-                confidence = group.get('confidence', 0)
+                confidence = group.get('confidence') or 0.0
                 label += f" ({confidence:.2f})"
             
             textgrid_content.append(f'        intervals [{i}]:')
@@ -510,6 +510,8 @@ def plot_mel_alignment(mel, phoneme_ts, save_path="mel_alignment.png",
         end_frame   = ms_to_frame(ph['end_ms'])
         label       = ph.get('ipa_label') or ph.get('phoneme_label', '?')
         confidence  = ph.get('confidence', 1.0)
+        if confidence is None:              # an inserted SIL / noise entry
+            confidence = 1.0
 
         # Boundary line at phoneme start (skip very first)
         if prev_end_frame is not None:

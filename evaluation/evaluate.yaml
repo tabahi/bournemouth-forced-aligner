@@ -10,7 +10,7 @@
 # Where things are
 # ---------------------------------------------------------------------------------------------
 paths:
-  # Corpus audio. The paths lists (tmp/paths/<dataset>_paths_all.json, written by
+  # Corpus audio. The paths lists (local/paths/<dataset>_paths_all.json, written by
   # evaluation/dataset/<dataset>_parser.py) store audio as `~/...`, with `~` standing for
   # these directories. The datasets are: timit | buckeye | l2arctic | l2arctic_suitcase
   audio_roots:
@@ -22,6 +22,23 @@ paths:
     # suitcase_corpus/. Non-native English; only the hand-annotated clips are used.
     l2arctic: /my_datasets/speech_data/l2arctic_release_v5.0
     l2arctic_suitcase: /my_datasets/speech_data/l2arctic_release_v5.0
+    # The Common Voice selection (multilingual, hand-reviewed word edges): one dataset per
+    # reviewed language, all under the same root (<root>/<lang>/<clip>.wav). SRTs and paths lists
+    # from evaluation/dataset/cv_selection_parser.py, which also imports the set's MFA runs.
+    cv_en: /my_datasets/speech_data/common_voice_selection
+    cv_es: /my_datasets/speech_data/common_voice_selection
+    cv_fr: /my_datasets/speech_data/common_voice_selection
+    cv_ru: /my_datasets/speech_data/common_voice_selection
+    cv_el: /my_datasets/speech_data/common_voice_selection
+    cv_ko: /my_datasets/speech_data/common_voice_selection
+    cv_vi: /my_datasets/speech_data/common_voice_selection
+    cv_th: /my_datasets/speech_data/common_voice_selection
+    cv_ta: /my_datasets/speech_data/common_voice_selection
+    cv_ar: /my_datasets/speech_data/common_voice_selection
+    cv_ur: /my_datasets/speech_data/common_voice_selection
+    cv_ja: /my_datasets/speech_data/common_voice_selection
+    cv_yue: /my_datasets/speech_data/common_voice_selection
+    cv_zh: /my_datasets/speech_data/common_voice_selection
 
   # Where `export_hf.py release` builds a release before it is pushed. `{releases_dir}` in a
   # model's ckpt_path below is replaced by this.
@@ -29,7 +46,8 @@ paths:
 
   # The scores: one file per dataset, one row per experiment. `{dataset}` is replaced by the
   # dataset's name and has to be in the path. Relative paths start at the repository root.
-  results_csv: evaluation/results/results_{dataset}.csv
+  # local/ is kept when the checkout moves; evaluation/results/ holds the published copies.
+  results_csv: local/results/results_{dataset}.csv
 
 
 # ---------------------------------------------------------------------------------------------
@@ -79,6 +97,11 @@ models:
   mbfa-cyrillic:        {model_name: mbfa-cyrillic}
   mbfa-cjk:             {model_name: mbfa-cjk}
   mbfa-japanese:        {model_name: mbfa-japanese}
+  mbfa-abjad:           {model_name: mbfa-abjad}
+  mbfa-other-alphabetic: {model_name: mbfa-other-alphabetic}    # el, ko
+  mbfa-vietnamese:      {model_name: mbfa-vietnamese}
+  mbfa-thai:            {model_name: mbfa-thai}
+  mbfa-brahmic:         {model_name: mbfa-brahmic}          # ta
 
   # ---- the same releases from the local build, for checking one BEFORE it is pushed.
   # Identical weights once pushed, so run one source or the other, not both.
@@ -291,6 +314,137 @@ experiments:
     enabled: false
     dataset: [timit, buckeye]
     model: [charsiu-fs10]
+
+  - name: 2.1 pause / non-speech decoder, new defaults (regression vs 2.0.2 below)
+    enabled: false
+    dataset: [timit]
+    subset: 1000
+    model: [mbfa-latin, CUPE-3-en]
+
+  - name: 2.1 code with the 2.0.2 decoder (same subsets)
+    enabled: false
+    dataset: [timit]
+    subset: 1000
+    model: [mbfa-latin, CUPE-3-en]
+    decoder: {boundary_bonus_cap: null, word_sil: false, sil_bonus: true, energy_weight: 0,
+              filler_penalty: null, voicing_weight: 0}
+
+  - name: 2.1 pause / non-speech decoder on Buckeye
+    enabled: false
+    dataset: [buckeye]
+    subset: 10
+    model: [mbfa-latin, CUPE-3-en]
+
+  - name: 2.1 code with the 2.0.2 decoder on Buckeye
+    enabled: false
+    dataset: [buckeye]
+    subset: 10
+    model: [mbfa-latin, CUPE-3-en]
+    decoder: {boundary_bonus_cap: null, word_sil: false, sil_bonus: true, energy_weight: 0,
+              filler_penalty: null, voicing_weight: 0}
+
+  # The Common Voice selection (cv_selection_parser.py), all 14 languages. Run them with
+  # `python evaluation/cv_eval.py`, which rebuilds the reference, aligns (cached runs are
+  # skipped), imports MFA (cv_<x>__mfa-cv) and appends dated rows to the dataset's _results/.
+  # BFA's own defaults for this text: punctuation SIL on (as the reference's seeds were made).
+  # device `cuda`: cv_eval.py picks the GPU per shell with CUDA_VISIBLE_DEVICES.
+  - name: Common Voice selection, English
+    dataset: cv_en
+    model: [mbfa-latin, CUPE-3-en]
+    lang: en-us
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Spanish
+    dataset: cv_es
+    model: [mbfa-latin]
+    lang: es
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, French
+    dataset: cv_fr
+    model: [mbfa-latin]
+    lang: fr
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Russian
+    dataset: cv_ru
+    model: [mbfa-cyrillic]
+    lang: ru
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Greek
+    dataset: cv_el
+    model: [mbfa-other-alphabetic]
+    lang: el
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Korean
+    dataset: cv_ko
+    model: [mbfa-other-alphabetic]
+    lang: ko
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Vietnamese
+    dataset: cv_vi
+    model: [mbfa-vietnamese]
+    lang: vi
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Thai
+    dataset: cv_th
+    model: [mbfa-thai]
+    lang: th
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Tamil
+    dataset: cv_ta
+    model: [mbfa-brahmic]
+    lang: ta
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Arabic
+    dataset: cv_ar
+    model: [mbfa-abjad]
+    lang: ar
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Urdu
+    dataset: cv_ur
+    model: [mbfa-abjad]
+    lang: ur
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Japanese
+    dataset: cv_ja
+    model: [mbfa-japanese]
+    lang: ja
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Cantonese
+    dataset: cv_yue
+    model: [mbfa-cjk]
+    lang: yue
+    device: cuda
+    punctuation_sil: true
+
+  - name: Common Voice selection, Mandarin
+    dataset: cv_zh
+    model: [mbfa-cjk]
+    lang: zh
+    device: cuda
+    punctuation_sil: true
 
   - name: quick check
     enabled: false
